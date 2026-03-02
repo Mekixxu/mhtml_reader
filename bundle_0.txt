@@ -1,0 +1,687 @@
+### FILE: core/vfs/model/VfsPath.kt
+package core.vfs.model
+
+import android.net.Uri
+
+/**
+ * 跨源统一路径模型，后续SMB/FTP/WEB需补全实现
+ * - LocalFile: 仅限java.io.File路径
+ * - SafTree: Android SAF DocumentFile/Uri路径
+ * - Smb/Ftp/Web: v1.0未支持，预留类型[not implemented]
+ */
+sealed class VfsPath(open val raw: String) {
+    data class LocalFile(val filePath: String) : VfsPath(filePath)
+    data class SafTree(val uri: Uri) : VfsPath(uri.toString())
+    // 预留
+    data class Smb(val smbUrl: String) : VfsPath(smbUrl) // [not implemented]
+    data class Ftp(val ftpUrl: String) : VfsPath(ftpUrl) // [not implemented]
+    data class Web(val httpUrl: String) : VfsPath(httpUrl) // [not implemented]
+    fun schemeName(): String = when (this) {
+        is LocalFile -> "LOCAL"
+        is SafTree -> "SAF"
+        is Smb -> "SMB"
+        is Ftp -> "FTP"
+        is Web -> "WEB"
+    }
+}
+### END
+
+### FILE: core/vfs/IFileSystem.kt
+package core.vfs
+
+import core.common.AppError
+import core.vfs.model.VfsEntry
+import core.vfs.model.VfsPath
+import java.io.InputStream
+
+/**
+ * 跨源策略文件系统接口
+ * Result<T>为唯一返回（如需分级封装留Outcome于UseCase层）
+ * move/rename/copy: SAF等平台只copy+delete，绝非原子；
+ * 上层需处理异常回滚！（见isAtomicMoveSupported属性）
+ * list: 支持分页能力，offset-limit参数支持大目录分批消费
+ */
+interface IFileSystem {
+    /** 是否支持原子移动/重命名。LocalFile支持原子，SAF/网络源不支持 */
+    val isAtomicMoveSupported: Boolean
+
+    suspend fun list(dir: VfsPath, offset: Int = 0, limit: Int = 100): Result<List<VfsEntry>>
+
+    suspend fun openInputStream(path: VfsPath): Result<InputStream>
+    suspend fun exists(path: VfsPath): Result<Boolean>
+    suspend fun createFolder(path: VfsPath): Result<Unit>
+    suspend fun delete(path: VfsPath): Result<Unit>
+    /**
+     * 必须返回新对象真实Uri（SAF）或新路径（本地）；绝不可只改名字
+     */
+    suspend fun rename(from: VfsPath, toName: String): Result<VfsPath>
+    suspend fun move(from: VfsPath, toDir: VfsPath): Result<VfsPath>
+    suspend fun copy(from: VfsPath, toDir: VfsPath): Result<VfsPath>
+    suspend fun lastModified(path: VfsPath): Result<Long>
+}
+### END
+
+### FILE: core/vfs/local/LocalFileSystem.kt
+package core.vfs.local
+
+import android.content.Context
+import android.net.Uri
+import androidx.documentfile.provider.DocumentFile
+import core.common.AppError
+import core.common.DispatcherProvider
+import core.vfs.IFileSystem
+import core.vfs.model.VfsEntry
+import core.vfs.model.VfsPath
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.InputStream
+
+/**
+ * 本地文件/SAF文件系统实现
+ * - LocalFile: 所有move/rename原子
+ * - SAF: move/rename均非原子操作（copy+delete）
+ */
+class LocalFileSystem(
+    private val context: Context,
+    private val dispatcherProvider: DispatcherProvider
+) : IFileSystem {
+    override val isAtomicMoveSupported: Boolean = false
+
+    override suspend fun list(dir: VfsPath, offset: Int, limit: Int): Result<List<VfsEntry>> =
+        withContext(dispatcherProvider.io) {
+            try {
+                when (dir) {
+                    is VfsPath.LocalFile -> {
+                        val f = File(dir.filePath)
+                        if (!f.exists() || !f.isDirectory) return@withContext Result.failure(AppError.NotFound)
+                        val files = f.listFiles()?.drop(offset)?.take(limit)?.map { it.toVfsEntry() } ?: emptyList()
+                        Result.success(files)
+                    }
+                    is VfsPath.SafTree -> {
+                        val df = DocumentFile.fromTreeUri(context, dir.uri)
+                            ?: return@withContext Result.failure(AppError.InvalidUri)
+                        val childList = df.listFiles().drop(offset).take(limit)
+                            .mapNotNull { it.toVfsEntrySaf(context) }
+                        Result.success(childList)
+                    }
+                    else -> Result.failure(AppError.UnsupportedOperation)
+                }
+            } catch (e: Throwable) {
+                Result.failure(AppError.IoError(e.message, e))
+            }
+        }
+
+    override suspend fun openInputStream(path: VfsPath): Result<InputStream> =
+        withContext(dispatcherProvider.io) {
+            try {
+                when (path) {
+                    is VfsPath.LocalFile -> {
+                        val f = File(path.filePath)
+                        if (!f.exists() || !f.isFile) return@withContext Result.failure(AppError.NotFound)
+                        Result.success(f.inputStream())
+                    }
+                    is VfsPath.SafTree -> {
+                        val input = context.contentResolver.openInputStream(path.uri)
+                            ?: return@withContext Result.failure(AppError.NotFound)
+                        Result.success(input)
+                    }
+                    else -> Result.failure(AppError.UnsupportedOperation)
+                }
+            } catch (e: Throwable) {
+                Result.failure(AppError.IoError(e.message, e))
+            }
+        }
+
+    override suspend fun exists(path: VfsPath): Result<Boolean> =
+        withContext(dispatcherProvider.io) {
+            try {
+                when (path) {
+                    is VfsPath.LocalFile -> Result.success(File(path.filePath).exists())
+                    is VfsPath.SafTree -> {
+                        val df = DocumentFile.fromSingleUri(context, path.uri)
+                        Result.success(df?.exists() == true)
+                    }
+                    else -> Result.failure(AppError.UnsupportedOperation)
+                }
+            } catch (e: Throwable) {
+                Result.failure(AppError.IoError(e.message, e))
+            }
+        }
+
+    override suspend fun createFolder(path: VfsPath): Result<Unit> =
+        withContext(dispatcherProvider.io) {
+            try {
+                when (path) {
+                    is VfsPath.LocalFile -> {
+                        val f = File(path.filePath)
+                        if (f.exists()) return@withContext Result.success(Unit)
+                        if (f.mkdirs()) Result.success(Unit) else Result.failure(AppError.IoError("mkdirs failed"))
+                    }
+                    is VfsPath.SafTree -> {
+                        // SAF只有新建目录能力，无法命名唯一类型；建议上层用自定义命名
+                        val parentUri = path.uri
+                        val parentDf = DocumentFile.fromTreeUri(context, parentUri)
+                            ?: return@withContext Result.failure(AppError.InvalidUri)
+                        parentDf.createDirectory("NewFolder")
+                            ?: return@withContext Result.failure(AppError.IoError("createDirectory failed"))
+                        Result.success(Unit)
+                    }
+                    else -> Result.failure(AppError.UnsupportedOperation)
+                }
+            } catch (e: Throwable) {
+                Result.failure(AppError.IoError(e.message, e))
+            }
+        }
+
+    override suspend fun delete(path: VfsPath): Result<Unit> =
+        withContext(dispatcherProvider.io) {
+            try {
+                when (path) {
+                    is VfsPath.LocalFile -> {
+                        val f = File(path.filePath)
+                        if (!f.exists()) return@withContext Result.success(Unit)
+                        if (f.deleteRecursively()) Result.success(Unit)
+                        else Result.failure(AppError.IoError("Delete failed"))
+                    }
+                    is VfsPath.SafTree -> {
+                        val df = DocumentFile.fromSingleUri(context, path.uri)
+                            ?: return@withContext Result.failure(AppError.NotFound)
+                        if (df.delete()) Result.success(Unit)
+                        else Result.failure(AppError.IoError("Delete failed"))
+                    }
+                    else -> Result.failure(AppError.UnsupportedOperation)
+                }
+            } catch (e: Throwable) {
+                Result.failure(AppError.IoError(e.message, e))
+            }
+        }
+
+    override suspend fun rename(from: VfsPath, toName: String): Result<VfsPath> =
+        withContext(dispatcherProvider.io) {
+            try {
+                when (from) {
+                    is VfsPath.LocalFile -> {
+                        val old = File(from.filePath)
+                        val newFile = File(old.parent, toName)
+                        if (old.renameTo(newFile)) Result.success(VfsPath.LocalFile(newFile.absolutePath))
+                        else Result.failure(AppError.IoError("renameTo failed"))
+                    }
+                    is VfsPath.SafTree -> {
+                        val df = DocumentFile.fromSingleUri(context, from.uri)
+                            ?: return@withContext Result.failure(AppError.NotFound)
+                        val renamed = df.renameTo(toName)
+                        // SAF重命名后有可能Uri发生变更，务必查找新Uri
+                        val parent = df.parentFile ?: return@withContext Result.failure(AppError.IoError("parent not found"))
+                        val newDf = parent.safeFindFile(toName)
+                        return@withContext if (renamed && newDf != null)
+                            Result.success(VfsPath.SafTree(newDf.uri))
+                        else Result.failure(AppError.IoError("rename failed or file not found"))
+                    }
+                    else -> Result.failure(AppError.UnsupportedOperation)
+                }
+            } catch (e: Throwable) {
+                Result.failure(AppError.IoError(e.message, e))
+            }
+        }
+
+    override suspend fun move(from: VfsPath, toDir: VfsPath): Result<VfsPath> =
+        withContext(dispatcherProvider.io) {
+            try {
+                // SAF move=copy+delete，不原子
+                when {
+                    from is VfsPath.LocalFile && toDir is VfsPath.LocalFile -> {
+                        val src = File(from.filePath)
+                        val dst = File(toDir.filePath, src.name)
+                        src.copyTo(dst, overwrite = false)
+                        src.delete()
+                        Result.success(VfsPath.LocalFile(dst.absolutePath))
+                    }
+                    from is VfsPath.SafTree && toDir is VfsPath.SafTree -> {
+                        val srcDf = DocumentFile.fromSingleUri(context, from.uri)
+                            ?: return@withContext Result.failure(AppError.NotFound)
+                        val dirDf = DocumentFile.fromTreeUri(context, toDir.uri)
+                            ?: return@withContext Result.failure(AppError.NotFound)
+                        val copied = srcDf.copyToDir(context, dirDf)
+                        // move必须返回新Uri对象
+                        if (copied == null) Result.failure(AppError.IoError("move failed copy"))
+                        else {
+                            srcDf.delete()
+                            Result.success(VfsPath.SafTree(copied.uri))
+                        }
+                    }
+                    else -> Result.failure(AppError.UnsupportedOperation)
+                }
+            } catch (e: Throwable) {
+                Result.failure(AppError.IoError(e.message, e))
+            }
+        }
+
+    override suspend fun copy(from: VfsPath, toDir: VfsPath): Result<VfsPath> =
+        withContext(dispatcherProvider.io) {
+            try {
+                when {
+                    from is VfsPath.LocalFile && toDir is VfsPath.LocalFile -> {
+                        val src = File(from.filePath)
+                        val dst = File(toDir.filePath, src.name)
+                        src.copyTo(dst, overwrite = false)
+                        Result.success(VfsPath.LocalFile(dst.absolutePath))
+                    }
+                    from is VfsPath.SafTree && toDir is VfsPath.SafTree -> {
+                        val srcDf = DocumentFile.fromSingleUri(context, from.uri)
+                            ?: return@withContext Result.failure(AppError.NotFound)
+                        val dirDf = DocumentFile.fromTreeUri(context, toDir.uri)
+                            ?: return@withContext Result.failure(AppError.NotFound)
+                        val copied = srcDf.copyToDir(context, dirDf)
+                        // copy必须返回新Uri对象
+                        if (copied == null) Result.failure(AppError.IoError("copy failed"))
+                        else Result.success(VfsPath.SafTree(copied.uri))
+                    }
+                    else -> Result.failure(AppError.UnsupportedOperation)
+                }
+            } catch (e: Throwable) {
+                Result.failure(AppError.IoError(e.message, e))
+            }
+        }
+
+    override suspend fun lastModified(path: VfsPath): Result<Long> =
+        withContext(dispatcherProvider.io) {
+            try {
+                when (path) {
+                    is VfsPath.LocalFile -> {
+                        val f = File(path.filePath)
+                        Result.success(f.lastModified())
+                    }
+                    is VfsPath.SafTree -> {
+                        val df = DocumentFile.fromSingleUri(context, path.uri)
+                        Result.success(df?.lastModified() ?: 0L)
+                    }
+                    else -> Result.failure(AppError.UnsupportedOperation)
+                }
+            } catch (e: Throwable) {
+                Result.failure(AppError.IoError(e.message, e))
+            }
+        }
+}
+
+/**
+ * File->VfsEntry扩展，仅用于本地文件类型
+ */
+fun File.toVfsEntry(): VfsEntry = VfsEntry(
+    name = name,
+    path = VfsPath.LocalFile(absolutePath),
+    isDirectory = isDirectory,
+    sizeBytes = if (isFile) length() else 0,
+    lastModifiedEpochMs = lastModified(),
+    mimeType = null
+)
+
+/**
+ * SAF/DocumentFile->VfsEntry扩展，仅用于 SAF类型
+ */
+fun DocumentFile.toVfsEntrySaf(context: Context): VfsEntry? =
+    VfsEntry(
+        name = name ?: return null,
+        path = VfsPath.SafTree(uri),
+        isDirectory = isDirectory,
+        sizeBytes = if (isFile) length() else 0,
+        lastModifiedEpochMs = lastModified(),
+        mimeType = type
+    )
+
+/**
+ * SAF目录copy辅助。非原子，仅SAF类型适用
+ */
+fun DocumentFile.copyToDir(context: Context, targetDir: DocumentFile): DocumentFile? {
+    if (!exists() || !isFile) return null
+    val out = targetDir.createFile(type ?: "application/octet-stream", name ?: "file")
+        ?: return null
+    context.contentResolver.openInputStream(uri).use { input ->
+        context.contentResolver.openOutputStream(out.uri).use { output ->
+            if (input != null && output != null) {
+                input.copyTo(output, bufferSize = 64 * 1024)
+            }
+        }
+    }
+    return out
+}
+### END
+
+### FILE: core/vfs/local/DocumentFileExt.kt
+package core.vfs.local
+
+import android.content.Context
+import android.net.Uri
+import androidx.documentfile.provider.DocumentFile
+
+/**
+ * 各扩展函数仅适用于SAF类型，其他类型不适用
+ */
+fun DocumentFile.safeFindFile(name: String): DocumentFile? =
+    listFiles().firstOrNull { it.name == name }
+
+/**
+ * SAF目录排序，仅用于SAF类型
+ */
+fun Context.safListSorted(uri: Uri): List<DocumentFile> {
+    val dir = DocumentFile.fromTreeUri(this, uri) ?: return emptyList()
+    return dir.listFiles().sortedBy { it.name }
+}
+### END
+
+### FILE: core/vfs/local/FileExt.kt
+package core.vfs.local
+
+import java.io.File
+
+/**
+ * 仅用于本地文件类型
+ */
+fun File.sizeSafe(): Long = if (isFile) length() else 0L
+fun File.lastModifiedSafe(): Long = if (exists()) lastModified() else 0L
+### END
+
+### FILE: core/cache/CacheOpenManager.kt
+package core.cache
+
+import android.content.Context
+import core.cache.model.CacheOpenResult
+import core.cache.model.ContentType
+import core.cache.model.CopyProgress
+import core.common.AppError
+import core.common.DispatcherProvider
+import core.common.HashUtils
+import core.vfs.IFileSystem
+import core.vfs.model.VfsPath
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.OutputStream
+
+/**
+ * 统一缓存打开、流式拷贝
+ * - 缓存分区按类型/[contentType]/[cacheKey]/content.[ext]组织提高维护与调试便利
+ * - cacheKey生成纳入contentType、路径、size
+ * - extName按内容类型、若未知直接抛InvalidContentType
+ */
+class CacheOpenManager(
+    private val context: Context,
+    private val cacheRoot: File, // e.g. context.cacheDir/app_cache/
+    private val fileSystem: IFileSystem,
+    private val dispatcherProvider: DispatcherProvider
+) {
+
+    suspend fun openToCache(
+        src: VfsPath,
+        totalBytes: Long,
+        contentType: ContentType,
+        extName: String? = null
+    ): Flow<Result<CopyProgress>> = flow {
+        withContext(dispatcherProvider.io) {
+            // 生成cacheKey
+            val cacheKey = generateCacheKey(src, contentType, totalBytes)
+            val typeDir = cacheRoot.resolve(contentType.name.lowercase())
+            typeDir.mkdirs()
+            val cacheDir = typeDir.resolve(cacheKey)
+            cacheDir.mkdirs()
+            val fileExt = extName
+                ?: when (contentType) {
+                    ContentType.PDF -> "pdf"
+                    ContentType.MHTML -> "mhtml"
+                    ContentType.HTML -> "html"
+                    ContentType.WEB -> "web"
+                    else -> throw AppError.InvalidUri // InvalidContentType，无效类型直接抛异常
+                }
+            val cacheFile = File(cacheDir, "content.$fileExt")
+
+            // 已存在直接100%进度
+            if (cacheFile.exists() && cacheFile.length() == totalBytes) {
+                emit(Result.success(CopyProgress(totalBytes, totalBytes)))
+                return@withContext
+            }
+            // 开始流式拷贝
+            val inputResult = fileSystem.openInputStream(src)
+            val `in` = inputResult.getOrElse {
+                throw AppError.IoError("OpenInputStream failed", it)
+            }
+            var out: OutputStream? = null
+            try {
+                out = cacheFile.outputStream()
+                val buf = ByteArray(64 * 1024)
+                var copied = 0L
+                var read: Int
+                while (true) {
+                    read = `in`.read(buf)
+                    if (read == -1) break
+                    out.write(buf, 0, read)
+                    copied += read
+                    emit(Result.success(CopyProgress(copied, totalBytes)))
+                    // 协程取消支持
+                    if (!Thread.currentThread().isInterrupted) continue else throw CancellationException()
+                }
+                out.flush()
+            } catch (ce: CancellationException) {
+                cacheFile.delete()
+                emit(Result.failure(ce))
+                throw ce
+            } catch (e: Throwable) {
+                cacheFile.delete()
+                emit(Result.failure(e))
+                throw AppError.IoError("Copy failed: $e", e)
+            } finally {
+                try { `in`.close() } catch (_: Throwable) {}
+                try { out?.close() } catch (_: Throwable) {}
+            }
+            emit(Result.success(CopyProgress(totalBytes, totalBytes)))
+        }
+    }
+
+    fun generateCacheKey(src: VfsPath, contentType: ContentType, size: Long): String {
+        val id = src.raw
+        val key = "${contentType.name}:${id}:${size}"
+        return HashUtils.sha256(key)
+    }
+
+    fun resolveCacheFile(contentType: ContentType, cacheKey: String, extName: String): File =
+        cacheRoot.resolve(contentType.name.lowercase()).resolve(cacheKey).resolve("content.$extName")
+}
+### END
+
+### FILE: core/cache/TabCacheRegistry.kt
+package core.cache
+
+import java.io.File
+import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+/**
+ * tabId与cacheKey关系仅为内存映射，不持久化
+ * 若需多端/进程安全/持久化，请用Room/KV数据库抽象替换
+ */
+class TabCacheRegistry(
+    private val cacheRoot: File
+) {
+    private val tabToCacheKey = ConcurrentHashMap<String, Pair<String, String>>() // Pair<contentType, cacheKey>
+
+    fun bind(tabId: String, contentType: String, cacheKey: String) {
+        tabToCacheKey[tabId] = Pair(contentType, cacheKey)
+    }
+
+    suspend fun onTabClosed(tabId: String) {
+        val pair = tabToCacheKey.remove(tabId) ?: return
+        val (contentType, cacheKey) = pair
+        val cacheDir = cacheRoot.resolve(contentType).resolve(cacheKey)
+        withContext(Dispatchers.IO) {
+            cacheDir.deleteRecursively()
+        }
+    }
+}
+### END
+
+### FILE: core/common/HashUtils.kt
+package core.common
+
+import java.security.MessageDigest
+
+/**
+ * 方便生成 sha256 哈希，用于缓存key
+ */
+object HashUtils {
+    fun sha256(input: String): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        val hash = digest.digest(input.toByteArray(Charsets.UTF_8))
+        return hash.joinToString("") { "%02x".format(it) }
+    }
+}
+### END
+
+### FILE: core/cache/model/CacheOpenResult.kt
+package core.cache.model
+
+import core.vfs.model.VfsPath
+import java.io.File
+
+enum class ContentType { MHTML, PDF, HTML, WEB, UNKNOWN }
+
+/**
+ * 打开缓存结果，提供给阅读器等上层直接用
+ */
+data class CacheOpenResult(
+    val cacheFile: File,
+    val cacheKey: String,
+    val sourcePath: VfsPath,
+    val contentType: ContentType
+)
+### END
+
+### FILE: core/cache/model/CopyProgress.kt
+package core.cache.model
+
+/**
+ * 拷贝进度反馈，用于 Flow/进度条
+ */
+data class CopyProgress(
+    val copiedBytes: Long,
+    val totalBytes: Long
+)
+### END
+
+### FILE: core/cache/CacheEvictor.kt
+package core.cache
+
+import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+/**
+ * LRU淘汰器，目录分区后按最后修改时间淘汰
+ */
+class CacheEvictor(
+    private val cacheRoot: File,
+    private val maxBytes: Long = 2L * 1024 * 1024 * 1024
+) {
+    suspend fun evictIfNeeded() = withContext(Dispatchers.IO) {
+        var total: Long = cacheRoot.listFiles()?.sumOf { it.sizeAndChildren() } ?: 0L
+        if (total <= maxBytes) return@withContext
+
+        val items = cacheRoot.listFiles()
+            ?.filter { it.isDirectory }
+            ?.flatMap { dir -> dir.listFiles()?.filter { it.isDirectory }?.map { it } ?: emptyList() }
+            ?.map { it to (it.lastModified()) }
+            ?.sortedBy { it.second } ?: return@withContext
+
+        for ((dir, _) in items) {
+            val sz = dir.sizeAndChildren()
+            dir.deleteRecursively()
+            total -= sz
+            if (total <= maxBytes) break
+        }
+    }
+}
+
+/**
+ * 仅限本地/缓存目录类型
+ */
+private fun File.sizeAndChildren(): Long {
+    if (!exists()) return 0L
+    if (isFile) return length()
+    return walkTopDown().filter { it.isFile }.sumOf { it.length() }
+}
+### END
+
+### FILE: core/cache/OrphanCacheCleaner.kt
+package core.cache
+
+import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+/**
+ * 启动清理, 仅限缓存分区目录
+ */
+class OrphanCacheCleaner(
+    private val cacheRoot: File,
+    private val daysUnused: Int = 3
+) {
+    suspend fun clean() = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        val cutoff = now - daysUnused * 86400 * 1000L
+        cacheRoot.listFiles()?.forEach { typeDir ->
+            if (typeDir.isDirectory) {
+                typeDir.listFiles()?.forEach { dir ->
+                    if (dir.isDirectory && dir.listFiles()?.isEmpty() == false && dir.lastModified() < cutoff) {
+                        dir.deleteRecursively()
+                    }
+                }
+            }
+        }
+    }
+}
+### END
+
+### FILE: core/di/CoreModule.kt
+package core.di
+
+import android.content.Context
+import core.cache.CacheOpenManager
+import core.common.DefaultDispatcherProvider
+import core.common.DispatcherProvider
+import core.vfs.local.LocalFileSystem
+import dagger.Module
+import dagger.Provides
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
+import javax.inject.Singleton
+
+/**
+ * DI 提供基础依赖
+ */
+@Module
+@InstallIn(SingletonComponent::class)
+object CoreModule {
+
+    @Provides
+    @Singleton
+    fun provideDispatcherProvider(): DispatcherProvider = DefaultDispatcherProvider()
+
+    @Provides
+    @Singleton
+    fun provideLocalFileSystem(
+        context: Context,
+        dispatcherProvider: DispatcherProvider
+    ): LocalFileSystem = LocalFileSystem(context, dispatcherProvider)
+
+    @Provides
+    @Singleton
+    fun provideCacheOpenManager(
+        context: Context,
+        localFileSystem: LocalFileSystem,
+        dispatcherProvider: DispatcherProvider
+    ): CacheOpenManager {
+        val cacheDir = context.cacheDir.resolve("app_cache")
+        return CacheOpenManager(context, cacheDir, localFileSystem, dispatcherProvider)
+    }
+}
+### END

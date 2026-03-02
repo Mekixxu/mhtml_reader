@@ -1,0 +1,486 @@
+### FILE: core/fileops/model/FileOpRequest.kt
+package core.fileops.model
+
+import core.vfs.model.VfsPath
+import core.fileops.model.ConflictStrategy
+
+/**
+ * 文件操作请求封装类
+ */
+sealed class FileOpRequest {
+    data class CreateFolder(val parentDir: VfsPath, val name: String) : FileOpRequest()
+    data class Delete(val target: VfsPath, val recursive: Boolean = true) : FileOpRequest()
+    data class Rename(val target: VfsPath, val newName: String) : FileOpRequest()
+    data class Copy(
+        val from: VfsPath,
+        val toDir: VfsPath,
+        val conflict: ConflictStrategy = ConflictStrategy.FAIL
+    ) : FileOpRequest()
+    data class Move(
+        val from: VfsPath,
+        val toDir: VfsPath,
+        val conflict: ConflictStrategy = ConflictStrategy.FAIL
+    ) : FileOpRequest()
+}
+### END
+
+### FILE: core/fileops/model/ConflictStrategy.kt
+package core.fileops.model
+
+/**
+ * 文件名冲突策略
+ */
+enum class ConflictStrategy {
+    FAIL,
+    AUTO_RENAME,
+    // OVERWRITE // 可扩展
+}
+### END
+
+### FILE: core/fileops/model/FileOpState.kt
+package core.fileops.model
+
+import core.common.AppError
+import core.vfs.model.VfsPath
+
+/**
+ * 文件操作流程状态
+ */
+sealed class FileOpState {
+    object Started : FileOpState()
+    data class Progress(val current: Long, val total: Long) : FileOpState() // total -1 表示未知
+    data class Success(val resultPath: VfsPath? = null) : FileOpState()
+    data class Error(val error: AppError) : FileOpState()
+}
+### END
+
+### FILE: core/fileops/util/NameConflictResolver.kt
+package core.fileops.util
+
+import core.vfs.IFileSystem
+import core.vfs.model.VfsPath
+import kotlinx.coroutines.withContext
+import core.common.DispatcherProvider
+import core.fileops.model.ConflictStrategy
+
+/**
+ * 文件名冲突解决，支持AUTO_RENAME。
+ */
+class NameConflictResolver(
+    private val fileSystem: IFileSystem,
+    private val dispatcherProvider: DispatcherProvider
+) {
+    /**
+     * 如果冲突且策略为AUTO_RENAME，自动生成file(1).ext，否则按策略处理
+     */
+    suspend fun resolve(
+        toDir: VfsPath,
+        desiredName: String,
+        strategy: ConflictStrategy
+    ): VfsPath = withContext(dispatcherProvider.io) {
+        val baseName = FileNameUtils.getNameWithoutExtension(desiredName)
+        val ext = FileNameUtils.getExtension(desiredName)
+
+        var nameToTry = desiredName
+        var idx = 1
+        while (true) {
+            val target = FileNameUtils.childPath(toDir, nameToTry)
+            val exists = fileSystem.exists(target).getOrDefault(false)
+            if (!exists) return@withContext target
+            if (strategy == ConflictStrategy.FAIL) throw core.common.AppError.Conflict
+            nameToTry = "$baseName($idx)${if (ext.isNotEmpty()) ".$ext" else ""}"
+            idx++
+        }
+        // unreachable
+        FileNameUtils.childPath(toDir, nameToTry)
+    }
+}
+### END
+
+### FILE: core/fileops/util/FileNameUtils.kt
+package core.fileops.util
+
+import core.vfs.model.VfsPath
+
+/**
+ * 文件名工具。支持多扩展名和路径拼装。
+ */
+object FileNameUtils {
+    fun getNameWithoutExtension(fileName: String): String =
+        fileName.substringBeforeLast('.', fileName)
+    fun getExtension(fileName: String): String =
+        fileName.substringAfterLast('.', "")
+
+    fun childPath(dir: VfsPath, name: String): VfsPath =
+        when (dir) {
+            is VfsPath.LocalFile -> VfsPath.LocalFile(
+                if (dir.filePath.endsWith("/")) dir.filePath + name else dir.filePath + "/" + name
+            )
+            is VfsPath.SafTree -> VfsPath.SafTree(dir.uri) // 补充SAF路径生成逻辑具体实现
+            else -> throw core.common.AppError.UnsupportedOperation
+        }
+}
+### END
+
+### FILE: core/fileops/usecase/ExecuteFileOpUseCase.kt
+package core.fileops.usecase
+
+import core.vfs.IFileSystem
+import core.fileops.model.*
+import core.fileops.util.NameConflictResolver
+import core.common.DispatcherProvider
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.CancellationException
+
+/**
+ * 统一文件操作入口。支持进度/cancel/冲突自动命名/错误统一封装。
+ */
+class ExecuteFileOpUseCase(
+    private val fileSystem: IFileSystem,
+    private val nameResolver: NameConflictResolver,
+    private val dispatcherProvider: DispatcherProvider
+) {
+    fun execute(request: FileOpRequest): Flow<FileOpState> = flow {
+        emit(FileOpState.Started)
+        try {
+            when (request) {
+                is FileOpRequest.CreateFolder -> {
+                    val child = core.fileops.util.FileNameUtils.childPath(request.parentDir, request.name)
+                    fileSystem.createFolder(child)
+                        .getOrElse { throw it }
+                    emit(FileOpState.Success(child))
+                }
+                is FileOpRequest.Delete -> {
+                    DeleteRecursivelyUseCase(fileSystem, dispatcherProvider).delete(request.target, request.recursive, emit)
+                }
+                is FileOpRequest.Rename -> {
+                    val renamed = fileSystem.rename(request.target, request.newName).getOrElse { throw it }
+                    emit(FileOpState.Success(renamed))
+                }
+                is FileOpRequest.Copy -> {
+                    CopyUseCase(fileSystem, nameResolver, dispatcherProvider)
+                        .copy(request.from, request.toDir, request.conflict, emit)
+                }
+                is FileOpRequest.Move -> {
+                    MoveUseCase(fileSystem, nameResolver, dispatcherProvider)
+                        .move(request.from, request.toDir, request.conflict, emit)
+                }
+            }
+        } catch (e: CancellationException) {
+            emit(FileOpState.Error(core.common.AppError.IoError("操作被取消", e)))
+        } catch (e: Exception) {
+            emit(FileOpState.Error(core.common.AppError.IoError(e.message, e)))
+        }
+    }
+}
+### END
+
+### FILE: core/fileops/usecase/DeleteRecursivelyUseCase.kt
+package core.fileops.usecase
+
+import core.vfs.IFileSystem
+import core.vfs.model.VfsPath
+import core.common.DispatcherProvider
+import core.fileops.model.FileOpState
+import kotlinx.coroutines.withContext
+
+/**
+ * 递归删除文件夹。迭代实现防止StackOverflow。
+ */
+class DeleteRecursivelyUseCase(
+    private val fileSystem: IFileSystem,
+    private val dispatcherProvider: DispatcherProvider
+) {
+    suspend fun delete(
+        target: VfsPath,
+        recursive: Boolean = true,
+        emit: suspend (FileOpState) -> Unit
+    ) = withContext(dispatcherProvider.io) {
+        if (!recursive) {
+            fileSystem.delete(target).getOrElse { throw it }
+            emit(FileOpState.Success(target))
+            return@withContext
+        }
+        // 迭代实现
+        val stack = ArrayDeque<VfsPath>()
+        stack.add(target)
+        while (stack.isNotEmpty()) {
+            val cur = stack.removeLast()
+            val entry = fileSystem.list(cur).getOrNull()
+            if (entry != null && entry.isNotEmpty()) {
+                entry.forEach {
+                    if (it.isDirectory) stack.add(it.path)
+                    else fileSystem.delete(it.path)
+                }
+            }
+            fileSystem.delete(cur)
+        }
+        emit(FileOpState.Success(target))
+    }
+}
+### END
+
+### FILE: core/fileops/usecase/CopyUseCase.kt
+package core.fileops.usecase
+
+import core.vfs.IFileSystem
+import core.vfs.model.VfsPath
+import core.fileops.model.ConflictStrategy
+import core.fileops.model.FileOpState
+import core.fileops.util.NameConflictResolver
+import core.common.DispatcherProvider
+import kotlinx.coroutines.withContext
+
+/**
+ * Copy流程。支持进度、冲突处理、可取消，文件夹递归。
+ */
+class CopyUseCase(
+    private val fileSystem: IFileSystem,
+    private val nameResolver: NameConflictResolver,
+    private val dispatcherProvider: DispatcherProvider
+) {
+    suspend fun copy(
+        from: VfsPath,
+        toDir: VfsPath,
+        strategy: ConflictStrategy,
+        emit: suspend (FileOpState) -> Unit
+    ) = withContext(dispatcherProvider.io) {
+        // (目录递归、文件进度)
+        // 仅实现文件拷贝+目录递归
+        TODO("需结合IFileSystem流式和输出能力实现具体copy逻辑。")
+    }
+}
+### END
+
+### FILE: core/fileops/usecase/MoveUseCase.kt
+package core.fileops.usecase
+
+import core.vfs.IFileSystem
+import core.vfs.model.VfsPath
+import core.fileops.model.ConflictStrategy
+import core.fileops.util.NameConflictResolver
+import core.common.DispatcherProvider
+import core.fileops.model.FileOpState
+import kotlinx.coroutines.withContext
+
+/**
+ * Move流程。支持冲突命名，跨目录move时自动退级为copy+delete。
+ */
+class MoveUseCase(
+    private val fileSystem: IFileSystem,
+    private val nameResolver: NameConflictResolver,
+    private val dispatcherProvider: DispatcherProvider
+) {
+    suspend fun move(
+        from: VfsPath,
+        toDir: VfsPath,
+        strategy: ConflictStrategy,
+        emit: suspend (FileOpState) -> Unit
+    ) = withContext(dispatcherProvider.io) {
+        // 若本地操作支持原子，直接move，否则copy+delete
+        // 回退后实现copy+delete，需做好错误/回滚处理
+        TODO("需实现move流程，可copy+delete+emit进度+清理")
+    }
+}
+### END
+
+### FILE: core/fileops/usecase/RenameUseCase.kt
+package core.fileops.usecase
+
+import core.vfs.IFileSystem
+import core.vfs.model.VfsPath
+import core.common.DispatcherProvider
+import core.fileops.model.FileOpState
+import kotlinx.coroutines.withContext
+
+/**
+ * 只改名不动目录。因文件系统特性，可能不是原子。建议严格使用此用例。
+ */
+class RenameUseCase(
+    private val fileSystem: IFileSystem,
+    private val dispatcherProvider: DispatcherProvider
+) {
+    suspend fun rename(
+        target: VfsPath,
+        newName: String,
+        emit: suspend (FileOpState) -> Unit
+    ) = withContext(dispatcherProvider.io) {
+        val result = fileSystem.rename(target, newName).getOrElse { throw it }
+        emit(FileOpState.Success(result))
+    }
+}
+### END
+
+### FILE: core/fileops/usecase/CreateFolderUseCase.kt
+package core.fileops.usecase
+
+import core.vfs.IFileSystem
+import core.vfs.model.VfsPath
+import core.common.DispatcherProvider
+import core.fileops.util.NameConflictResolver
+import core.fileops.model.ConflictStrategy
+import core.fileops.model.FileOpState
+import kotlinx.coroutines.withContext
+
+/**
+ * 新建目录，处理冲突命名策略。
+ */
+class CreateFolderUseCase(
+    private val fileSystem: IFileSystem,
+    private val nameResolver: NameConflictResolver,
+    private val dispatcherProvider: DispatcherProvider
+) {
+    suspend fun createFolder(
+        parentDir: VfsPath,
+        name: String,
+        strategy: ConflictStrategy,
+        emit: suspend (FileOpState) -> Unit
+    ) = withContext(dispatcherProvider.io) {
+        val resolved = nameResolver.resolve(parentDir, name, strategy)
+        fileSystem.createFolder(resolved)
+            .getOrElse { throw it }
+        emit(FileOpState.Success(resolved))
+    }
+}
+### END
+
+### FILE: core/fileops/di/FileOpsModule.kt
+package core.fileops.di
+
+import core.vfs.IFileSystem
+import core.fileops.util.NameConflictResolver
+import core.common.DispatcherProvider
+import dagger.Module
+import dagger.Provides
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
+import javax.inject.Singleton
+
+/**
+ * FileOps DI-Module
+ */
+@Module
+@InstallIn(SingletonComponent::class)
+object FileOpsModule {
+    @Provides @Singleton
+    fun provideNameConflictResolver(
+        fileSystem: IFileSystem, dispatcherProvider: DispatcherProvider
+    ): NameConflictResolver = NameConflictResolver(fileSystem, dispatcherProvider)
+}
+### END
+
+### FILE: core/vfs/IFileSystem.kt
+package core.vfs
+
+import core.common.AppError
+import core.vfs.model.VfsEntry
+import core.vfs.model.VfsPath
+import java.io.InputStream
+import java.io.OutputStream
+
+interface IFileSystem {
+    suspend fun list(dir: VfsPath, offset: Int = 0, limit: Int = 100): Result<List<VfsEntry>>
+    suspend fun openInputStream(path: VfsPath): Result<InputStream>
+
+    // 新增：写入/创建能力，配合Copy/Move自动流式
+    suspend fun openOutputStream(path: VfsPath, append: Boolean = false): Result<OutputStream>
+    suspend fun createFile(parentDir: VfsPath, name: String, mimeType: String? = null): Result<VfsPath>
+
+    suspend fun exists(path: VfsPath): Result<Boolean>
+    suspend fun createFolder(path: VfsPath): Result<Unit>
+    suspend fun delete(path: VfsPath): Result<Unit>
+    suspend fun rename(from: VfsPath, toName: String): Result<VfsPath>
+    suspend fun move(from: VfsPath, toDir: VfsPath): Result<VfsPath>
+    suspend fun copy(from: VfsPath, toDir: VfsPath): Result<VfsPath>
+    suspend fun lastModified(path: VfsPath): Result<Long>
+}
+### END
+
+### FILE: core/vfs/local/LocalFileSystem.kt
+package core.vfs.local
+
+import android.content.Context
+import android.net.Uri
+import androidx.documentfile.provider.DocumentFile
+import core.common.AppError
+import core.common.DispatcherProvider
+import core.vfs.IFileSystem
+import core.vfs.model.VfsEntry
+import core.vfs.model.VfsPath
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.InputStream
+import java.io.OutputStream
+
+class LocalFileSystem(
+    private val context: Context,
+    private val dispatcherProvider: DispatcherProvider
+) : IFileSystem {
+
+    override suspend fun openInputStream(path: VfsPath): Result<InputStream> =
+        withContext(dispatcherProvider.io) {
+            try {
+                when (path) {
+                    is VfsPath.LocalFile -> Result.success(File(path.filePath).inputStream())
+                    is VfsPath.SafTree -> {
+                        val input = context.contentResolver.openInputStream(path.uri)
+                            ?: return@withContext Result.failure(AppError.NotFound)
+                        Result.success(input)
+                    }
+                    else -> Result.failure(AppError.UnsupportedOperation)
+                }
+            } catch (e: Throwable) {
+                Result.failure(AppError.IoError(e.message, e))
+            }
+        }
+
+    override suspend fun openOutputStream(path: VfsPath, append: Boolean): Result<OutputStream> =
+        withContext(dispatcherProvider.io) {
+            try {
+                when (path) {
+                    is VfsPath.LocalFile -> {
+                        val out = File(path.filePath).outputStream()
+                        Result.success(out)
+                    }
+                    is VfsPath.SafTree -> {
+                        val out = context.contentResolver.openOutputStream(path.uri, if (append) "wa" else "w")
+                        out?.let { Result.success(it) } ?: Result.failure(AppError.NotFound)
+                    }
+                    else -> Result.failure(AppError.UnsupportedOperation)
+                }
+            } catch (e: Throwable) {
+                Result.failure(AppError.IoError(e.message, e))
+            }
+        }
+
+    override suspend fun createFile(parentDir: VfsPath, name: String, mimeType: String?): Result<VfsPath> =
+        withContext(dispatcherProvider.io) {
+            try {
+                when (parentDir) {
+                    is VfsPath.LocalFile -> {
+                        val dir = File(parentDir.filePath)
+                        if (!dir.exists() || !dir.isDirectory) return@withContext Result.failure(AppError.NotFound)
+                        val file = File(dir, name)
+                        if (file.createNewFile()) Result.success(VfsPath.LocalFile(file.absolutePath))
+                        else Result.failure(AppError.IoError("Create file failed"))
+                    }
+                    is VfsPath.SafTree -> {
+                        val dir = DocumentFile.fromTreeUri(context, parentDir.uri)
+                            ?: return@withContext Result.failure(AppError.NotFound)
+                        val docFile = dir.createFile(mimeType ?: "application/octet-stream", name)
+                            ?: return@withContext Result.failure(AppError.IoError("Create SAF file failed"))
+                        Result.success(VfsPath.SafTree(docFile.uri))
+                    }
+                    else -> Result.failure(AppError.UnsupportedOperation)
+                }
+            } catch (e: Throwable) {
+                Result.failure(AppError.IoError(e.message, e))
+            }
+        }
+
+    // 其它接口如前略 (见包1)
+    // ...
+}
+### END
+

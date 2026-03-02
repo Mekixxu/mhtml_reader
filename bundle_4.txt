@@ -1,0 +1,421 @@
+### FILE: core/session/entity/FolderSessionEntity.kt
+package core.session.entity
+
+import androidx.room.Entity
+import androidx.room.PrimaryKey
+
+/**
+ * 持久化的目录会话，每个会话独立管理其根目录与当前路径。
+ */
+@Entity(tableName = "folder_sessions")
+data class FolderSessionEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0L,
+    val name: String,
+    val rootPath: String,
+    val currentPath: String,
+    val createdAt: Long,
+    val lastAccess: Long
+)
+### END
+
+### FILE: core/session/dao/FolderSessionDao.kt
+package core.session.dao
+
+import androidx.room.*
+import core.session.entity.FolderSessionEntity
+import kotlinx.coroutines.flow.Flow
+
+@Dao
+interface FolderSessionDao {
+    @Insert
+    suspend fun insert(entity: FolderSessionEntity): Long
+
+    @Update
+    suspend fun update(entity: FolderSessionEntity)
+
+    @Query("SELECT * FROM folder_sessions ORDER BY lastAccess DESC")
+    fun observeAll(): Flow<List<FolderSessionEntity>>
+
+    @Query("SELECT * FROM folder_sessions ORDER BY lastAccess DESC")
+    suspend fun getAll(): List<FolderSessionEntity>
+
+    @Query("SELECT * FROM folder_sessions WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): FolderSessionEntity?
+
+    @Query("DELETE FROM folder_sessions WHERE id = :id")
+    suspend fun delete(id: Long)
+
+    @Query("DELETE FROM folder_sessions")
+    suspend fun deleteAll()
+}
+### END
+
+### FILE: core/session/repo/FolderSessionRepository.kt
+package core.session.repo
+
+import core.session.dao.FolderSessionDao
+import core.session.entity.FolderSessionEntity
+import core.common.DispatcherProvider
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.withContext
+
+/**
+ * 会话持久化操作，所有 DB 在 IO 线程。
+ */
+class FolderSessionRepository(
+    private val dao: FolderSessionDao,
+    private val dispatcherProvider: DispatcherProvider
+) {
+    fun observeAll(): Flow<List<FolderSessionEntity>> = dao.observeAll()
+    suspend fun add(name: String, rootPath: String): Long = withContext(dispatcherProvider.io) {
+        val now = System.currentTimeMillis()
+        dao.insert(
+            FolderSessionEntity(
+                name = name,
+                rootPath = rootPath,
+                currentPath = rootPath,
+                createdAt = now,
+                lastAccess = now
+            )
+        )
+    }
+    suspend fun updateCurrentDir(id: Long, currentPath: String) = withContext(dispatcherProvider.io) {
+        dao.getById(id)?.let {
+            dao.update(it.copy(currentPath = currentPath, lastAccess = System.currentTimeMillis()))
+        }
+    }
+    suspend fun switchTo(id: Long) = withContext(dispatcherProvider.io) {
+        dao.getById(id)?.let {
+            dao.update(it.copy(lastAccess = System.currentTimeMillis()))
+        }
+    }
+    suspend fun delete(id: Long) = withContext(dispatcherProvider.io) { dao.delete(id) }
+    suspend fun getById(id: Long): FolderSessionEntity? = withContext(dispatcherProvider.io) { dao.getById(id) }
+    suspend fun getAll(): List<FolderSessionEntity> = withContext(dispatcherProvider.io) { dao.getAll() }
+}
+### END
+
+### FILE: core/session/di/SessionModule.kt
+package core.session.di
+
+import core.session.dao.FolderSessionDao
+import core.session.repo.FolderSessionRepository
+import core.common.DispatcherProvider
+import dagger.Module
+import dagger.Provides
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
+import javax.inject.Singleton
+
+@Module
+@InstallIn(SingletonComponent::class)
+object SessionModule {
+    @Provides @Singleton
+    fun provideFolderSessionRepository(
+        dao: FolderSessionDao,
+        dispatcherProvider: DispatcherProvider
+    ): FolderSessionRepository = FolderSessionRepository(dao, dispatcherProvider)
+}
+### END
+
+### FILE: core/files/domain/model/FolderSession.kt
+package core.files.domain.model
+
+import core.vfs.model.VfsPath
+
+/**
+ * FolderSession领域模型。对应持久化表/实体，currentDir每次浏览变更。
+ */
+data class FolderSession(
+    val id: Long,
+    val name: String,
+    val rootDir: VfsPath,
+    val currentDir: VfsPath,
+    val createdAt: Long,
+    val lastAccess: Long
+)
+### END
+
+### FILE: core/files/domain/model/DirectoryState.kt
+package core.files.domain.model
+
+import core.vfs.model.VfsEntry
+import core.vfs.model.VfsPath
+import core.domain.model.SortOption
+
+/**
+ * 当前会话目录及筛选结果。
+ */
+data class DirectoryState(
+    val sessionId: Long,
+    val currentDir: VfsPath,
+    val entries: List<VfsEntry>,
+    val sort: SortOption,
+    val query: String
+)
+### END
+
+### FILE: core/files/domain/model/SupportedExtensions.kt
+package core.files.domain.model
+
+/**
+ * 支持文件类型的白名单set，仅显示这些文件。
+ */
+val SUPPORTED_EXTENSIONS = setOf("mhtml", "mht", "html", "htm", "pdf")
+### END
+
+### FILE: core/files/domain/usecase/ObserveFolderSessionsUseCase.kt
+package core.files.domain.usecase
+
+import core.session.repo.FolderSessionRepository
+import core.session.entity.FolderSessionEntity
+import core.files.domain.model.FolderSession
+import core.vfs.model.VfsPath
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+
+/**
+ * 观察所有会话列表，领域模型转换。
+ */
+class ObserveFolderSessionsUseCase(
+    private val sessionRepo: FolderSessionRepository
+) {
+    fun execute(): Flow<List<FolderSession>> = sessionRepo.observeAll().map { entities ->
+        entities.map {
+            FolderSession(
+                id = it.id,
+                name = it.name,
+                rootDir = VfsPath.LocalFile(it.rootPath), // todo: 多源适配
+                currentDir = VfsPath.LocalFile(it.currentPath),
+                createdAt = it.createdAt,
+                lastAccess = it.lastAccess
+            )
+        }
+    }
+}
+### END
+
+### FILE: core/files/domain/usecase/CreateFolderSessionUseCase.kt
+package core.files.domain.usecase
+
+import core.session.repo.FolderSessionRepository
+import core.vfs.model.VfsPath
+
+/**
+ * 创建新会话。返回新ID。
+ */
+class CreateFolderSessionUseCase(
+    private val sessionRepo: FolderSessionRepository
+) {
+    suspend fun create(name: String, root: VfsPath): Long {
+        return sessionRepo.add(name, root.raw)
+    }
+}
+### END
+
+### FILE: core/files/domain/usecase/DeleteFolderSessionUseCase.kt
+package core.files.domain.usecase
+
+import core.session.repo.FolderSessionRepository
+
+class DeleteFolderSessionUseCase(
+    private val sessionRepo: FolderSessionRepository
+) {
+    suspend fun delete(sessionId: Long) = sessionRepo.delete(sessionId)
+}
+### END
+
+### FILE: core/files/domain/usecase/UpdateCurrentDirUseCase.kt
+package core.files.domain.usecase
+
+import core.session.repo.FolderSessionRepository
+import core.vfs.model.VfsPath
+
+class UpdateCurrentDirUseCase(
+    private val sessionRepo: FolderSessionRepository
+) {
+    suspend fun setCurrentDir(sessionId: Long, dir: VfsPath) {
+        sessionRepo.updateCurrentDir(sessionId, dir.raw)
+    }
+}
+### END
+
+### FILE: core/files/domain/usecase/ObserveDirectoryUseCase.kt
+package core.files.domain.usecase
+
+import core.vfs.IFileSystem
+import core.vfs.FileSystemResolver
+import core.files.domain.model.SUPPORTED_EXTENSIONS
+import core.files.domain.model.DirectoryState
+import core.domain.model.SortOption
+import core.vfs.model.VfsEntry
+import core.session.repo.FolderSessionRepository
+import core.vfs.model.VfsPath
+import core.common.AppError
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.withContext
+
+/**
+ * 目录流式观察(支持切换/过滤/排序/搜索)。一切在IO线程。
+ * sort/query发生变化都重新pull目录。
+ */
+class ObserveDirectoryUseCase(
+    private val vfsResolver: FileSystemResolver,
+    private val sessionRepo: FolderSessionRepository,
+    private val dispatcherProvider: core.common.DispatcherProvider
+) {
+    fun execute(
+        sessionId: Long,
+        sort: Flow<SortOption>,
+        query: Flow<String>
+    ): Flow<DirectoryState> =
+        combine(
+            sessionRepo.observeAll().map { it.find { s -> s.id == sessionId } },
+            sort, query
+        ) { sessionEntity, sortOption, q ->
+            Triple(sessionEntity, sortOption, q)
+        }
+            .filter { (session, _, _) -> session != null }
+            .distinctUntilChanged()
+            .flatMapLatest { (session, sortOption, q) ->
+                flow {
+                    val sessionEntity = session!!
+                    val currentDir = VfsPath.LocalFile(sessionEntity.currentPath)
+                    val fs = vfsResolver.resolve(currentDir)
+                    val entries: List<VfsEntry> = try {
+                        fs.list(currentDir).getOrElse { throw it }
+                    } catch (e: AppError) {
+                        emit(DirectoryState(sessionId, currentDir, emptyList(), sortOption, q))
+                        return@flow
+                    }
+                    // 先目录，后文件，文件按类型白名单过滤
+                    val folders = entries.filter { it.isDirectory }
+                    val files = entries.filter { !it.isDirectory && it.name.substringAfterLast('.', "").lowercase() in SUPPORTED_EXTENSIONS }
+                    val filteredFiles = if (q.isBlank()) files else files.filter { it.name.contains(q, ignoreCase = true) }
+                    val filteredFolders = if (q.isBlank()) folders else folders.filter { it.name.contains(q, ignoreCase = true) }
+                    val foldersPlusFiles = when (sortOption) {
+                        SortOption.NAME_ASC -> (filteredFolders + filteredFiles).sortedBy { it.name }
+                        SortOption.NAME_DESC -> (filteredFolders + filteredFiles).sortedByDescending { it.name }
+                        SortOption.SIZE_ASC -> (filteredFolders + filteredFiles).sortedBy { it.sizeBytes }
+                        SortOption.SIZE_DESC -> (filteredFolders + filteredFiles).sortedByDescending { it.sizeBytes }
+                        SortOption.MODIFIED_ASC -> (filteredFolders + filteredFiles).sortedBy { it.lastModifiedEpochMs }
+                        SortOption.MODIFIED_DESC -> (filteredFolders + filteredFiles).sortedByDescending { it.lastModifiedEpochMs }
+                    }
+                    emit(DirectoryState(sessionId, currentDir, foldersPlusFiles, sortOption, q))
+                }.flowOn(dispatcherProvider.io)
+            }
+}
+### END
+
+### FILE: core/vfs/FileSystemResolver.kt
+package core.vfs
+
+import core.vfs.model.VfsPath
+
+/**
+ * 文件系统选择器。后续可支持SMB/FTP。
+ */
+interface FileSystemResolver {
+    fun resolve(path: VfsPath): IFileSystem
+}
+### END
+
+### FILE: core/vfs/impl/DefaultFileSystemResolver.kt
+package core.vfs.impl
+
+import core.vfs.IFileSystem
+import core.vfs.FileSystemResolver
+import core.vfs.model.VfsPath
+import core.vfs.local.LocalFileSystem
+
+/**
+ * v1.0 实现，只支持本地，本地SAF后续补齐。
+ */
+class DefaultFileSystemResolver(
+    private val localFileSystem: LocalFileSystem
+) : FileSystemResolver {
+    override fun resolve(path: VfsPath): IFileSystem {
+        // 未来可按path.scheme切换SMB/FTP等
+        return localFileSystem
+    }
+}
+### END
+
+### FILE: core/database/AppDatabase.kt
+package core.database
+
+import androidx.room.Database
+import androidx.room.RoomDatabase
+import androidx.room.TypeConverters
+import core.database.converter.RoomConverters
+import core.database.dao.*
+import core.database.entity.*
+import core.session.entity.FolderSessionEntity
+
+/**
+ * Room schema升级，加入folder_sessions，version+1
+ */
+@Database(
+    entities = [
+        FavoriteEntity::class,
+        HistoryEntity::class,
+        NetworkConfigEntity::class,
+        TitleCacheEntity::class,
+        FolderSessionEntity::class
+    ],
+    version = 2,
+    exportSchema = true
+)
+@TypeConverters(RoomConverters::class)
+abstract class AppDatabase : RoomDatabase() {
+    abstract fun favoriteDao(): FavoriteDao
+    abstract fun historyDao(): HistoryDao
+    abstract fun networkConfigDao(): NetworkConfigDao
+    abstract fun titleCacheDao(): TitleCacheDao
+    abstract fun folderSessionDao(): core.session.dao.FolderSessionDao
+}
+### END
+
+### FILE: core/database/migration/Migration1To2.kt
+package core.database.migration
+
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
+
+/**
+ * Room数据库迁移1->2，新增folder_sessions表。实际内容仅占位，需补上生产DDL。
+ */
+val Migration1To2 = object : Migration(1, 2) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS folder_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                name TEXT NOT NULL,
+                rootPath TEXT NOT NULL,
+                currentPath TEXT NOT NULL,
+                createdAt INTEGER NOT NULL,
+                lastAccess INTEGER NOT NULL
+            )
+        """.trimIndent())
+    }
+}
+### END
+
+### FILE: core/settings/CurrentSessionStore.kt
+package core.settings
+
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
+/**
+ * 非持久化version，真实APP中可用DataStore/Preferences实现持久记录当前会话id。
+ */
+class CurrentSessionStore {
+    private val currentId = MutableStateFlow<Long?>(null)
+    fun observe(): Flow<Long?> = currentId.asStateFlow()
+    suspend fun set(sessionId: Long?) { currentId.value = sessionId }
+    fun get(): Long? = currentId.value
+}
+### END
+

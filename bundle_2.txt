@@ -1,0 +1,530 @@
+### FILE: core/title/TitleExtractor.kt
+package core.title
+
+import core.vfs.model.VfsPath
+import core.database.entity.enums.FileType
+import java.io.File
+
+/**
+ * 标题提取器接口。所有操作在IO线程。允许返回null（提取失败/未找到title）。
+ */
+interface TitleExtractor {
+    suspend fun extractTitle(
+        source: VfsPath,
+        cacheFile: File,
+        fileType: FileType,
+        maxBytesToRead: Long = 1024 * 256 // 默认最大256KB，可调
+    ): String?
+}
+### END
+
+### FILE: core/title/impl/HtmlTitleExtractor.kt
+package core.title.impl
+
+import core.common.DispatcherProvider
+import core.database.entity.enums.FileType
+import core.title.TitleExtractor
+import core.vfs.model.VfsPath
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.util.regex.Pattern
+
+/**
+ * 轻量 title 解析器：只读取文件头部一段字节，正则提取 <title>...</title>。
+ * v1.0 默认按 UTF-8 解码（多数 MHTML/HTML 由浏览器导出时为 UTF-8；需要更强编码支持可后续增强）。
+ */
+class HtmlTitleExtractor(
+    private val dispatcherProvider: DispatcherProvider
+) : TitleExtractor {
+
+    private val titlePattern: Pattern =
+        Pattern.compile("<title[^>]*>(.*?)</title>", Pattern.CASE_INSENSITIVE or Pattern.DOTALL)
+
+    override suspend fun extractTitle(
+        source: VfsPath,
+        cacheFile: File,
+        fileType: FileType,
+        maxBytesToRead: Long
+    ): String? = withContext(dispatcherProvider.io) {
+        if (fileType != FileType.HTML && fileType != FileType.MHTML) return@withContext null
+        if (!cacheFile.exists() || !cacheFile.isFile) return@withContext null
+
+        val maxLenLong = minOf(cacheFile.length(), maxBytesToRead.coerceAtLeast(1))
+        val maxLen = maxLenLong.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+
+        val headText = try {
+            cacheFile.inputStream().buffered().use { input ->
+                val buf = ByteArray(maxLen)
+                val read = input.read(buf)
+                if (read <= 0) return@withContext null
+                // v1.0：UTF-8 解码
+                String(buf, 0, read, Charsets.UTF_8)
+            }
+        } catch (_: Exception) {
+            return@withContext null
+        }
+
+        val matcher = titlePattern.matcher(headText)
+        val title = if (matcher.find()) matcher.group(1) else null
+        title?.trim()?.takeIf { it.isNotBlank() }
+    }
+}
+
+### END
+
+### FILE: core/title/impl/PdfTitleExtractor.kt
+package core.title.impl
+
+import core.common.DispatcherProvider
+import core.database.entity.enums.FileType
+import core.title.TitleExtractor
+import core.vfs.model.VfsPath
+import kotlinx.coroutines.withContext
+import java.io.File
+
+/**
+ * PDF 标题提取器（v1.0 骨架）。
+ * - 若当前 PDF 引擎无法读取 metadata，则返回 null，UI 继续显示文件名。
+ * - 预留接口便于后续增强（metadata / 文本抽取）。
+ */
+class PdfTitleExtractor(
+    private val dispatcherProvider: DispatcherProvider
+) : TitleExtractor {
+
+    override suspend fun extractTitle(
+        source: VfsPath,
+        cacheFile: File,
+        fileType: FileType,
+        maxBytesToRead: Long
+    ): String? = withContext(dispatcherProvider.io) {
+        if (fileType != FileType.PDF) return@withContext null
+        // TODO: 接入你们选定的 PDF 引擎读取 DocumentInfo.title
+        null
+    }
+}
+
+### END
+
+### FILE: core/title/TitleExtractorFacade.kt
+package core.title
+
+import core.database.entity.enums.FileType
+import core.vfs.model.VfsPath
+import java.io.File
+
+/**
+ * 仅做路由：由 DI 注入各具体实现，避免隐藏依赖。
+ */
+class TitleExtractorFacade(
+    private val htmlExtractor: TitleExtractor,
+    private val pdfExtractor: TitleExtractor
+) : TitleExtractor {
+
+    override suspend fun extractTitle(
+        source: VfsPath,
+        cacheFile: File,
+        fileType: FileType,
+        maxBytesToRead: Long
+    ): String? = when (fileType) {
+        FileType.HTML, FileType.MHTML -> htmlExtractor.extractTitle(source, cacheFile, fileType, maxBytesToRead)
+        FileType.PDF -> pdfExtractor.extractTitle(source, cacheFile, fileType, maxBytesToRead)
+        else -> null
+    }
+}
+
+### END
+
+### FILE: core/domain/model/DisplayEntry.kt
+package core.domain.model
+
+import core.vfs.model.VfsPath
+
+/**
+ * 文件列表展示项，同时持有文件名与真实提取title。
+ */
+data class DisplayEntry(
+    val path: VfsPath,
+    val fileName: String,
+    val displayTitle: String,
+    val lastModified: Long,
+    val sizeBytes: Long
+)
+### END
+
+### FILE: core/domain/model/SortOption.kt
+package core.domain.model
+
+enum class SortOption {
+    NAME_ASC, NAME_DESC,
+    SIZE_ASC, SIZE_DESC,
+    MODIFIED_ASC, MODIFIED_DESC
+}
+### END
+
+### FILE: core/domain/usecase/ListDirectoryUseCase.kt
+package core.domain.usecase
+
+import core.common.DispatcherProvider
+import core.domain.model.SortOption
+import core.vfs.IFileSystem
+import core.vfs.model.VfsEntry
+import core.vfs.model.VfsPath
+import kotlinx.coroutines.withContext
+
+/**
+ * 仅列出元数据，不触发 Title 补齐。
+ * 注意：过滤应按文件扩展名（mhtml/mht/html/htm/pdf）。
+ */
+class ListDirectoryUseCase(
+    private val fileSystem: IFileSystem,
+    private val dispatcherProvider: DispatcherProvider
+) {
+    suspend fun list(
+        dir: VfsPath,
+        allowedExtensions: Set<String>,
+        sort: SortOption
+    ): List<VfsEntry> = withContext(dispatcherProvider.io) {
+        val all = fileSystem.list(dir) // 以包1真实签名为准
+        val filtered = all.filter { e ->
+            val ext = e.name.substringAfterLast('.', missingDelimiterValue = "").lowercase()
+            ext in allowedExtensions
+        }
+
+        when (sort) {
+            SortOption.NAME_ASC -> filtered.sortedBy { it.name.lowercase() }
+            SortOption.NAME_DESC -> filtered.sortedByDescending { it.name.lowercase() }
+            SortOption.SIZE_ASC -> filtered.sortedBy { it.sizeBytes }
+            SortOption.SIZE_DESC -> filtered.sortedByDescending { it.sizeBytes }
+            SortOption.MODIFIED_ASC -> filtered.sortedBy { it.lastModifiedEpochMs }
+            SortOption.MODIFIED_DESC -> filtered.sortedByDescending { it.lastModifiedEpochMs }
+        }
+    }
+}
+
+### END
+
+### FILE: core/domain/usecase/ObserveDisplayTitlesUseCase.kt
+package core.domain.usecase
+
+import core.cache.CacheOpenManager
+import core.common.DispatcherProvider
+import core.database.entity.TitleCacheEntity
+import core.database.entity.enums.FileType
+import core.data.repo.TitleCacheRepository
+import core.domain.model.DisplayEntry
+import core.title.TitleExtractor
+import core.vfs.model.VfsEntry
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import java.util.concurrent.ConcurrentHashMap
+
+/**
+ * 把文件列表转换为“可展示标题”的列表：
+ * - 首次立刻返回 displayTitle = fileName
+ * - 后台提取真实 title，写入 title_cache，并持续推送更新后的列表
+ *
+ * 设计要点：
+ * - 并发受控（Semaphore）
+ * - 去重（同一路径同时只允许一个提取任务 in-flight）
+ * - 可取消（上游取消 => 本 channelFlow scope 取消 => 任务停止）
+ */
+class ObserveDisplayTitlesUseCase(
+    private val cacheOpenManager: CacheOpenManager,
+    private val titleCacheRepo: TitleCacheRepository,
+    private val titleExtractor: TitleExtractor,
+    private val dispatcherProvider: DispatcherProvider
+) {
+
+    private val inFlight = ConcurrentHashMap<String, Boolean>() // pathRaw -> true
+
+    fun execute(
+        entries: Flow<List<VfsEntry>>,
+        parallelism: Int = 2,
+        maxBytesToRead: Long = 256L * 1024L
+    ): Flow<List<DisplayEntry>> = channelFlow {
+        val semaphore = Semaphore(parallelism.coerceAtLeast(1))
+        val updates = Channel<Pair<String, String>>(capacity = Channel.BUFFERED) // (pathRaw, newTitle)
+
+        // 汇总态：当前列表（pathRaw -> DisplayEntry）
+        val current = LinkedHashMap<String, DisplayEntry>()
+
+        // 消费更新并重发整表
+        val updateJob = launch(dispatcherProvider.default) {
+            for ((pathRaw, newTitle) in updates) {
+                val old = current[pathRaw] ?: continue
+                if (old.displayTitle == newTitle) continue
+                current[pathRaw] = old.copy(displayTitle = newTitle)
+                send(current.values.toList())
+            }
+        }
+
+        try {
+            entries.collectLatest { list ->
+                // 1) 初始化 current，立刻 send（filename）
+                current.clear()
+                list.forEach { e ->
+                    val display = DisplayEntry(
+                        path = e.path,
+                        fileName = e.name,
+                        displayTitle = e.name,
+                        lastModified = e.lastModifiedEpochMs,
+                        sizeBytes = e.sizeBytes
+                    )
+                    current[e.path.raw] = display
+                }
+                send(current.values.toList())
+
+                // 2) 针对每个 entry 启动后台任务（并发受控+去重）
+                list.forEach { e ->
+                    val pathRaw = e.path.raw
+
+                    launch(dispatcherProvider.io) {
+                        // 去重：同一路径只跑一个
+                        if (inFlight.putIfAbsent(pathRaw, true) != null) return@launch
+                        try {
+                            semaphore.withPermit {
+                                // 2.1 先读缓存
+                                val cached = titleCacheRepo.get(pathRaw)
+                                if (cached != null && cached.lastModified == e.lastModifiedEpochMs) {
+                                    updates.trySend(pathRaw to cached.title)
+                                    return@withPermit
+                                }
+
+                                // 2.2 打开到缓存（包1统一链路）
+                                val openResult = cacheOpenManager.openToCache(e.path)
+                                val fileType = guessFileType(e.name)
+                                val title = titleExtractor.extractTitle(
+                                    source = e.path,
+                                    cacheFile = openResult.cacheFile,
+                                    fileType = fileType,
+                                    maxBytesToRead = maxBytesToRead
+                                )?.trim()
+
+                                if (!title.isNullOrBlank()) {
+                                    titleCacheRepo.upsert(
+                                        TitleCacheEntity(
+                                            path = pathRaw,
+                                            title = title,
+                                            lastModified = e.lastModifiedEpochMs,
+                                            updatedAt = System.currentTimeMillis()
+                                        )
+                                    )
+                                    updates.trySend(pathRaw to title)
+                                }
+                                // 2.3 可选：若 openToCache 为“标题提取”产生了临时缓存，应在此处释放
+                                // 取决于你们包1的缓存生命周期 API：可在这里增加 cacheOpenManager.release(openResult.cacheKey)
+                            }
+                        } catch (ce: CancellationException) {
+                            throw ce
+                        } catch (_: Exception) {
+                            // 标题提取失败不影响列表；继续显示文件名
+                        } finally {
+                            inFlight.remove(pathRaw)
+                        }
+                    }
+                }
+            }
+        } finally {
+            updates.close()
+            updateJob.cancel()
+        }
+    }
+
+    private fun guessFileType(fileName: String): FileType = when {
+        fileName.endsWith(".pdf", true) -> FileType.PDF
+        fileName.endsWith(".mhtml", true) || fileName.endsWith(".mht", true) -> FileType.MHTML
+        fileName.endsWith(".html", true) || fileName.endsWith(".htm", true) -> FileType.HTML
+        else -> FileType.WEB
+    }
+}
+
+### END
+
+### FILE: core/domain/usecase/EnforceHistoryRetentionUseCase.kt
+package core.domain.usecase
+
+import core.data.repo.HistoryRepository
+
+/**
+ * 按用户设定自动淘汰历史记录。
+ */
+class EnforceHistoryRetentionUseCase(
+    private val historyRepo: HistoryRepository
+) {
+    suspend fun run(maxItems: Int, maxDays: Int) {
+        historyRepo.enforceRetention(maxItems, maxDays)
+    }
+}
+### END
+
+### FILE: core/domain/usecase/CleanupTitleCacheUseCase.kt
+package core.domain.usecase
+
+import core.data.repo.TitleCacheRepository
+
+/**
+ * 按指定天数自动清理旧TitleCache数据。
+ */
+class CleanupTitleCacheUseCase(
+    private val titleCacheRepo: TitleCacheRepository
+) {
+    suspend fun run(maxDaysToKeep: Int) {
+        val cutoff = System.currentTimeMillis() - maxDaysToKeep * 86400_000L
+        titleCacheRepo.deleteOlderThan(cutoff)
+    }
+}
+### END
+
+### FILE: core/domain/di/TitleDomainModule.kt
+package core.domain.di
+
+import core.cache.CacheOpenManager
+import core.common.DispatcherProvider
+import core.data.repo.HistoryRepository
+import core.data.repo.TitleCacheRepository
+import core.domain.usecase.CleanupTitleCacheUseCase
+import core.domain.usecase.EnforceHistoryRetentionUseCase
+import core.domain.usecase.ObserveDisplayTitlesUseCase
+import core.title.TitleExtractor
+import core.title.TitleExtractorFacade
+import core.title.impl.HtmlTitleExtractor
+import core.title.impl.PdfTitleExtractor
+import dagger.Module
+import dagger.Provides
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
+import javax.inject.Singleton
+
+@Module
+@InstallIn(SingletonComponent::class)
+object TitleDomainModule {
+
+    @Provides
+    @Singleton
+    fun provideHtmlTitleExtractor(dispatcherProvider: DispatcherProvider): HtmlTitleExtractor =
+        HtmlTitleExtractor(dispatcherProvider)
+
+    @Provides
+    @Singleton
+    fun providePdfTitleExtractor(dispatcherProvider: DispatcherProvider): PdfTitleExtractor =
+        PdfTitleExtractor(dispatcherProvider)
+
+    @Provides
+    @Singleton
+    fun provideTitleExtractor(
+        html: HtmlTitleExtractor,
+        pdf: PdfTitleExtractor
+    ): TitleExtractor = TitleExtractorFacade(html, pdf)
+
+    @Provides
+    @Singleton
+    fun provideObserveDisplayTitlesUseCase(
+        cacheOpenManager: CacheOpenManager,
+        titleCacheRepo: TitleCacheRepository,
+        titleExtractor: TitleExtractor,
+        dispatcherProvider: DispatcherProvider
+    ): ObserveDisplayTitlesUseCase =
+        ObserveDisplayTitlesUseCase(cacheOpenManager, titleCacheRepo, titleExtractor, dispatcherProvider)
+
+    @Provides
+    @Singleton
+    fun provideEnforceHistoryRetentionUseCase(historyRepo: HistoryRepository): EnforceHistoryRetentionUseCase =
+        EnforceHistoryRetentionUseCase(historyRepo)
+
+    @Provides
+    @Singleton
+    fun provideCleanupTitleCacheUseCase(titleCacheRepo: TitleCacheRepository): CleanupTitleCacheUseCase =
+        CleanupTitleCacheUseCase(titleCacheRepo)
+}
+
+### END
+
+### FILE: core/work/HistoryRetentionWorker.kt
+package core.work
+
+import android.content.Context
+import androidx.hilt.work.HiltWorker
+import androidx.work.CoroutineWorker
+import androidx.work.WorkerParameters
+import core.domain.usecase.EnforceHistoryRetentionUseCase
+import dagger.assisted.Assisted
+import dagger.assisted.AssistedInject
+
+@HiltWorker
+class HistoryRetentionWorker @AssistedInject constructor(
+    @Assisted appContext: Context,
+    @Assisted params: WorkerParameters,
+    private val enforceUseCase: EnforceHistoryRetentionUseCase
+) : CoroutineWorker(appContext, params) {
+
+    override suspend fun doWork(): Result {
+        val maxItems = inputData.getInt("maxItems", 500)
+        val maxDays = inputData.getInt("maxDays", 365)
+        enforceUseCase.run(maxItems, maxDays)
+        return Result.success()
+    }
+}
+
+### END
+
+### FILE: core/work/TitleCacheCleanupWorker.kt
+package core.work
+
+import android.content.Context
+import androidx.hilt.work.HiltWorker
+import androidx.work.CoroutineWorker
+import androidx.work.WorkerParameters
+import core.domain.usecase.CleanupTitleCacheUseCase
+import dagger.assisted.Assisted
+import dagger.assisted.AssistedInject
+
+@HiltWorker
+class TitleCacheCleanupWorker @AssistedInject constructor(
+    @Assisted appContext: Context,
+    @Assisted params: WorkerParameters,
+    private val cleanupUseCase: CleanupTitleCacheUseCase
+) : CoroutineWorker(appContext, params) {
+
+    override suspend fun doWork(): Result {
+        val maxDays = inputData.getInt("maxDaysToKeep", 90)
+        cleanupUseCase.run(maxDays)
+        return Result.success()
+    }
+}
+
+### END
+
+### FILE: core/work/WorkModule.kt
+package core.work
+
+import core.domain.usecase.EnforceHistoryRetentionUseCase
+import core.domain.usecase.CleanupTitleCacheUseCase
+import dagger.Module
+import dagger.Provides
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
+import javax.inject.Singleton
+
+// DELETE THIS FILE.
+// 不要在 Hilt module 里手动 new Worker，更不要传 null Context/伪造 WorkerParameters。
+// Worker 应由 WorkManager 创建，并通过 HiltWorker + AssistedInject 注入依赖。
+
+@Module
+@InstallIn(SingletonComponent::class)
+object WorkModule {
+    @Provides @Singleton
+    fun provideHistoryRetentionWorker(useCase: EnforceHistoryRetentionUseCase): HistoryRetentionWorker =
+        HistoryRetentionWorker(null, WorkerParameters(null, null, emptyList(), 0, null), useCase)
+
+    @Provides @Singleton
+    fun provideTitleCacheCleanupWorker(useCase: CleanupTitleCacheUseCase): TitleCacheCleanupWorker =
+        TitleCacheCleanupWorker(null, WorkerParameters(null, null, emptyList(), 0, null), useCase)
+}
+### END
+
