@@ -1,0 +1,230 @@
+### FILE: core/settings/model/AppSettings.kt
+package core.settings.model
+
+/**
+ * 应用可配置项（SSOT要求）
+ */
+data class AppSettings(
+    val historyMaxItems: Int = DEFAULT_HISTORY_MAX_ITEMS,
+    val historyMaxDays: Int = DEFAULT_HISTORY_MAX_DAYS,
+    val cacheMaxBytes: Long = DEFAULT_CACHE_MAX_BYTES,
+    val titleCacheMaxDays: Int = DEFAULT_TITLE_CACHE_MAX_DAYS
+) {
+    companion object {
+        const val DEFAULT_HISTORY_MAX_ITEMS = 500
+        const val DEFAULT_HISTORY_MAX_DAYS = 365
+        const val DEFAULT_CACHE_MAX_BYTES = 2L * 1024 * 1024 * 1024 // 2GB
+        const val DEFAULT_TITLE_CACHE_MAX_DAYS = 90
+        const val MIN_HISTORY_MAX_ITEMS = 1
+        const val MIN_HISTORY_MAX_DAYS = 1
+        const val MIN_CACHE_MAX_BYTES = 50L * 1024 * 1024 // 50MB
+        const val MIN_TITLE_CACHE_MAX_DAYS = 1
+    }
+}
+### END
+
+### FILE: core/settings/store/SettingsKeys.kt
+package core.settings.store
+
+import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
+
+/**
+ * DataStore key定义
+ */
+object SettingsKeys {
+    val HISTORY_MAX_ITEMS = intPreferencesKey("history_max_items")
+    val HISTORY_MAX_DAYS = intPreferencesKey("history_max_days")
+    val CACHE_MAX_BYTES = longPreferencesKey("cache_max_bytes")
+    val TITLE_CACHE_MAX_DAYS = intPreferencesKey("title_cache_max_days")
+}
+### END
+
+### FILE: core/settings/store/SettingsDataStore.kt
+package core.settings.store
+
+import android.content.Context
+import androidx.datastore.preferences.preferencesDataStore
+
+/**
+ * DataStore实例（for DI）
+ */
+val Context.settingsDataStore by preferencesDataStore(name = "app_settings")
+### END
+
+### FILE: core/settings/repo/SettingsRepository.kt
+package core.settings.repo
+
+import android.content.Context
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.edit
+import core.settings.model.AppSettings
+import core.settings.store.SettingsKeys
+import core.settings.store.settingsDataStore
+import core.settings.util.SettingsSanitizer
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
+
+/**
+ * Settings观察与设置。所有IO通过withContext(Dispatchers.IO)
+ */
+class SettingsRepository(
+    private val context: Context
+) {
+    fun observe(): Flow<AppSettings> = context.settingsDataStore.data.map { prefs ->
+        AppSettings(
+            historyMaxItems = prefs[SettingsKeys.HISTORY_MAX_ITEMS] ?: AppSettings.DEFAULT_HISTORY_MAX_ITEMS,
+            historyMaxDays = prefs[SettingsKeys.HISTORY_MAX_DAYS] ?: AppSettings.DEFAULT_HISTORY_MAX_DAYS,
+            cacheMaxBytes = prefs[SettingsKeys.CACHE_MAX_BYTES] ?: AppSettings.DEFAULT_CACHE_MAX_BYTES,
+            titleCacheMaxDays = prefs[SettingsKeys.TITLE_CACHE_MAX_DAYS] ?: AppSettings.DEFAULT_TITLE_CACHE_MAX_DAYS
+        )
+    }
+
+    suspend fun setHistoryMaxItems(value: Int) = withContext(Dispatchers.IO) {
+        val v = SettingsSanitizer.clampHistoryMaxItems(value)
+        context.settingsDataStore.edit { it[SettingsKeys.HISTORY_MAX_ITEMS] = v }
+    }
+    suspend fun setHistoryMaxDays(value: Int) = withContext(Dispatchers.IO) {
+        val v = SettingsSanitizer.clampHistoryMaxDays(value)
+        context.settingsDataStore.edit { it[SettingsKeys.HISTORY_MAX_DAYS] = v }
+    }
+    suspend fun setCacheMaxBytes(value: Long) = withContext(Dispatchers.IO) {
+        val v = SettingsSanitizer.clampCacheMaxBytes(value)
+        context.settingsDataStore.edit { it[SettingsKeys.CACHE_MAX_BYTES] = v }
+    }
+    suspend fun setTitleCacheMaxDays(value: Int) = withContext(Dispatchers.IO) {
+        val v = SettingsSanitizer.clampTitleCacheMaxDays(value)
+        context.settingsDataStore.edit { it[SettingsKeys.TITLE_CACHE_MAX_DAYS] = v }
+    }
+}
+### END
+
+### FILE: core/settings/util/SettingsSanitizer.kt
+package core.settings.util
+
+import core.settings.model.AppSettings
+
+/**
+ * 用户设置安全范围过滤
+ */
+object SettingsSanitizer {
+    fun clampHistoryMaxItems(v: Int): Int = v.coerceAtLeast(AppSettings.MIN_HISTORY_MAX_ITEMS)
+    fun clampHistoryMaxDays(v: Int): Int = v.coerceAtLeast(AppSettings.MIN_HISTORY_MAX_DAYS)
+    fun clampCacheMaxBytes(v: Long): Long = v.coerceAtLeast(AppSettings.MIN_CACHE_MAX_BYTES)
+    fun clampTitleCacheMaxDays(v: Int): Int = v.coerceAtLeast(AppSettings.MIN_TITLE_CACHE_MAX_DAYS)
+}
+### END
+
+### FILE: core/maintenance/MaintenanceManager.kt
+package core.maintenance
+
+/**
+ * 统一维护入口接口：启动/后台清理可按需调度。
+ */
+interface MaintenanceManager {
+    suspend fun runStartupMaintenance()
+    suspend fun runBackgroundMaintenance()
+}
+### END
+
+### FILE: core/maintenance/DefaultMaintenanceManager.kt
+package core.maintenance
+
+import core.settings.repo.SettingsRepository
+import core.cache.OrphanCacheCleaner
+import core.cache.CacheEvictor
+import core.data.repo.HistoryRepository
+import core.data.repo.TitleCacheRepository
+import core.common.DispatcherProvider
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
+
+/**
+ * 启动/后台维护管理器。所有IO都在dispatcherProvider.io。
+ * - orphan cache 清理
+ * - cache定期LRU淘汰（maxBytes）
+ * - history裁剪
+ * - title_cache清理
+ */
+class DefaultMaintenanceManager(
+    private val settingsRepo: SettingsRepository,
+    private val orphanCleaner: OrphanCacheCleaner,
+    private val cacheEvictor: CacheEvictor,
+    private val historyRepo: HistoryRepository,
+    private val titleCacheRepo: TitleCacheRepository,
+    private val dispatcherProvider: DispatcherProvider
+) : MaintenanceManager {
+
+    override suspend fun runStartupMaintenance() = withContext(dispatcherProvider.io) {
+        val settings = settingsRepo.observe().first()
+        orphanCleaner.clean()
+        cacheEvictor.evictIfNeeded(settings.cacheMaxBytes)
+        historyRepo.enforceRetention(settings.historyMaxItems, settings.historyMaxDays)
+        val cutoff = System.currentTimeMillis() - settings.titleCacheMaxDays * 86400_000L
+        titleCacheRepo.deleteOlderThan(cutoff)
+    }
+
+    override suspend fun runBackgroundMaintenance() = runStartupMaintenance() // 可复用
+}
+### END
+
+### FILE: core/maintenance/di/MaintenanceModule.kt
+package core.maintenance.di
+
+import core.maintenance.DefaultMaintenanceManager
+import core.maintenance.MaintenanceManager
+import core.settings.repo.SettingsRepository
+import core.cache.OrphanCacheCleaner
+import core.cache.CacheEvictor
+import core.data.repo.HistoryRepository
+import core.data.repo.TitleCacheRepository
+import core.common.DispatcherProvider
+import dagger.Module
+import dagger.Provides
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
+import javax.inject.Singleton
+
+@Module
+@InstallIn(SingletonComponent::class)
+object MaintenanceModule {
+    @Provides @Singleton
+    fun provideMaintenanceManager(
+        settingsRepo: SettingsRepository,
+        orphanCleaner: OrphanCacheCleaner,
+        cacheEvictor: CacheEvictor,
+        historyRepo: HistoryRepository,
+        titleCacheRepo: TitleCacheRepository,
+        dispatcherProvider: DispatcherProvider
+    ): MaintenanceManager = DefaultMaintenanceManager(
+        settingsRepo,
+        orphanCleaner,
+        cacheEvictor,
+        historyRepo,
+        titleCacheRepo,
+        dispatcherProvider
+    )
+}
+### END
+
+### FILE: core/settings/di/SettingsModule.kt
+package core.settings.di
+
+import android.content.Context
+import core.settings.repo.SettingsRepository
+import dagger.Module
+import dagger.Provides
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
+import javax.inject.Singleton
+
+@Module
+@InstallIn(SingletonComponent::class)
+object SettingsModule {
+    @Provides @Singleton
+    fun provideSettingsRepository(context: Context): SettingsRepository = SettingsRepository(context)
+}
+### END
+
