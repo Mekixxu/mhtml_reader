@@ -1,0 +1,351 @@
+### FILE: core/network/domain/model/NetworkProtocol.kt
+package core.network.domain.model
+
+/**
+ * 网络协议枚举，Domain层可独立，便于后续Smb/Ftp/WebDAV扩展。
+ */
+enum class NetworkProtocol {
+    SMB,
+    FTP;
+
+    companion object {
+        fun fromString(value: String?): NetworkProtocol =
+            when (value?.uppercase()) {
+                "SMB" -> SMB
+                "FTP" -> FTP
+                else -> FTP // 默认FTP（安全）
+            }
+    }
+}
+### END
+
+### FILE: core/network/domain/model/NetworkConfig.kt
+package core.network.domain.model
+
+/**
+ * 后端业务层网络配置模型。
+ */
+data class NetworkConfig(
+    val id: Long? = null,
+    val name: String,
+    val protocol: NetworkProtocol,
+    val host: String,
+    val port: Int,
+    val username: String,
+    val password: String,
+    val defaultPath: String,
+    val anonymous: Boolean = false
+)
+### END
+
+### FILE: core/network/domain/mapper/NetworkConfigMapper.kt
+package core.network.domain.mapper
+
+import core.network.domain.model.NetworkConfig
+import core.network.domain.model.NetworkProtocol
+import core.database.entity.NetworkConfigEntity
+import core.database.entity.enums.NetworkProtocol as EntityNetworkProtocol
+
+/**
+ * entity <-> domain model 映射工具
+ */
+object NetworkConfigMapper {
+    fun entityToDomain(entity: NetworkConfigEntity): NetworkConfig = NetworkConfig(
+        id = entity.id,
+        name = entity.name,
+        protocol = NetworkProtocol.fromString(entity.protocol.name),
+        host = entity.host,
+        port = entity.port,
+        username = entity.username,
+        password = entity.password,
+        defaultPath = if (entity.defaultPath.isBlank()) "/" else entity.defaultPath,
+        anonymous = entity.username == "anonymous"
+    )
+
+    fun domainToEntity(config: NetworkConfig): NetworkConfigEntity = NetworkConfigEntity(
+        id = config.id ?: 0L,
+        name = config.name,
+        protocol = EntityNetworkProtocol.valueOf(config.protocol.name),
+        host = config.host,
+        port = config.port,
+        username = config.username,
+        password = config.password,
+        defaultPath = if (config.defaultPath.isBlank()) "/" else config.defaultPath
+    )
+}
+### END
+
+### FILE: core/network/domain/validator/NetworkConfigValidator.kt
+package core.network.domain.validator
+
+import core.network.domain.model.NetworkConfig
+import core.network.domain.model.NetworkProtocol
+import core.common.AppError
+
+/**
+ * 校验、补默认端口、匿名规则。
+ */
+object NetworkConfigValidator {
+
+    private val SMB_DEFAULT_PORT = 445
+    private val FTP_DEFAULT_PORT = 21
+
+    fun validate(config: NetworkConfig): Result<NetworkConfig> {
+        val host = config.host.trim()
+        if (host.isEmpty()) return Result.failure(AppError.InvalidUri)
+        val port = when {
+            config.port in 1..65535 -> config.port
+            config.protocol == NetworkProtocol.SMB -> SMB_DEFAULT_PORT
+            config.protocol == NetworkProtocol.FTP -> FTP_DEFAULT_PORT
+            else -> return Result.failure(AppError.InvalidUri)
+        }
+        if (port !in 1..65535) return Result.failure(AppError.InvalidUri)
+        val username = if (config.anonymous && config.protocol == NetworkProtocol.FTP) "anonymous" else config.username
+        val defaultPath = if (config.defaultPath.isBlank()) "/" else config.defaultPath
+        val isAnon = config.anonymous && config.protocol == NetworkProtocol.FTP
+        // SMB匿名规则：v1.0允许空用户名/密码，后续可加限制
+        return Result.success(
+            config.copy(
+                host = host,
+                port = port,
+                username = username,
+                defaultPath = defaultPath,
+                anonymous = isAnon
+            )
+        )
+    }
+}
+### END
+
+### FILE: core/network/domain/usecase/CreateNetworkConfigUseCase.kt
+package core.network.domain.usecase
+
+import core.network.domain.model.NetworkConfig
+import core.network.domain.validator.NetworkConfigValidator
+import core.data.repo.NetworkConfigRepository
+import core.network.domain.mapper.NetworkConfigMapper
+import core.common.DispatcherProvider
+import kotlinx.coroutines.withContext
+
+/**
+ * 创建网络配置，应用校验/补默认/规范化。
+ */
+class CreateNetworkConfigUseCase(
+    private val repo: NetworkConfigRepository,
+    private val dispatcherProvider: DispatcherProvider
+) {
+    suspend fun create(config: NetworkConfig): Result<Long> = withContext(dispatcherProvider.io) {
+        NetworkConfigValidator.validate(config).fold(
+            onSuccess = { validated ->
+                val id = repo.add(NetworkConfigMapper.domainToEntity(validated))
+                Result.success(id)
+            },
+            onFailure = { Result.failure(it) }
+        )
+    }
+}
+### END
+
+### FILE: core/network/domain/usecase/UpdateNetworkConfigUseCase.kt
+package core.network.domain.usecase
+
+import core.network.domain.model.NetworkConfig
+import core.network.domain.validator.NetworkConfigValidator
+import core.data.repo.NetworkConfigRepository
+import core.network.domain.mapper.NetworkConfigMapper
+import core.common.DispatcherProvider
+import kotlinx.coroutines.withContext
+
+/**
+ * 更新网络配置，校验后保存。
+ */
+class UpdateNetworkConfigUseCase(
+    private val repo: NetworkConfigRepository,
+    private val dispatcherProvider: DispatcherProvider
+) {
+    suspend fun update(config: NetworkConfig): Result<Unit> = withContext(dispatcherProvider.io) {
+        NetworkConfigValidator.validate(config).fold(
+            onSuccess = { validated ->
+                repo.update(NetworkConfigMapper.domainToEntity(validated))
+                Result.success(Unit)
+            },
+            onFailure = { Result.failure(it) }
+        )
+    }
+}
+### END
+
+### FILE: core/network/domain/usecase/DeleteNetworkConfigUseCase.kt
+package core.network.domain.usecase
+
+import core.data.repo.NetworkConfigRepository
+import core.common.DispatcherProvider
+import kotlinx.coroutines.withContext
+
+class DeleteNetworkConfigUseCase(
+    private val repo: NetworkConfigRepository,
+    private val dispatcherProvider: DispatcherProvider
+) {
+    suspend fun delete(id: Long) = withContext(dispatcherProvider.io) { repo.delete(id) }
+}
+### END
+
+### FILE: core/network/domain/usecase/ObserveNetworkConfigsUseCase.kt
+package core.network.domain.usecase
+
+import core.data.repo.NetworkConfigRepository
+import core.network.domain.model.NetworkConfig
+import core.network.domain.mapper.NetworkConfigMapper
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+
+/**
+ * 观察所有网络配置项、集成domain转换。
+ */
+class ObserveNetworkConfigsUseCase(
+    private val repo: NetworkConfigRepository
+) {
+    fun observe(): Flow<List<NetworkConfig>> =
+        repo.observeAll().map { list -> list.map(NetworkConfigMapper::entityToDomain) }
+}
+### END
+
+### FILE: core/network/domain/usecase/GetNetworkConfigUseCase.kt
+package core.network.domain.usecase
+
+import core.data.repo.NetworkConfigRepository
+import core.network.domain.model.NetworkConfig
+import core.network.domain.mapper.NetworkConfigMapper
+import core.common.DispatcherProvider
+import kotlinx.coroutines.withContext
+
+class GetNetworkConfigUseCase(
+    private val repo: NetworkConfigRepository,
+    private val dispatcherProvider: DispatcherProvider
+) {
+    suspend fun getById(id: Long): NetworkConfig? = withContext(dispatcherProvider.io) {
+        repo.getById(id)?.let(NetworkConfigMapper::entityToDomain)
+    }
+}
+### END
+
+### FILE: core/network/domain/usecase/TestNetworkConnectionUseCase.kt
+package core.network.domain.usecase
+
+import core.network.domain.model.NetworkConfig
+import core.network.domain.validator.NetworkConfigValidator
+import core.common.DispatcherProvider
+import kotlinx.coroutines.withContext
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.Socket
+
+/**
+ * 测试网络连接占位（校验、DNS、端口通）。
+ * v1.0解释：仅做IP解析+端口连接测试。
+ */
+class TestNetworkConnectionUseCase(
+    private val dispatcherProvider: DispatcherProvider
+) {
+    sealed class TestResult {
+        data class Success(val latencyMs: Long) : TestResult()
+        data class Fail(val error: Throwable) : TestResult()
+    }
+
+    suspend fun test(config: NetworkConfig, timeoutMs: Int = 3000): TestResult =
+        withContext(dispatcherProvider.io) {
+            NetworkConfigValidator.validate(config).fold(
+                onSuccess = { valid ->
+                    try {
+                        val start = System.nanoTime()
+                        val address = InetAddress.getByName(valid.host)
+                        val socket = Socket()
+                        val socketAddress = InetSocketAddress(address, valid.port)
+                        socket.connect(socketAddress, timeoutMs)
+                        socket.close()
+                        val elapsed = (System.nanoTime() - start) / 1_000_000
+                        TestResult.Success(elapsed)
+                    } catch (e: Exception) {
+                        TestResult.Fail(e)
+                    }
+                },
+                onFailure = { TestResult.Fail(it) }
+            )
+        }
+}
+### END
+
+### FILE: core/network/di/NetworkModule.kt
+package core.network.di
+
+import core.data.repo.NetworkConfigRepository
+import core.common.DispatcherProvider
+import core.network.domain.usecase.*
+import dagger.Module
+import dagger.Provides
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
+import javax.inject.Singleton
+
+@Module
+@InstallIn(SingletonComponent::class)
+object NetworkModule {
+    @Provides @Singleton
+    fun provideCreateNetworkConfigUseCase(
+        repo: NetworkConfigRepository,
+        dispatcherProvider: DispatcherProvider
+    ) = CreateNetworkConfigUseCase(repo, dispatcherProvider)
+
+    @Provides @Singleton
+    fun provideUpdateNetworkConfigUseCase(
+        repo: NetworkConfigRepository,
+        dispatcherProvider: DispatcherProvider
+    ) = UpdateNetworkConfigUseCase(repo, dispatcherProvider)
+
+    @Provides @Singleton
+    fun provideDeleteNetworkConfigUseCase(
+        repo: NetworkConfigRepository,
+        dispatcherProvider: DispatcherProvider
+    ) = DeleteNetworkConfigUseCase(repo, dispatcherProvider)
+
+    @Provides @Singleton
+    fun provideObserveNetworkConfigsUseCase(repo: NetworkConfigRepository) =
+        ObserveNetworkConfigsUseCase(repo)
+
+    @Provides @Singleton
+    fun provideGetNetworkConfigUseCase(
+        repo: NetworkConfigRepository,
+        dispatcherProvider: DispatcherProvider
+    ) = GetNetworkConfigUseCase(repo, dispatcherProvider)
+
+    @Provides @Singleton
+    fun provideTestNetworkConnectionUseCase(dispatcherProvider: DispatcherProvider) =
+        TestNetworkConnectionUseCase(dispatcherProvider)
+}
+### END
+
+### FILE: core/data/repo/NetworkConfigRepository.kt
+package core.data.repo
+
+import core.database.dao.NetworkConfigDao
+import core.database.entity.NetworkConfigEntity
+import core.common.DispatcherProvider
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.withContext
+
+/**
+ * 网络配置Repo，add/update/delete返回id，observeAll全量流。
+ */
+class NetworkConfigRepository(
+    private val dao: NetworkConfigDao,
+    private val dispatcherProvider: DispatcherProvider
+) {
+    fun observeAll(): Flow<List<NetworkConfigEntity>> = dao.observeAll()
+    suspend fun add(entity: NetworkConfigEntity): Long = withContext(dispatcherProvider.io) { dao.insert(entity) }
+    suspend fun update(entity: NetworkConfigEntity) = withContext(dispatcherProvider.io) { dao.update(entity) }
+    suspend fun delete(id: Long) = withContext(dispatcherProvider.io) { dao.delete(id) }
+    suspend fun getAll(): List<NetworkConfigEntity> = withContext(dispatcherProvider.io) { dao.getAll() }
+    suspend fun getById(id: Long): NetworkConfigEntity? = withContext(dispatcherProvider.io) { dao.getById(id) }
+}
+### END
+

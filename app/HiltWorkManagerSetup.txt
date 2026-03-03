@@ -1,0 +1,21 @@
+# Application接入 WorkManager/Hilt（代码说明）：
+# 1. Gradle依赖：
+#    implementation "androidx.hilt:hilt-work:1.0.0"
+#    kapt "androidx.hilt:hilt-compiler:1.0.0"
+#
+# 2. 在 AndroidManifest.xml 里 Application 标签添加:
+#    android:name=".MyHiltApp"
+#
+# 3. Application实现：
+#    @HiltAndroidApp
+#    class MyHiltApp : Application(), Configuration.Provider {
+#        override fun getWorkManagerConfiguration(): Configuration {
+#            return Configuration.Builder()
+#                .setWorkerFactory(workerFactory)
+#                .build()
+#        }
+#        @Inject lateinit var workerFactory: HiltWorkerFactory
+#    }
+#
+# 4. Worker注册与调度通过 WorkModule 和 DefaultWorkScheduler。
+#    App启动/退出时调用 workScheduler.runMaintenanceNow()/schedulePeriodicMaintenance()。
