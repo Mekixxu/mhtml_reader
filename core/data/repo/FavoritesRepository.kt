@@ -52,4 +52,6 @@ class FavoritesRepository(
     suspend fun deleteSubtree(id: Long) = withContext(dispatcherProvider.io) { dao.deleteSubtree(id) }
     suspend fun deleteById(id: Long) = withContext(dispatcherProvider.io) { dao.deleteById(id) }
     suspend fun getById(id: Long): FavoriteEntity? = withContext(dispatcherProvider.io) { dao.getById(id) }
+    suspend fun getAll(): List<FavoriteEntity> = withContext(dispatcherProvider.io) { dao.getAll() }
+    suspend fun clearAll() = withContext(dispatcherProvider.io) { dao.clearAll() }
 }

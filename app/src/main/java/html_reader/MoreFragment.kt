@@ -28,12 +28,19 @@ import core.database.entity.enums.NetworkProtocol
 import core.database.entity.enums.SourceType
 import java.io.BufferedReader
 import java.io.InputStreamReader
-import org.json.JSONArray
-import org.json.JSONObject
+import core.backup.JsonBackupManager
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 class MoreFragment : Fragment() {
+    private val jsonBackupManager: JsonBackupManager by lazy {
+        JsonBackupManager(
+            favoritesRepo = FilesRuntime.favoritesRepository(requireContext()),
+            historyRepo = ReaderRuntime.historyRepository(requireContext()),
+            networkRepo = FilesRuntime.networkConfigRepository(requireContext()),
+            titleCacheRepo = FilesRuntime.titleCacheRepository(requireContext())
+        )
+    }
     private lateinit var addButton: Button
     private lateinit var editButton: Button
     private lateinit var deleteButton: Button
@@ -322,197 +329,13 @@ class MoreFragment : Fragment() {
     }
 
     private suspend fun buildMetadataJson(): String {
-        val favorites = FilesRuntime.favoritesRepository(requireContext()).getAll()
-        val history = ReaderRuntime.historyRepository(requireContext()).getAll()
-        val networks = FilesRuntime.networkConfigRepository(requireContext()).getAll()
-        val titleCache = FilesRuntime.titleCacheRepository(requireContext()).getAll()
-        val root = JSONObject()
-        root.put("schemaVersion", backupSchemaVersion)
-        root.put("exportedAt", System.currentTimeMillis())
-        root.put("favorites", JSONArray().apply {
-            favorites.forEach { addFavoriteJson(it) }
-        })
-        root.put("history", JSONArray().apply {
-            history.forEach { addHistoryJson(it) }
-        })
-        root.put("networkConfigs", JSONArray().apply {
-            networks.forEach { addNetworkJson(it) }
-        })
-        root.put("titleCache", JSONArray().apply {
-            titleCache.forEach { addTitleCacheJson(it) }
-        })
-        return root.toString(2)
+        return jsonBackupManager.exportAll()
     }
 
     private suspend fun applyMetadataJson(text: String) {
-        val root = JSONObject(text)
-        val schemaVersion = root.optInt("schemaVersion", -1)
-        if (schemaVersion != backupSchemaVersion) {
-            throw IllegalArgumentException(getString(R.string.more_import_schema_mismatch))
-        }
-        val favoritesRepo = FilesRuntime.favoritesRepository(requireContext())
-        val historyRepo = ReaderRuntime.historyRepository(requireContext())
-        val networkRepo = FilesRuntime.networkConfigRepository(requireContext())
-        val titleRepo = FilesRuntime.titleCacheRepository(requireContext())
-        favoritesRepo.clearAll()
-        historyRepo.clearAll()
-        networkRepo.clearAll()
-        titleRepo.clearAll()
-
-        val favoriteArray = root.optJSONArray("favorites") ?: JSONArray()
-        val folderPending = mutableListOf<JSONObject>()
-        val filePending = mutableListOf<JSONObject>()
-        for (i in 0 until favoriteArray.length()) {
-            val item = favoriteArray.optJSONObject(i) ?: continue
-            val type = parseFavoriteType(item.optString("type"))
-            if (type == FavoriteType.FOLDER) folderPending.add(item) else filePending.add(item)
-        }
-        val idMap = mutableMapOf<Long, Long>()
-        var progress = true
-        while (folderPending.isNotEmpty() && progress) {
-            progress = false
-            val iter = folderPending.iterator()
-            while (iter.hasNext()) {
-                val folder = iter.next()
-                val oldId = folder.optLong("id", -1L).takeIf { it > 0L }
-                val oldParentId = folder.optLong("parentId", -1L).takeIf { it > 0L }
-                val newParentId = oldParentId?.let { idMap[it] }
-                if (oldParentId != null && newParentId == null) {
-                    continue
-                }
-                val newId = favoritesRepo.addFolder(
-                    parentId = newParentId,
-                    name = folder.optString("name").ifBlank { "Folder" }
-                )
-                if (oldId != null) {
-                    idMap[oldId] = newId
-                }
-                iter.remove()
-                progress = true
-            }
-        }
-        folderPending.forEach { folder ->
-            val oldId = folder.optLong("id", -1L).takeIf { it > 0L }
-            val newId = favoritesRepo.addFolder(parentId = null, name = folder.optString("name").ifBlank { "Folder" })
-            if (oldId != null) {
-                idMap[oldId] = newId
-            }
-        }
-        filePending.forEach { file ->
-            val oldParentId = file.optLong("parentId", -1L).takeIf { it > 0L }
-            val newParentId = oldParentId?.let { idMap[it] }
-            favoritesRepo.addFile(
-                parentId = newParentId,
-                name = file.optString("name").ifBlank { "File" },
-                path = file.optString("path"),
-                sourceType = parseSourceType(file.optString("sourceType"))
-            )
-        }
-
-        val historyArray = root.optJSONArray("history") ?: JSONArray()
-        for (i in 0 until historyArray.length()) {
-            val item = historyArray.optJSONObject(i) ?: continue
-            historyRepo.upsert(
-                HistoryEntity(
-                    path = item.optString("path"),
-                    title = item.optString("title"),
-                    lastAccess = item.optLong("lastAccess"),
-                    progress = item.optDouble("progress", 0.0).toFloat(),
-                    pageIndex = item.optInt("pageIndex", -1),
-                    fileType = parseFileType(item.optString("fileType"))
-                )
-            )
-        }
-
-        val networkArray = root.optJSONArray("networkConfigs") ?: JSONArray()
-        for (i in 0 until networkArray.length()) {
-            val item = networkArray.optJSONObject(i) ?: continue
-            networkRepo.add(
-                NetworkConfigEntity(
-                    id = 0L,
-                    name = item.optString("name").ifBlank { "Network" },
-                    protocol = parseNetworkProtocol(item.optString("protocol")),
-                    host = item.optString("host"),
-                    port = item.optInt("port", 21),
-                    username = item.optString("username"),
-                    password = item.optString("password"),
-                    defaultPath = item.optString("defaultPath").ifBlank { "/" }
-                )
-            )
-        }
-
-        val titleArray = root.optJSONArray("titleCache") ?: JSONArray()
-        for (i in 0 until titleArray.length()) {
-            val item = titleArray.optJSONObject(i) ?: continue
-            titleRepo.upsert(
-                TitleCacheEntity(
-                    path = item.optString("path"),
-                    title = item.optString("title"),
-                    lastModified = item.optLong("lastModified"),
-                    updatedAt = item.optLong("updatedAt")
-                )
-            )
-        }
+        val result = jsonBackupManager.importAll(text)
+        result.getOrThrow()
     }
 
-    private fun JSONArray.addFavoriteJson(entity: FavoriteEntity) {
-        put(
-            JSONObject()
-                .put("id", entity.id)
-                .put("parentId", entity.parentId)
-                .put("name", entity.name)
-                .put("type", entity.type.name)
-                .put("path", entity.path)
-                .put("sourceType", entity.sourceType.name)
-                .put("createdAt", entity.createdAt)
-        )
-    }
 
-    private fun JSONArray.addHistoryJson(entity: HistoryEntity) {
-        put(
-            JSONObject()
-                .put("path", entity.path)
-                .put("title", entity.title)
-                .put("lastAccess", entity.lastAccess)
-                .put("progress", entity.progress)
-                .put("pageIndex", entity.pageIndex)
-                .put("fileType", entity.fileType.name)
-        )
-    }
-
-    private fun JSONArray.addNetworkJson(entity: NetworkConfigEntity) {
-        put(
-            JSONObject()
-                .put("id", entity.id)
-                .put("name", entity.name)
-                .put("protocol", entity.protocol.name)
-                .put("host", entity.host)
-                .put("port", entity.port)
-                .put("username", entity.username)
-                .put("password", entity.password)
-                .put("defaultPath", entity.defaultPath)
-        )
-    }
-
-    private fun JSONArray.addTitleCacheJson(entity: TitleCacheEntity) {
-        put(
-            JSONObject()
-                .put("path", entity.path)
-                .put("title", entity.title)
-                .put("lastModified", entity.lastModified)
-                .put("updatedAt", entity.updatedAt)
-        )
-    }
-
-    private fun parseFavoriteType(value: String): FavoriteType =
-        runCatching { FavoriteType.valueOf(value) }.getOrDefault(FavoriteType.FILE)
-
-    private fun parseSourceType(value: String): SourceType =
-        runCatching { SourceType.valueOf(value) }.getOrDefault(SourceType.UNKNOWN)
-
-    private fun parseFileType(value: String): FileType =
-        runCatching { FileType.valueOf(value) }.getOrDefault(FileType.MHTML)
-
-    private fun parseNetworkProtocol(value: String): NetworkProtocol =
-        runCatching { NetworkProtocol.valueOf(value) }.getOrDefault(NetworkProtocol.FTP)
 }

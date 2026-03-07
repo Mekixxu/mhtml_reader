@@ -17,6 +17,18 @@ class NetworkConfigRepository(
     suspend fun add(entity: NetworkConfigEntity): Long = withContext(dispatcherProvider.io) { dao.insert(entity) }
     suspend fun update(entity: NetworkConfigEntity) = withContext(dispatcherProvider.io) { dao.update(entity) }
     suspend fun delete(id: Long) = withContext(dispatcherProvider.io) { dao.delete(id) }
-    suspend fun getAll(): List<NetworkConfigEntity> = withContext(dispatcherProvider.io) { dao.getAll() }
+    suspend fun getAll(): List<NetworkConfigEntity> = withContext(dispatcherProvider.io) {
+        val all = ArrayList<NetworkConfigEntity>(64)
+        var offset = 0
+        val pageSize = 100
+        while (true) {
+            val page = dao.getAll(limit = pageSize, offset = offset)
+            if (page.isEmpty()) break
+            all.addAll(page)
+            offset += page.size
+        }
+        all
+    }
     suspend fun getById(id: Long): NetworkConfigEntity? = withContext(dispatcherProvider.io) { dao.getById(id) }
+    suspend fun clearAll() = withContext(dispatcherProvider.io) { dao.clearAll() }
 }

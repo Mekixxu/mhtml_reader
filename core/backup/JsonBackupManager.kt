@@ -61,7 +61,7 @@ class JsonBackupManager(
             val bundle = json.decodeFromString<ExportBundle>(jsonString)
             if (bundle.schemaVersion != supportedSchemaVersion) {
                 return@withContext Result.failure(
-                    AppError.UnsupportedOperation(
+                    IllegalArgumentException(
                         "schemaVersion mismatch: expected $supportedSchemaVersion, found ${bundle.schemaVersion}"
                     )
                 )
@@ -138,10 +138,9 @@ class JsonBackupManager(
             val iter = pending.iterator()
             while (iter.hasNext()) {
                 val dto = iter.next()
-                val oldId = dto.id ?: run {
-                    // 没有 id 的 folder：当成 root folder 直接导入
-                    val newId = favoritesRepo.addFolder(parentId = null, name = dto.name)
-                    // 无 oldId 无法映射，跳过映射
+                val oldId = dto.id
+                if (oldId == null) {
+                    favoritesRepo.addFolder(parentId = null, name = dto.name)
                     iter.remove()
                     progressMade = true
                     continue
