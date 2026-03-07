@@ -23,15 +23,10 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 class HomeFragment : Fragment() {
-    private lateinit var openDirectoryModeButton: Button
-    private lateinit var openReaderModeButton: Button
     private lateinit var openFavoritesButton: Button
-    private lateinit var addAuthorizedDirButton: Button
-    private lateinit var removeAuthorizedDirButton: Button
-    private lateinit var localRootLabel: TextView
+    private lateinit var addAuthorizedDirButton: View
     private lateinit var localDirsList: ListView
     private lateinit var recentsList: ListView
-    private lateinit var clearRecentsButton: Button
     private lateinit var smbList: ListView
     private lateinit var ftpList: ListView
     private lateinit var localDirsAdapter: ArrayAdapter<String>
@@ -42,7 +37,6 @@ class HomeFragment : Fragment() {
     private val recents = mutableListOf<HistoryEntity>()
     private val smbConfigs = mutableListOf<NetworkConfigEntity>()
     private val ftpConfigs = mutableListOf<NetworkConfigEntity>()
-    private var selectedAuthorizedTreeUri: String? = null
     private var authorizedDirs: List<AuthorizedDir> = emptyList()
     private val addAuthorizedDirLauncher = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
@@ -65,49 +59,58 @@ class HomeFragment : Fragment() {
     ): View = inflater.inflate(R.layout.fragment_home, container, false)
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        openDirectoryModeButton = view.findViewById(R.id.home_open_directory_mode)
-        openReaderModeButton = view.findViewById(R.id.home_open_reader_mode)
         openFavoritesButton = view.findViewById(R.id.home_open_favorites)
         addAuthorizedDirButton = view.findViewById(R.id.home_add_authorized_dir)
-        removeAuthorizedDirButton = view.findViewById(R.id.home_remove_authorized_dir)
-        localRootLabel = view.findViewById(R.id.home_local_root)
         localDirsList = view.findViewById(R.id.home_local_dirs_list)
         recentsList = view.findViewById(R.id.home_recents_list)
-        clearRecentsButton = view.findViewById(R.id.home_clear_recents)
         smbList = view.findViewById(R.id.home_smb_list)
         ftpList = view.findViewById(R.id.home_ftp_list)
+        
         localDirsAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_list_item_1, mutableListOf())
         recentsAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_list_item_1, mutableListOf())
         smbAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_list_item_1, mutableListOf())
         ftpAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_list_item_1, mutableListOf())
+        
         localDirsList.adapter = localDirsAdapter
         recentsList.adapter = recentsAdapter
         smbList.adapter = smbAdapter
         ftpList.adapter = ftpAdapter
-        clearRecentsButton.isEnabled = false
-        localRootLabel.text = requireContext().filesDir.parentFile?.absolutePath ?: requireContext().filesDir.absolutePath
+        
         refreshLocalDirs()
 
-        openDirectoryModeButton.setOnClickListener {
-            (activity as? MainActivity)?.showDirectoryMode()
-        }
-        openReaderModeButton.setOnClickListener {
-            (activity as? MainActivity)?.showReaderMode()
-        }
         openFavoritesButton.setOnClickListener {
             (activity as? MainActivity)?.showFavoritesPage()
         }
         addAuthorizedDirButton.setOnClickListener {
             addAuthorizedDirLauncher.launch(null)
         }
-        removeAuthorizedDirButton.setOnClickListener {
-            val selected = selectedAuthorizedTreeUri ?: return@setOnClickListener
-            FilesRuntime.authorizedDirStore(requireContext()).remove(selected)
-            runCatching { requireContext().contentResolver.releasePersistableUriPermission(Uri.parse(selected), Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
+        
+        // Remove authorized dir via long press
+        localDirsList.setOnItemLongClickListener { _, _, position, _ ->
+            val entry = localDirs.getOrNull(position) ?: return@setOnItemLongClickListener false
+            if (entry.treeUri != null) {
+                AlertDialog.Builder(requireContext())
+                    .setTitle(R.string.home_remove_authorized_dir)
+                    .setMessage(entry.displayName)
+                    .setPositiveButton(android.R.string.ok) { _, _ ->
+                        FilesRuntime.authorizedDirStore(requireContext()).remove(entry.treeUri)
+                        runCatching { 
+                            requireContext().contentResolver.releasePersistableUriPermission(
+                                Uri.parse(entry.treeUri), 
+                                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                            ) 
+                        }
+                    }
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show()
+                true
+            } else {
+                false
+            }
         }
+
         localDirsList.setOnItemClickListener { _, _, position, _ ->
             val entry = localDirs.getOrNull(position) ?: return@setOnItemClickListener
-            selectedAuthorizedTreeUri = entry.treeUri
             if (entry.treeUri != null) {
                 (activity as? MainActivity)?.showDirectoryModeWithSafTree(entry.treeUri)
             } else if (entry.localPath != null) {
@@ -133,18 +136,7 @@ class HomeFragment : Fragment() {
                 .show()
             true
         }
-        clearRecentsButton.setOnClickListener {
-            AlertDialog.Builder(requireContext())
-                .setTitle(R.string.home_clear_recents)
-                .setPositiveButton(android.R.string.ok) { _, _ ->
-                    viewLifecycleOwner.lifecycleScope.launch {
-                        ReaderRuntime.historyRepository(requireContext()).clearAll()
-                        statusMessage(getString(R.string.home_recents_cleared))
-                    }
-                }
-                .setNegativeButton(android.R.string.cancel, null)
-                .show()
-        }
+        
         smbList.setOnItemClickListener { _, _, position, _ ->
             val config = smbConfigs.getOrNull(position) ?: return@setOnItemClickListener
             (activity as? MainActivity)?.showDirectoryModeWithNetwork(config.id)
@@ -160,7 +152,6 @@ class HomeFragment : Fragment() {
                 recentsAdapter.clear()
                 recentsAdapter.addAll(list.map { "${it.title}  •  ${it.fileType.name}  •  ${it.path}" })
                 recentsAdapter.notifyDataSetChanged()
-                clearRecentsButton.isEnabled = list.isNotEmpty()
             }
         }
         viewLifecycleOwner.lifecycleScope.launch {
