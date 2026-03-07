@@ -9,6 +9,7 @@ import core.vfs.model.VfsEntry
 import core.session.repo.FolderSessionRepository
 import core.vfs.model.VfsPath
 import core.common.AppError
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.withContext
 
@@ -21,6 +22,7 @@ class ObserveDirectoryUseCase(
     private val sessionRepo: FolderSessionRepository,
     private val dispatcherProvider: core.common.DispatcherProvider
 ) {
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun execute(
         sessionId: Long,
         sort: Flow<SortOption>,

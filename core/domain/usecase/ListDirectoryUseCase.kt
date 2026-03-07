@@ -20,7 +20,7 @@ class ListDirectoryUseCase(
         allowedExtensions: Set<String>,
         sort: SortOption
     ): List<VfsEntry> = withContext(dispatcherProvider.io) {
-        val all = fileSystem.list(dir) // 以包1真实签名为准
+        val all = fileSystem.list(dir).getOrElse { emptyList() }
         val filtered = all.filter { e ->
             val ext = e.name.substringAfterLast('.', missingDelimiterValue = "").lowercase()
             ext in allowedExtensions

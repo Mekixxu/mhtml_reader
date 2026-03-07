@@ -14,6 +14,8 @@ interface HistoryDao {
     fun observeRecent(limit: Int, offset: Int = 0): Flow<List<HistoryEntity>>
     @Query("SELECT * FROM history ORDER BY lastAccess DESC LIMIT :limit OFFSET :offset")
     suspend fun getRecent(limit: Int, offset: Int = 0): List<HistoryEntity>
+    @Query("SELECT * FROM history WHERE path = :path LIMIT 1")
+    suspend fun getByPath(path: String): HistoryEntity?
     @Query("DELETE FROM history WHERE path = :path")
     suspend fun delete(path: String)
     @Query("DELETE FROM history")

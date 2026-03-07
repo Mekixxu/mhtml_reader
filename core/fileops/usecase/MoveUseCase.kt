@@ -21,9 +21,20 @@ class MoveUseCase(
         toDir: VfsPath,
         strategy: ConflictStrategy,
         emit: suspend (FileOpState) -> Unit
-    ) = withContext(dispatcherProvider.io) {
-        // 若本地操作支持原子，直接move，否则copy+delete
-        // 回退后实现copy+delete，需做好错误/回滚处理
-        TODO("需实现move流程，可copy+delete+emit进度+清理")
+    ): Unit = withContext(dispatcherProvider.io) {
+        emit(FileOpState.Progress(0L, -1L))
+        val sourceName = extractName(from)
+        val resolvedPath = nameResolver.resolve(toDir, sourceName, strategy)
+        val defaultTarget = core.fileops.util.FileNameUtils.childPath(toDir, sourceName)
+        var moved = fileSystem.move(from, toDir).getOrElse { throw it }
+        if (resolvedPath.raw != defaultTarget.raw) {
+            val resolvedName = extractName(resolvedPath)
+            moved = fileSystem.rename(moved, resolvedName).getOrElse { throw it }
+        }
+        emit(FileOpState.Progress(1L, 1L))
+        emit(FileOpState.Success(moved))
     }
+
+    private fun extractName(path: VfsPath): String =
+        path.raw.replace('\\', '/').substringAfterLast('/').ifBlank { "file" }
 }

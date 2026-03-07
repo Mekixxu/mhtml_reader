@@ -5,7 +5,7 @@ import core.cache.TabCacheRegistry
 import core.common.DispatcherProvider
 import core.data.repo.HistoryRepository
 import core.reader.pdf.PdfReaderController
-import core.reader.pdf.impl.PdfReaderControllerStub
+import core.reader.pdf.impl.AndroidPdfReaderController
 import core.reader.tab.DefaultReaderTabManager
 import core.reader.tab.ReaderTabManager
 import core.reader.usecase.RestoreReadingPositionUseCase
@@ -22,7 +22,9 @@ object ReaderModule {
 
     @Provides
     @Singleton
-    fun providePdfReaderController(): PdfReaderController = PdfReaderControllerStub()
+    fun providePdfReaderController(
+        dispatcherProvider: DispatcherProvider
+    ): PdfReaderController = AndroidPdfReaderController(dispatcherProvider)
 
     @Provides
     @Singleton

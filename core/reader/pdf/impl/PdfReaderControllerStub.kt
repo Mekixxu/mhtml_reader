@@ -1,21 +1,24 @@
 package core.reader.pdf.impl
 
+import android.graphics.Bitmap
 import core.reader.pdf.PdfReaderController
 import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.Flow
 
-/**
- * v1.0 PDF阅读器Stub（接口实现，后续用PDF库替换）
- * 支持页码变化事件。
- */
 class PdfReaderControllerStub : PdfReaderController {
     private val pageState = MutableStateFlow(0)
     override suspend fun open(file: File) {
-        pageState.value = 0 // 假定第一页
+        pageState.value = 0
     }
     override suspend fun goToPage(pageIndex: Int) {
         pageState.value = pageIndex
     }
+    override suspend fun getPageCount(): Int = 1
+    override suspend fun renderPage(pageIndex: Int, targetWidthPx: Int): Bitmap {
+        pageState.value = pageIndex.coerceAtLeast(0)
+        return Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
+    }
+    override suspend fun close() = Unit
     override fun observePageChanges(): Flow<Int> = pageState
 }

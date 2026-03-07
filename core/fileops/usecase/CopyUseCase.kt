@@ -21,9 +21,20 @@ class CopyUseCase(
         toDir: VfsPath,
         strategy: ConflictStrategy,
         emit: suspend (FileOpState) -> Unit
-    ) = withContext(dispatcherProvider.io) {
-        // (目录递归、文件进度)
-        // 仅实现文件拷贝+目录递归
-        TODO("需结合IFileSystem流式和输出能力实现具体copy逻辑。")
+    ): Unit = withContext(dispatcherProvider.io) {
+        emit(FileOpState.Progress(0L, -1L))
+        val sourceName = extractName(from)
+        val resolvedPath = nameResolver.resolve(toDir, sourceName, strategy)
+        val defaultTarget = core.fileops.util.FileNameUtils.childPath(toDir, sourceName)
+        var copied = fileSystem.copy(from, toDir).getOrElse { throw it }
+        if (resolvedPath.raw != defaultTarget.raw) {
+            val resolvedName = extractName(resolvedPath)
+            copied = fileSystem.rename(copied, resolvedName).getOrElse { throw it }
+        }
+        emit(FileOpState.Progress(1L, 1L))
+        emit(FileOpState.Success(copied))
     }
+
+    private fun extractName(path: VfsPath): String =
+        path.raw.replace('\\', '/').substringAfterLast('/').ifBlank { "file" }
 }

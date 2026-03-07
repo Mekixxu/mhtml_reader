@@ -4,6 +4,7 @@ import core.vfs.IFileSystem
 import core.vfs.model.VfsPath
 import kotlinx.coroutines.withContext
 import core.common.DispatcherProvider
+import core.common.AppError
 import core.fileops.model.ConflictStrategy
 
 /**
@@ -26,15 +27,18 @@ class NameConflictResolver(
 
         var nameToTry = desiredName
         var idx = 1
-        while (true) {
+        var resolved: VfsPath? = null
+        while (resolved == null) {
             val target = FileNameUtils.childPath(toDir, nameToTry)
             val exists = fileSystem.exists(target).getOrDefault(false)
-            if (!exists) return@withContext target
-            if (strategy == ConflictStrategy.FAIL) throw core.common.AppError.Conflict
+            if (!exists) {
+                resolved = target
+                continue
+            }
+            if (strategy == ConflictStrategy.FAIL) throw AppError.IoError("Name conflict: $nameToTry")
             nameToTry = "$baseName($idx)${if (ext.isNotEmpty()) ".$ext" else ""}"
             idx++
         }
-        // unreachable
-        FileNameUtils.childPath(toDir, nameToTry)
+        resolved
     }
 }

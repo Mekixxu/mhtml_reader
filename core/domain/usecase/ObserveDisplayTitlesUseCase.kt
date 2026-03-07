@@ -1,6 +1,7 @@
 package core.domain.usecase
 
 import core.cache.CacheOpenManager
+import core.cache.model.ContentType
 import core.common.DispatcherProvider
 import core.database.entity.TitleCacheEntity
 import core.database.entity.enums.FileType
@@ -91,11 +92,23 @@ class ObserveDisplayTitlesUseCase(
                                 }
 
                                 // 2.2 打开到缓存（包1统一链路）
-                                val openResult = cacheOpenManager.openToCache(e.path)
+                                val contentType = guessContentType(e.name)
+                                val totalBytes = e.sizeBytes.coerceAtLeast(0L)
+                                cacheOpenManager.openToCache(
+                                    src = e.path,
+                                    totalBytes = totalBytes,
+                                    contentType = contentType
+                                ).collectLatest { }
+                                val cacheKey = cacheOpenManager.generateCacheKey(e.path, contentType, totalBytes)
+                                val cacheFile = cacheOpenManager.resolveCacheFile(
+                                    contentType = contentType,
+                                    cacheKey = cacheKey,
+                                    extName = contentType.defaultExt()
+                                )
                                 val fileType = guessFileType(e.name)
                                 val title = titleExtractor.extractTitle(
                                     source = e.path,
-                                    cacheFile = openResult.cacheFile,
+                                    cacheFile = cacheFile,
                                     fileType = fileType,
                                     maxBytesToRead = maxBytesToRead
                                 )?.trim()
@@ -135,6 +148,21 @@ class ObserveDisplayTitlesUseCase(
         fileName.endsWith(".mhtml", true) || fileName.endsWith(".mht", true) -> FileType.MHTML
         fileName.endsWith(".html", true) || fileName.endsWith(".htm", true) -> FileType.HTML
         else -> FileType.WEB
+    }
+
+    private fun guessContentType(fileName: String): ContentType = when {
+        fileName.endsWith(".pdf", true) -> ContentType.PDF
+        fileName.endsWith(".mhtml", true) || fileName.endsWith(".mht", true) -> ContentType.MHTML
+        fileName.endsWith(".html", true) || fileName.endsWith(".htm", true) -> ContentType.HTML
+        else -> ContentType.WEB
+    }
+
+    private fun ContentType.defaultExt(): String = when (this) {
+        ContentType.PDF -> "pdf"
+        ContentType.MHTML -> "mhtml"
+        ContentType.HTML -> "html"
+        ContentType.WEB -> "web"
+        ContentType.UNKNOWN -> "tmp"
     }
 }
 

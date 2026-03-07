@@ -3,7 +3,6 @@ package core.reader.tab
 import core.cache.CacheOpenManager
 import core.cache.TabCacheRegistry
 import core.cache.model.ContentType
-import core.cache.model.CopyProgress
 import core.common.AppError
 import core.common.DispatcherProvider
 import core.data.repo.HistoryRepository
@@ -16,6 +15,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.util.UUID
 
 /**
@@ -44,36 +44,41 @@ class DefaultReaderTabManager(
 
         val (contentType, extName) = inferContentTypeAndExt(request.fileType, request.fileName)
 
-        var cacheKey: String? = null
-        var cacheFilePath: String? = null
-        var totalBytes: Long = 0L
+        val totalBytes = when (request.source) {
+            is core.vfs.model.VfsPath.LocalFile -> File(request.source.filePath).takeIf { it.exists() }?.length() ?: 0L
+            else -> 0L
+        }
+        var copyFailure: Throwable? = null
 
         // 1) 拷贝到缓存（并把拷贝进度转发出去）
         cacheOpenManager.openToCache(
             src = request.source,
-            totalBytes = request.source.let { /* 若 OpenRequest 无 size，只能先传 0；强烈建议 OpenRequest 增加 totalBytes */ 0L },
+            totalBytes = totalBytes,
             contentType = contentType,
             extName = extName
         ).collect { result ->
             result.fold(
                 onSuccess = { progress ->
-                    totalBytes = progress.totalBytes
                     emit(OpenState.Copying(progress.copiedBytes, progress.totalBytes))
-
-                    // 从 progress 中抽取 cacheKey/cacheFilePath（你需要按 CopyProgress 实际字段实现）
-                    val info = extractCacheInfo(progress)
-                    cacheKey = info.cacheKey ?: cacheKey
-                    cacheFilePath = info.cacheFilePath ?: cacheFilePath
                 },
                 onFailure = { t ->
-                    emit(OpenState.Error(AppError.IoError(t.message ?: "copy to cache failed", t)))
-                    return@collect
+                    copyFailure = t
                 }
             )
         }
+        copyFailure?.let { t ->
+            emit(OpenState.Error(AppError.IoError(t.message ?: "copy to cache failed", t)))
+            return@flow
+        }
 
-        // 必须拿到 cacheFilePath 才能读（否则 Reader 无法加载）
-        if (cacheFilePath.isNullOrBlank()) {
+        val cacheKey = cacheOpenManager.generateCacheKey(request.source, contentType, totalBytes)
+        val cacheFile = cacheOpenManager.resolveCacheFile(
+            contentType = contentType,
+            cacheKey = cacheKey,
+            extName = extName ?: contentType.defaultExt()
+        )
+        val cacheFilePath = cacheFile.path
+        if (!cacheFile.exists()) {
             emit(OpenState.Error(AppError.IoError("cache file not resolved", null)))
             return@flow
         }
@@ -103,9 +108,7 @@ class DefaultReaderTabManager(
         _tabs.value = tabStates.values.toList()
 
         // bind：以 cacheKey 为准；若你包1 TabCacheRegistry 是 bind(tabId, cacheKey)
-        if (!cacheKey.isNullOrBlank()) {
-            tabCacheRegistry.bind(tabId, cacheKey!!)
-        }
+        tabCacheRegistry.bind(tabId, contentType.name.lowercase(), cacheKey)
 
         emit(OpenState.Ready(tab))
 
@@ -130,28 +133,23 @@ class DefaultReaderTabManager(
         // 仅 UI/VM 层切换当前 tab；数据层无需动作
     }
 
-    private data class CacheInfo(val cacheKey: String?, val cacheFilePath: String?)
-
-    /**
-     * 你必须按 CopyProgress 的真实字段实现：
-     * - 若 progress 携带 cacheKey/cacheFile/cachePath，直接提取
-     * - 若仅携带 cacheKey，需要你们提供从 key -> filePath 的解析函数
-     */
-    private fun extractCacheInfo(progress: CopyProgress): CacheInfo {
-        // TODO: 根据你们 core/cache/model/CopyProgress 实际字段填写
-        // 示例：
-        // return CacheInfo(cacheKey = progress.cacheKey, cacheFilePath = progress.cacheFile?.path)
-        return CacheInfo(cacheKey = null, cacheFilePath = null)
-    }
-
     private fun inferContentTypeAndExt(fileType: FileType, fileName: String): Pair<ContentType, String?> {
         val ext = fileName.substringAfterLast('.', missingDelimiterValue = "").lowercase().takeIf { it.isNotBlank() }
         val ct = when (fileType) {
             FileType.PDF -> ContentType.PDF
-            FileType.HTML, FileType.MHTML -> ContentType.WEB
+            FileType.MHTML -> ContentType.MHTML
+            FileType.HTML -> ContentType.HTML
             else -> ContentType.WEB
         }
         return ct to ext
+    }
+
+    private fun ContentType.defaultExt(): String = when (this) {
+        ContentType.PDF -> "pdf"
+        ContentType.MHTML -> "mhtml"
+        ContentType.HTML -> "html"
+        ContentType.WEB -> "web"
+        ContentType.UNKNOWN -> "tmp"
     }
 }
 

@@ -10,3 +10,15 @@
 *.keystore
 *.jks
 google-services.json
+local.properties
+.android-sdk/
+**/build/
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+*.hprof
+*.log
+coverage/
+*.orig

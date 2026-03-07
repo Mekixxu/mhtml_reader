@@ -13,7 +13,6 @@ object WebViewConfigurator {
         settings.setSupportZoom(true)
         settings.builtInZoomControls = true
         settings.displayZoomControls = false
-        settings.setAppCacheEnabled(false)
         settings.cacheMode = WebSettings.LOAD_NO_CACHE
         settings.allowFileAccess = false
         settings.allowContentAccess = true

@@ -13,13 +13,14 @@ class HistoryRepository(
 ) {
     suspend fun recordOpen(path: String, fileType: FileType, title: String) =
         withContext(dispatcherProvider.io) {
+            val existing = dao.getByPath(path)
             dao.upsert(
                 HistoryEntity(
                     path = path,
                     title = title,
                     lastAccess = System.currentTimeMillis(),
-                    progress = 0f,
-                    pageIndex = -1,
+                    progress = existing?.progress ?: 0f,
+                    pageIndex = existing?.pageIndex ?: -1,
                     fileType = fileType
                 )
             )
@@ -43,6 +44,9 @@ class HistoryRepository(
 
     suspend fun getRecent(limit: Int, offset: Int = 0): List<HistoryEntity> =
         withContext(dispatcherProvider.io) { dao.getRecent(limit, offset) }
+
+    suspend fun getByPath(path: String): HistoryEntity? =
+        withContext(dispatcherProvider.io) { dao.getByPath(path) }
 
     suspend fun clearAll() = withContext(dispatcherProvider.io) { dao.clearAll() }
 

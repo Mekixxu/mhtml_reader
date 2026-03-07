@@ -27,7 +27,10 @@ class ExecuteFileOpUseCase(
                     emit(FileOpState.Success(child))
                 }
                 is FileOpRequest.Delete -> {
-                    DeleteRecursivelyUseCase(fileSystem, dispatcherProvider).delete(request.target, request.recursive, emit)
+                    DeleteRecursivelyUseCase(fileSystem, dispatcherProvider).delete(
+                        request.target,
+                        request.recursive
+                    ) { state -> emit(state) }
                 }
                 is FileOpRequest.Rename -> {
                     val renamed = fileSystem.rename(request.target, request.newName).getOrElse { throw it }
@@ -35,11 +38,11 @@ class ExecuteFileOpUseCase(
                 }
                 is FileOpRequest.Copy -> {
                     CopyUseCase(fileSystem, nameResolver, dispatcherProvider)
-                        .copy(request.from, request.toDir, request.conflict, emit)
+                        .copy(request.from, request.toDir, request.conflict) { state -> emit(state) }
                 }
                 is FileOpRequest.Move -> {
                     MoveUseCase(fileSystem, nameResolver, dispatcherProvider)
-                        .move(request.from, request.toDir, request.conflict, emit)
+                        .move(request.from, request.toDir, request.conflict) { state -> emit(state) }
                 }
             }
         } catch (e: CancellationException) {
