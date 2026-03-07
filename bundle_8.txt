@@ -1,0 +1,153 @@
+### FILE: core/work/worker/MaintenanceWorker.kt
+package core.work.worker
+
+import android.content.Context
+import androidx.work.CoroutineWorker
+import androidx.work.WorkerParameters
+import androidx.hilt.work.HiltWorker
+import dagger.assisted.Assisted
+import dagger.assisted.AssistedInject
+import core.maintenance.MaintenanceManager
+import core.settings.repo.SettingsRepository
+
+/**
+ * 后台维护任务Worker。通过 Hilt 注入 MaintenanceManager 与 SettingsRepository。
+ */
+@HiltWorker
+class MaintenanceWorker @AssistedInject constructor(
+    @Assisted context: Context,
+    @Assisted params: WorkerParameters,
+    private val maintenanceManager: MaintenanceManager,
+    private val settingsRepository: SettingsRepository
+) : CoroutineWorker(context, params) {
+
+    override suspend fun doWork(): Result {
+        // MaintenanceManager.runBackgroundMaintenance里已自动按settings执行
+        try {
+            maintenanceManager.runBackgroundMaintenance()
+            // 可在此补充日志上报（仅显示class名/数据量，不显示真实路径）
+            return Result.success()
+        } catch (e: Exception) {
+            // 异常自动重试
+            return Result.retry()
+        }
+    }
+}
+### END
+
+### FILE: core/work/scheduler/WorkScheduler.kt
+package core.work.scheduler
+
+/**
+ * 后台任务调度接口
+ */
+interface WorkScheduler {
+    fun schedulePeriodicMaintenance()
+    fun runMaintenanceNow()
+    fun cancelMaintenance()
+}
+### END
+
+### FILE: core/work/scheduler/DefaultWorkScheduler.kt
+package core.work.scheduler
+
+import android.content.Context
+import androidx.work.*
+import java.util.concurrent.TimeUnit
+
+/**
+ * WorkManager调度实现。周期性维护与即刻维护均支持防重复。
+ * 默认周期 24h；可按需修改。
+ */
+class DefaultWorkScheduler(
+    private val context: Context
+) : WorkScheduler {
+    private val periodicWorkName = "maintenance_periodic"
+    private val oneTimeWorkName = "maintenance_now"
+
+    override fun schedulePeriodicMaintenance() {
+        val constraints = Constraints.Builder()
+            .setRequiresBatteryNotLow(true)
+            .setRequiresStorageNotLow(true)
+            .build()
+        val request = PeriodicWorkRequestBuilder<core.work.worker.MaintenanceWorker>(
+            24, TimeUnit.HOURS
+        )
+            .setConstraints(constraints)
+            .build()
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            periodicWorkName,
+            ExistingPeriodicWorkPolicy.KEEP,
+            request
+        )
+    }
+
+    override fun runMaintenanceNow() {
+        val constraints = Constraints.Builder()
+            .setRequiresBatteryNotLow(true)
+            .setRequiresStorageNotLow(true)
+            .build()
+        val request = OneTimeWorkRequestBuilder<core.work.worker.MaintenanceWorker>()
+            .setConstraints(constraints)
+            .build()
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            oneTimeWorkName,
+            ExistingWorkPolicy.REPLACE,
+            request
+        )
+    }
+
+    override fun cancelMaintenance() {
+        WorkManager.getInstance(context).cancelUniqueWork(periodicWorkName)
+        WorkManager.getInstance(context).cancelUniqueWork(oneTimeWorkName)
+    }
+}
+### END
+
+### FILE: core/work/di/WorkModule.kt
+package core.work.di
+
+import android.content.Context
+import core.work.scheduler.DefaultWorkScheduler
+import core.work.scheduler.WorkScheduler
+import dagger.Module
+import dagger.Provides
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
+import javax.inject.Singleton
+
+/**
+ * 提供周期任务调度实例（WorkScheduler）。
+ */
+@Module
+@InstallIn(SingletonComponent::class)
+object WorkModule {
+    @Provides @Singleton
+    fun provideWorkScheduler(context: Context): WorkScheduler = DefaultWorkScheduler(context)
+}
+### END
+
+### FILE: app/HiltWorkManagerSetup.txt
+# Application接入 WorkManager/Hilt（代码说明）：
+# 1. Gradle依赖：
+#    implementation "androidx.hilt:hilt-work:1.0.0"
+#    kapt "androidx.hilt:hilt-compiler:1.0.0"
+#
+# 2. 在 AndroidManifest.xml 里 Application 标签添加:
+#    android:name=".MyHiltApp"
+#
+# 3. Application实现：
+#    @HiltAndroidApp
+#    class MyHiltApp : Application(), Configuration.Provider {
+#        override fun getWorkManagerConfiguration(): Configuration {
+#            return Configuration.Builder()
+#                .setWorkerFactory(workerFactory)
+#                .build()
+#        }
+#        @Inject lateinit var workerFactory: HiltWorkerFactory
+#    }
+#
+# 4. Worker注册与调度通过 WorkModule 和 DefaultWorkScheduler。
+#    App启动/退出时调用 workScheduler.runMaintenanceNow()/schedulePeriodicMaintenance()。
+### END
+
