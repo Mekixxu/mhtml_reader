@@ -45,7 +45,50 @@ class HtmlTitleExtractor(
 
         val matcher = titlePattern.matcher(headText)
         val title = if (matcher.find()) matcher.group(1) else null
-        title?.trim()?.takeIf { it.isNotBlank() }
+        
+        // Decode Quoted-Printable if needed
+        val rawTitle = title?.trim()?.takeIf { it.isNotBlank() } ?: return@withContext null
+        decodeQuotedPrintable(rawTitle)
+    }
+    
+    private fun decodeQuotedPrintable(input: String): String {
+        // Simple check if it looks like Quoted-Printable (e.g., =E5=92...)
+        if (!input.contains("=")) return input
+        
+        try {
+            // Manual simple decoding for QP in title
+            // Note: Robust QP decoding usually requires MimeUtility, but we want to avoid heavy dependencies if possible.
+            // Let's try a basic approach: replace =XX with bytes and then decode as UTF-8.
+            
+            val bytes = java.io.ByteArrayOutputStream()
+            var i = 0
+            val len = input.length
+            while (i < len) {
+                val c = input[i]
+                if (c == '=') {
+                    if (i + 2 < len) {
+                        val hex = input.substring(i + 1, i + 3)
+                        try {
+                            val b = hex.toInt(16)
+                            bytes.write(b)
+                            i += 3
+                        } catch (e: NumberFormatException) {
+                            // Not a valid hex code, just treat as char
+                            bytes.write('='.code)
+                            i++
+                        }
+                    } else {
+                        bytes.write('='.code)
+                        i++
+                    }
+                } else {
+                    bytes.write(c.code)
+                    i++
+                }
+            }
+            return bytes.toString("UTF-8")
+        } catch (e: Exception) {
+            return input
+        }
     }
 }
-

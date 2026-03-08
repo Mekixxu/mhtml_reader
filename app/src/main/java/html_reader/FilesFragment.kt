@@ -1,14 +1,15 @@
 package com.html_reader
 
 import android.app.AlertDialog
-import android.net.Uri
-import android.os.Bundle
+import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.os.Environment
-import android.provider.Settings
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
+import android.provider.Settings
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.LayoutInflater
@@ -18,7 +19,6 @@ import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
-import android.widget.ListView
 import android.widget.ProgressBar
 import android.widget.Spinner
 import android.widget.TextView
@@ -27,11 +27,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import core.common.DefaultDispatcherProvider
-import core.fileops.model.ConflictStrategy
-import core.fileops.model.FileOpRequest
-import core.fileops.model.FileOpState
-import core.fileops.usecase.ExecuteFileOpUseCase
-import core.fileops.util.NameConflictResolver
 import core.data.repo.FavoritesRepository
 import core.data.repo.NetworkConfigRepository
 import core.data.repo.TitleCacheRepository
@@ -40,17 +35,22 @@ import core.database.entity.TitleCacheEntity
 import core.database.entity.enums.FileType
 import core.database.entity.enums.NetworkProtocol
 import core.database.entity.enums.SourceType
+import core.fileops.model.ConflictStrategy
+import core.fileops.model.FileOpRequest
+import core.fileops.model.FileOpState
+import core.fileops.usecase.ExecuteFileOpUseCase
+import core.fileops.util.NameConflictResolver
 import core.session.repo.FolderSessionRepository
 import core.title.impl.HtmlTitleExtractor
 import core.vfs.local.LocalFileSystem
 import core.vfs.model.VfsPath
 import java.io.File
 import java.io.FileOutputStream
+import java.net.URL
+import java.net.URLEncoder
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
-import java.net.URL
-import java.net.URLEncoder
 import jcifs.CIFSContext
 import jcifs.context.SingletonContext
 import jcifs.smb.NtlmPasswordAuthenticator
@@ -91,8 +91,8 @@ class FilesFragment : Fragment() {
     private lateinit var actionDuplicateButton: Button
     private lateinit var actionMoveParentButton: Button
     private lateinit var actionNewSessionButton: Button
-    private lateinit var listView: ListView
-    private lateinit var adapter: ArrayAdapter<String>
+    private lateinit var listView: android.widget.ListView
+    private lateinit var adapter: ArrayAdapter<BrowserEntry>
     private lateinit var executeFileOpUseCase: ExecuteFileOpUseCase
     private lateinit var folderSessionRepository: FolderSessionRepository
     private lateinit var favoritesRepository: FavoritesRepository
@@ -191,7 +191,31 @@ class FilesFragment : Fragment() {
         actionMoveParentButton = view.findViewById(R.id.files_action_move_parent)
         actionNewSessionButton = view.findViewById(R.id.files_action_new_session)
         listView = view.findViewById(R.id.files_list)
-        adapter = ArrayAdapter(requireContext(), android.R.layout.simple_list_item_1, mutableListOf())
+
+        adapter = object : ArrayAdapter<BrowserEntry>(requireContext(), android.R.layout.simple_list_item_2, displayedEntries) {
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                val view = convertView ?: LayoutInflater.from(context).inflate(android.R.layout.simple_list_item_2, parent, false)
+                val item = getItem(position) ?: return view
+                val text1 = view.findViewById<TextView>(android.R.id.text1)
+                val text2 = view.findViewById<TextView>(android.R.id.text2)
+
+                val key = item.pathKey()
+                val displayTitle = if (key == null) null else displayTitleByPath[key]
+                val namePart = if (displayTitle.isNullOrBlank() || displayTitle == item.name) item.name else displayTitle
+
+                val typeLabel = if (item.isDirectory) "DIR" else "FILE"
+                val sizeLabel = if (item.isDirectory) "" else formatSize(item.sizeBytes)
+                val timeLabel = item.modifiedText ?: item.modifiedEpochMs?.let { DateFormat.getDateTimeInstance().format(Date(it)) }.orEmpty()
+                
+                val metaPart = listOf(typeLabel, sizeLabel, timeLabel).filter { it.isNotBlank() }.joinToString("  •  ")
+
+                val selectedPrefix = if (item.isSelected(selectedEntry)) "▶ " else ""
+                
+                text1.text = "$selectedPrefix$namePart"
+                text2.text = metaPart
+                return view
+            }
+        }
         listView.adapter = adapter
 
         val dispatcherProvider = DefaultDispatcherProvider()
@@ -259,6 +283,7 @@ class FilesFragment : Fragment() {
                 loadEntries()
                 persistCurrentDir()
             } else {
+                // Direct open logic
                 selectedEntry = null
                 if (browseSource == BrowseSource.FTP) {
                     openFtpFile(item)
@@ -274,17 +299,35 @@ class FilesFragment : Fragment() {
         listView.onItemLongClickListener = AdapterView.OnItemLongClickListener { _, _, position, _ ->
             val item = displayedEntries.getOrNull(position) ?: return@OnItemLongClickListener true
             selectedEntry = item
-            renderEntries()
-            val options = arrayOf(
-                getString(R.string.files_action_select),
-                getString(R.string.files_action_add_favorite),
-                getString(R.string.files_action_details)
-            )
+            renderEntries() // Update selection UI
+            
+            val isFile = !item.isDirectory
+            val options = mutableListOf<String>()
+            options.add(getString(R.string.files_action_select)) // Keep "Select" as an option if needed, or just rely on the visual selection update
+            if (isFile) {
+                options.add("Open in new tab")
+            }
+            options.add(getString(R.string.files_action_add_favorite))
+            options.add(getString(R.string.files_action_details))
+
             AlertDialog.Builder(requireContext())
-                .setItems(options) { _, which ->
-                    when (which) {
-                        1 -> addEntryToFavorites(item)
-                        2 -> showEntryDetails(item)
+                .setItems(options.toTypedArray()) { _, which ->
+                    val selectedOption = options[which]
+                    when (selectedOption) {
+                        "Open in new tab" -> {
+                             if (browseSource == BrowseSource.FTP) {
+                                openFtpFile(item)
+                            } else if (browseSource == BrowseSource.SMB) {
+                                openSmbFile(item)
+                            } else {
+                                val path = item.localFile?.absolutePath
+                                if (path != null) {
+                                    (activity as? MainActivity)?.showReaderModeWithPath(path)
+                                }
+                            }
+                        }
+                        getString(R.string.files_action_add_favorite) -> addEntryToFavorites(item)
+                        getString(R.string.files_action_details) -> showEntryDetails(item)
                     }
                 }
                 .show()
@@ -483,6 +526,16 @@ class FilesFragment : Fragment() {
         }
     }
 
+    private fun formatSize(bytes: Long): String {
+        if (bytes < 1024) return "$bytes B"
+        val kb = bytes / 1024.0
+        if (kb < 1024) return String.format(Locale.US, "%.1f KB", kb)
+        val mb = kb / 1024.0
+        if (mb < 1024) return String.format(Locale.US, "%.1f MB", mb)
+        val gb = mb / 1024.0
+        return String.format(Locale.US, "%.2f GB", gb)
+    }
+
     private fun loadEntries() {
         if (browseSource == BrowseSource.FTP) {
             loadFtpEntries()
@@ -534,22 +587,7 @@ class FilesFragment : Fragment() {
         }
         displayedEntries.clear()
         displayedEntries.addAll(sorted)
-        adapter.clear()
-        adapter.addAll(sorted.map { entry ->
-            val key = entry.pathKey()
-            val displayTitle = if (key == null) null else displayTitleByPath[key]
-            entry.toDisplayLine(selectedEntry, displayTitle)
-        })
         adapter.notifyDataSetChanged()
-    }
-
-    private fun BrowserEntry.toDisplayLine(selected: BrowserEntry?, displayTitle: String?): String {
-        val selectedPrefix = if (isSelected(selected)) "▶ " else ""
-        val typeLabel = if (isDirectory) "DIR" else "FILE"
-        val sizeLabel = if (isDirectory) "-" else sizeBytes.toString()
-        val timeLabel = modifiedText ?: modifiedEpochMs?.let { DateFormat.getDateTimeInstance().format(Date(it)) }.orEmpty()
-        val titlePart = if (displayTitle.isNullOrBlank() || displayTitle == name) name else "$displayTitle  •  $name"
-        return "$selectedPrefix$typeLabel  $titlePart  •  $sizeLabel  •  $timeLabel"
     }
 
     private fun File.hasSupportedReaderExtension(): Boolean {

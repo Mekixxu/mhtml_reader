@@ -212,6 +212,22 @@ class ReaderFragment : Fragment() {
                 }
             }
         }
+
+        // Auto-open logic if initial path provided and not restored from state
+        if (savedInstanceState == null && !initialPath.isNullOrBlank()) {
+             val file = File(initialPath)
+             if (file.exists() && file.isFile && isSupportedLocalFile(file.name)) {
+                 val request = OpenRequest(
+                    source = VfsPath.LocalFile(file.absolutePath),
+                    fileName = file.name,
+                    fileType = inferType(file.name)
+                 )
+                 // Run on next frame to ensure UI is ready
+                 view.post {
+                     runOpen(request)
+                 }
+             }
+        }
     }
 
     private fun runOpen(request: OpenRequest) {
@@ -251,6 +267,9 @@ class ReaderFragment : Fragment() {
                         }
                     }
                 }
+            } catch (e: Exception) {
+                // Crash fix: Catch any unexpected errors during open flow
+                 statusLabel.text = getString(R.string.reader_status_error, e.message ?: "Unknown error")
             } finally {
                 opening = false
                 setButtonsEnabled(true)
