@@ -10,6 +10,7 @@
         android:allowBackup="true"
         android:label="MHTML Reader"
         android:supportsRtl="true"
+        android:usesCleartextTraffic="true"
         android:theme="@style/Theme.AppCompat.DayNight.NoActionBar">
         <activity
             android:name=".MainActivity"
