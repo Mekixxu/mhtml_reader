@@ -2,71 +2,27 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:padding="12dp">
+    android:orientation="vertical">
 
-    <EditText
-        android:id="@+id/reader_path_input"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:hint="@string/reader_path_hint"
-        android:inputType="textUri" />
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:orientation="horizontal">
-
-        <Button
-            android:id="@+id/reader_open_button"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/reader_open" />
-
-        <Button
-            android:id="@+id/reader_close_selected_button"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/reader_close_selected" />
-
-        <Button
-            android:id="@+id/reader_close_all_button"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/reader_close_all" />
-    </LinearLayout>
+    <!-- Removed debug input, buttons, progress, and list -->
 
     <ProgressBar
         android:id="@+id/reader_open_progress"
         style="?android:attr/progressBarStyleHorizontal"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
+        android:layout_marginTop="-4dp"
+        android:layout_marginBottom="-4dp"
         android:visibility="gone" />
 
-    <TextView
-        android:id="@+id/reader_status"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:textAppearance="?android:attr/textAppearanceSmall" />
-
-    <TextView
-        android:id="@+id/reader_active_tab"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:textAppearance="?android:attr/textAppearanceSmall" />
-
     <LinearLayout
+        android:id="@+id/reader_pdf_controls"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:orientation="horizontal">
+        android:orientation="horizontal"
+        android:padding="8dp"
+        android:background="#EEE"
+        android:visibility="gone">
 
         <Button
             android:id="@+id/reader_pdf_prev"
@@ -92,26 +48,34 @@
             android:text="@string/reader_pdf_next" />
     </LinearLayout>
 
-    <ImageView
-        android:id="@+id/reader_pdf_preview"
+    <FrameLayout
         android:layout_width="match_parent"
-        android:layout_height="220dp"
-        android:layout_marginTop="6dp"
-        android:adjustViewBounds="true"
-        android:background="#FFEFEFEF"
-        android:scaleType="fitCenter" />
+        android:layout_height="match_parent">
 
-    <WebView
-        android:id="@+id/reader_web_preview"
-        android:layout_width="match_parent"
-        android:layout_height="220dp"
-        android:layout_marginTop="6dp" />
+        <ImageView
+            android:id="@+id/reader_pdf_preview"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:adjustViewBounds="true"
+            android:background="#FFEFEFEF"
+            android:scaleType="fitCenter"
+            android:visibility="gone" />
 
-    <ListView
-        android:id="@+id/reader_tabs_list"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_marginTop="8dp"
-        android:layout_weight="1" />
+        <WebView
+            android:id="@+id/reader_web_preview"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
+            
+        <TextView
+            android:id="@+id/reader_status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:background="#80000000"
+            android:textColor="#FFF"
+            android:padding="8dp"
+            android:visibility="gone"/>
+    </FrameLayout>
 
 </LinearLayout>

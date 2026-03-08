@@ -35,23 +35,17 @@ import java.io.File
 import kotlinx.coroutines.launch
 
 class ReaderFragment : Fragment() {
-    private lateinit var pathInput: EditText
-    private lateinit var openButton: Button
-    private lateinit var closeSelectedButton: Button
-    private lateinit var closeAllButton: Button
     private lateinit var openProgress: ProgressBar
     private lateinit var statusLabel: TextView
-    private lateinit var activeLabel: TextView
-    private lateinit var tabsList: ListView
-    private lateinit var tabsAdapter: ArrayAdapter<String>
-    private lateinit var readerViewModel: ReaderViewModel
-    private lateinit var pdfReaderController: PdfReaderController
-    private lateinit var historyRepository: HistoryRepository
     private lateinit var pdfPreviewImage: ImageView
     private lateinit var webPreview: WebView
     private lateinit var pdfPageInfoLabel: TextView
     private lateinit var pdfPrevButton: Button
     private lateinit var pdfNextButton: Button
+    private lateinit var pdfControls: View
+    private lateinit var readerViewModel: ReaderViewModel
+    private lateinit var pdfReaderController: PdfReaderController
+    private lateinit var historyRepository: HistoryRepository
     private var webProgressTracker: WebViewProgressTracker? = null
 
     private val tabs = mutableListOf<ReaderTab>()
@@ -62,7 +56,6 @@ class ReaderFragment : Fragment() {
 
     companion object {
         private const val ARG_INITIAL_PATH = "arg_initial_path"
-        private const val STATE_PATH_INPUT = "reader_state_path_input"
         private const val STATE_SELECTED_TAB_ID = "reader_state_selected_tab_id"
 
         fun newInstance(initialPath: String): ReaderFragment {
@@ -79,21 +72,14 @@ class ReaderFragment : Fragment() {
     ): View = inflater.inflate(R.layout.fragment_reader, container, false)
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        pathInput = view.findViewById(R.id.reader_path_input)
-        openButton = view.findViewById(R.id.reader_open_button)
-        closeSelectedButton = view.findViewById(R.id.reader_close_selected_button)
-        closeAllButton = view.findViewById(R.id.reader_close_all_button)
         openProgress = view.findViewById(R.id.reader_open_progress)
         statusLabel = view.findViewById(R.id.reader_status)
-        activeLabel = view.findViewById(R.id.reader_active_tab)
-        tabsList = view.findViewById(R.id.reader_tabs_list)
         pdfPreviewImage = view.findViewById(R.id.reader_pdf_preview)
         webPreview = view.findViewById(R.id.reader_web_preview)
         pdfPageInfoLabel = view.findViewById(R.id.reader_pdf_page_info)
         pdfPrevButton = view.findViewById(R.id.reader_pdf_prev)
         pdfNextButton = view.findViewById(R.id.reader_pdf_next)
-        tabsAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_list_item_1, mutableListOf())
-        tabsList.adapter = tabsAdapter
+        pdfControls = view.findViewById(R.id.reader_pdf_controls)
 
         val context = requireContext()
         val dispatcherProvider = DefaultDispatcherProvider()
@@ -101,74 +87,15 @@ class ReaderFragment : Fragment() {
         historyRepository = ReaderRuntime.historyRepository(context)
         readerViewModel = ReaderRuntime.viewModel(context)
 
-        statusLabel.text = getString(R.string.reader_status_idle)
-        activeLabel.text = getString(R.string.reader_active_none)
+        statusLabel.visibility = View.GONE
         pdfPageInfoLabel.text = getString(R.string.reader_pdf_page_template, 0, 0)
         pdfPrevButton.isEnabled = false
         pdfNextButton.isEnabled = false
         WebViewConfigurator.configure(webPreview)
         webPreview.visibility = View.GONE
-        val restoredPath = savedInstanceState?.getString(STATE_PATH_INPUT)
-        val initialPath = arguments?.getString(ARG_INITIAL_PATH)
-        pathInput.setText(restoredPath ?: initialPath.orEmpty())
+        
         selectedTabId = savedInstanceState?.getString(STATE_SELECTED_TAB_ID)
-
-        openButton.setOnClickListener {
-            if (opening) {
-                return@setOnClickListener
-            }
-            val path = pathInput.text?.toString()?.trim().orEmpty()
-            if (path.isBlank()) {
-                showShort(getString(R.string.reader_select_file_first))
-                return@setOnClickListener
-            }
-            val file = File(path)
-            if (!file.exists() || !file.isFile) {
-                showShort(getString(R.string.reader_file_not_found))
-                return@setOnClickListener
-            }
-            if (!isSupportedLocalFile(file.name)) {
-                showShort(getString(R.string.reader_unsupported_file_type))
-                return@setOnClickListener
-            }
-            val request = OpenRequest(
-                source = VfsPath.LocalFile(file.absolutePath),
-                fileName = file.name,
-                fileType = inferType(file.name)
-            )
-            runOpen(request)
-        }
-
-        closeSelectedButton.setOnClickListener {
-            val tabId = selectedTabId
-            if (tabId == null) {
-                showShort(getString(R.string.reader_select_tab_first))
-                return@setOnClickListener
-            }
-            viewLifecycleOwner.lifecycleScope.launch {
-                readerViewModel.closeTab(tabId)
-                selectedTabId = tabs.firstOrNull()?.tabId
-                updateActiveLabel()
-            }
-        }
-
-        closeAllButton.setOnClickListener {
-            viewLifecycleOwner.lifecycleScope.launch {
-                readerViewModel.closeAll()
-                selectedTabId = null
-                updateActiveLabel()
-            }
-        }
-
-        tabsList.setOnItemClickListener { _, _, position, _ ->
-            val tab = tabs.getOrNull(position) ?: return@setOnItemClickListener
-            selectedTabId = tab.tabId
-            viewLifecycleOwner.lifecycleScope.launch {
-                readerViewModel.switchTo(tab.tabId)
-                updateTabs()
-                loadSelectedTabContent()
-            }
-        }
+        valinitialPath = arguments?.getString(ARG_INITIAL_PATH)
 
         pdfPrevButton.setOnClickListener {
             if (currentPdfPageIndex <= 0) {
@@ -192,10 +119,10 @@ class ReaderFragment : Fragment() {
             readerViewModel.tabs.collect { newTabs ->
                 tabs.clear()
                 tabs.addAll(newTabs)
+                // If we don't have a selected tab, or the selected tab is gone, pick the last one (newest)
                 if (selectedTabId == null || tabs.none { it.tabId == selectedTabId }) {
-                    selectedTabId = tabs.firstOrNull()?.tabId
+                    selectedTabId = tabs.lastOrNull()?.tabId
                 }
-                updateTabs()
                 loadSelectedTabContent()
             }
         }
@@ -214,8 +141,8 @@ class ReaderFragment : Fragment() {
         }
 
         // Auto-open logic if initial path provided and not restored from state
-        if (savedInstanceState == null && !initialPath.isNullOrBlank()) {
-             val file = File(initialPath)
+        if (savedInstanceState == null && !valinitialPath.isNullOrBlank()) {
+             val file = File(valinitialPath)
              if (file.exists() && file.isFile && isSupportedLocalFile(file.name)) {
                  val request = OpenRequest(
                     source = VfsPath.LocalFile(file.absolutePath),
@@ -232,10 +159,11 @@ class ReaderFragment : Fragment() {
 
     private fun runOpen(request: OpenRequest) {
         opening = true
-        setButtonsEnabled(false)
         openProgress.visibility = View.VISIBLE
         openProgress.isIndeterminate = true
+        statusLabel.visibility = View.VISIBLE
         statusLabel.text = getString(R.string.reader_status_loading)
+        
         viewLifecycleOwner.lifecycleScope.launch {
             try {
                 readerViewModel.open(request).collect { state ->
@@ -258,52 +186,28 @@ class ReaderFragment : Fragment() {
                         }
                         is OpenState.Ready -> {
                             selectedTabId = state.tab.tabId
-                            statusLabel.text = getString(R.string.reader_status_ready, state.tab.title ?: state.tab.tabId)
+                            statusLabel.visibility = View.GONE
+                            openProgress.visibility = View.GONE
                             loadSelectedTabContent()
                         }
                         is OpenState.Error -> {
                             val message = state.error.message ?: state.error.javaClass.simpleName
                             statusLabel.text = getString(R.string.reader_status_error, message)
+                            statusLabel.visibility = View.VISIBLE
                         }
                     }
                 }
             } catch (e: Exception) {
-                // Crash fix: Catch any unexpected errors during open flow
                  statusLabel.text = getString(R.string.reader_status_error, e.message ?: "Unknown error")
+                 statusLabel.visibility = View.VISIBLE
             } finally {
                 opening = false
-                setButtonsEnabled(true)
-                openProgress.visibility = View.GONE
-                updateTabs()
+                if (statusLabel.text == getString(R.string.reader_status_loading) || statusLabel.text.startsWith("Copying")) {
+                     statusLabel.visibility = View.GONE
+                     openProgress.visibility = View.GONE
+                }
             }
         }
-    }
-
-    private fun updateTabs() {
-        tabsAdapter.clear()
-        tabsAdapter.addAll(
-            tabs.map {
-                val selected = if (it.tabId == selectedTabId) "▶ " else ""
-                "$selected${it.title ?: it.tabId}  •  ${it.fileType.name}  •  ${(it.lastKnownProgress * 100f).toInt()}%"
-            }
-        )
-        tabsAdapter.notifyDataSetChanged()
-        updateActiveLabel()
-    }
-
-    private fun updateActiveLabel() {
-        val active = tabs.firstOrNull { it.tabId == selectedTabId }
-        activeLabel.text = if (active == null) {
-            getString(R.string.reader_active_none)
-        } else {
-            getString(R.string.reader_active_template, active.title ?: active.tabId)
-        }
-    }
-
-    private fun setButtonsEnabled(enabled: Boolean) {
-        openButton.isEnabled = enabled
-        closeSelectedButton.isEnabled = enabled
-        closeAllButton.isEnabled = enabled
     }
 
     private fun loadSelectedTabContent() {
@@ -332,9 +236,8 @@ class ReaderFragment : Fragment() {
         webProgressTracker?.stopTracking()
         webProgressTracker = null
         pdfPreviewImage.visibility = View.VISIBLE
-        pdfPrevButton.visibility = View.VISIBLE
-        pdfNextButton.visibility = View.VISIBLE
-        pdfPageInfoLabel.visibility = View.VISIBLE
+        pdfControls.visibility = View.VISIBLE
+        
         val cachePath = tab.cacheFilePath
         if (cachePath.isNullOrBlank()) {
             pdfPageCount = 0
@@ -358,6 +261,7 @@ class ReaderFragment : Fragment() {
                 updatePdfPageControlState()
             } catch (e: Exception) {
                 statusLabel.text = getString(R.string.reader_status_error, e.message ?: e.javaClass.simpleName)
+                statusLabel.visibility = View.VISIBLE
                 pdfPreviewImage.setImageDrawable(null)
                 pdfPageCount = 0
                 currentPdfPageIndex = 0
@@ -372,10 +276,9 @@ class ReaderFragment : Fragment() {
         updatePdfPageControlState()
         pdfPreviewImage.setImageDrawable(null)
         pdfPreviewImage.visibility = View.GONE
-        pdfPrevButton.visibility = View.GONE
-        pdfNextButton.visibility = View.GONE
-        pdfPageInfoLabel.visibility = View.GONE
+        pdfControls.visibility = View.GONE
         webPreview.visibility = View.VISIBLE
+        
         val cachePath = tab.cacheFilePath
         if (cachePath.isNullOrBlank()) {
             webPreview.loadUrl("about:blank")
@@ -385,6 +288,7 @@ class ReaderFragment : Fragment() {
         if (!file.exists() || !file.isFile) {
             webPreview.loadUrl("about:blank")
             statusLabel.text = getString(R.string.reader_status_error, getString(R.string.reader_file_not_found))
+            statusLabel.visibility = View.VISIBLE
             return
         }
         WebViewConfigurator.configure(webPreview)
@@ -462,7 +366,6 @@ class ReaderFragment : Fragment() {
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
-        outState.putString(STATE_PATH_INPUT, pathInput.text?.toString().orEmpty())
         outState.putString(STATE_SELECTED_TAB_ID, selectedTabId)
         super.onSaveInstanceState(outState)
     }

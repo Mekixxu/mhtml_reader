@@ -38,6 +38,13 @@ class DefaultReaderTabManager(
     private val tabStates = LinkedHashMap<String, ReaderTab>()
 
     override fun openNewTab(request: OpenRequest): Flow<OpenState> = flow {
+        // 0) 检查是否已存在相同 source path 的 tab，若有则直接复用
+        val existingTab = tabStates.values.firstOrNull { it.sourcePathRaw == request.source.raw }
+        if (existingTab != null) {
+            emit(OpenState.Ready(existingTab))
+            return@flow
+        }
+
         emit(OpenState.Loading)
 
         val tabId = UUID.randomUUID().toString()

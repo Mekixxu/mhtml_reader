@@ -111,9 +111,9 @@ class HomeFragment : Fragment() {
         localDirsList.setOnItemClickListener { _, _, position, _ ->
             val entry = localDirs.getOrNull(position) ?: return@setOnItemClickListener
             if (entry.treeUri != null) {
-                (activity as? MainActivity)?.showDirectoryModeWithSafTree(entry.treeUri)
+                (activity as? MainActivity)?.showDirectoryModeWithSafTree(entry.treeUri, fromFolders = true)
             } else if (entry.localPath != null) {
-                (activity as? MainActivity)?.showDirectoryModeWithPath(entry.localPath)
+                (activity as? MainActivity)?.showDirectoryModeWithPath(entry.localPath, fromFolders = true)
             }
         }
         recentsList.setOnItemClickListener { _, _, position, _ ->
@@ -138,7 +138,7 @@ class HomeFragment : Fragment() {
         
         networkList.setOnItemClickListener { _, _, position, _ ->
             val config = networkConfigs.getOrNull(position) ?: return@setOnItemClickListener
-            (activity as? MainActivity)?.showDirectoryModeWithNetwork(config.id)
+            (activity as? MainActivity)?.showDirectoryModeWithNetwork(config.id, fromFolders = true)
         }
         viewLifecycleOwner.lifecycleScope.launch {
             ReaderRuntime.historyRepository(requireContext()).observeRecent(limit = 30).collect { list ->

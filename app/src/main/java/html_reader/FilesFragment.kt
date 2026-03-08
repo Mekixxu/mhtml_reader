@@ -1059,7 +1059,8 @@ class FilesFragment : Fragment() {
 
     private suspend fun fetchFtpEntries(config: NetworkConfigEntity, path: String): List<BrowserEntry> = withContext(Dispatchers.IO) {
         val url = URL(buildFtpUrl(config, path, "d"))
-        val lines = url.openStream().bufferedReader().use { it.readLines() }
+        // Use ISO-8859-1 to preserve raw bytes for manual decoding
+        val lines = url.openStream().bufferedReader(Charsets.ISO_8859_1).use { it.readLines() }
         val entries = lines.mapNotNull { parseFtpLine(path, it) }
         val folders = entries.filter { it.isDirectory }.sortedBy { it.name.lowercase(Locale.getDefault()) }
         val files = entries
@@ -1070,44 +1071,131 @@ class FilesFragment : Fragment() {
 
     private fun parseFtpLine(basePath: String, rawLine: String): BrowserEntry? {
         val line = rawLine.trim()
-        if (line.isBlank()) {
+        if (line.isBlank() || line.startsWith("total ")) {
             return null
         }
-        if (line.startsWith("total ")) {
-            return null
+        
+        // Try to parse standard Unix ls -l format
+        // drwxr-xr-x 1 user group size month day time name
+        // We split by whitespace. 
+        // Warning: "name" can contain spaces. "time" can be "year" or "time". "day" is usually 1-31. "month" is Jan-Dec.
+        // We'll iterate from the end to find the name start.
+        
+        val parts = line.split(Regex("\\s+"))
+        if (parts.size < 8) {
+            // Not enough parts for standard ls -l
+            // Fallback for simple name-only or non-standard lines
+            // If it starts with d/- we might still try, but let's be careful.
+            return null 
         }
-        val unixParts = line.split(Regex("\\s+"), limit = 9)
-        if (unixParts.size >= 9 && (unixParts[0].startsWith("d") || unixParts[0].startsWith("-"))) {
-            val isDir = unixParts[0].startsWith("d")
-            val size = unixParts.getOrNull(4)?.toLongOrNull() ?: 0L
-            val name = unixParts[8].trim()
-            if (name.isBlank() || name == "." || name == "..") {
-                return null
+
+        // Check permission flag
+        if (!parts[0].startsWith("d") && !parts[0].startsWith("-")) {
+             return null
+        }
+        val isDir = parts[0].startsWith("d")
+
+        // Find date parts. Usually 3 parts before the name: Month Day Time/Year
+        // e.g. Jan 1 12:00 Name
+        // e.g. Jan 1 2024 Name
+        // The name starts after these 3 parts.
+        // So name is parts[last]... wait, split separates name spaces.
+        // We need to identify where the date ends.
+        
+        // Heuristic: Month is usually [Jan, Feb, ...].
+        // Let's look for the month index.
+        val months = setOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+        var monthIndex = -1
+        // Scan from index 5 (after perms, links, owner, group, size)
+        // Standard: 0=perms, 1=links, 2=owner, 3=group, 4=size, 5=Month
+        // If group is missing: 0=perms, 1=links, 2=owner, 3=size, 4=Month
+        
+        for (i in 3 until parts.size - 3) { // Date needs at least 3 parts, Name needs at least 1
+            if (parts[i] in months) {
+                monthIndex = i
+                break
             }
-            val childPath = joinFtpPath(basePath, name)
-            return BrowserEntry(
-                localFile = null,
-                ftpPath = childPath,
-                name = name,
-                isDirectory = isDir,
-                sizeBytes = size,
-                modifiedEpochMs = null,
-                modifiedText = unixParts.subList(5, 8).joinToString(" ")
-            )
         }
-        val fallbackName = line.substringAfterLast('/').trim()
-        if (fallbackName.isBlank() || fallbackName == "." || fallbackName == "..") {
+
+        val size: Long
+        val nameStartIndex: Int
+        
+        if (monthIndex != -1) {
+            // Found month.
+            // Size should be at monthIndex - 1
+            size = parts.getOrNull(monthIndex - 1)?.toLongOrNull() ?: 0L
+            // Name starts at monthIndex + 3 (Month + Day + Year/Time)
+            nameStartIndex = monthIndex + 3
+        } else {
+            // Fallback: Assume fixed columns if month not found (e.g. locale issue)
+            // Just take 4 as size if available, and 8 as name
+            size = parts.getOrNull(4)?.toLongOrNull() ?: 0L
+            nameStartIndex = 8
+        }
+
+        if (nameStartIndex >= parts.size) {
             return null
         }
+
+        // Reconstruct name from rawLine because split consumes spaces
+        // We need to find where the date part ends in the raw string.
+        // This is tricky. Let's join the parts from nameStartIndex.
+        // But the spaces between them might be multiple.
+        // Better: find the substring match of the parts before name, and take the rest.
+        
+        // Simple approximation: join parts[nameStartIndex..end] with single space.
+        // Ideally we'd preserve exact spacing but for filename display single space is usually acceptable or we risk complexity.
+        // Wait, for FTP names, exact spacing matters.
+        // Let's try to locate the date string in rawLine and take everything after.
+        
+        var name = parts.subList(nameStartIndex, parts.size).joinToString(" ")
+        
+        // Decoding logic
+        // We read rawLine as ISO-8859-1, so `name` characters are 1-to-1 bytes.
+        val rawBytes = name.toByteArray(Charsets.ISO_8859_1)
+        name = decodeFtpName(rawBytes)
+
+        if (name == "." || name == "..") return null
+        
+        val childPath = joinFtpPath(basePath, name)
+        
+        // Reconstruct date string for display
+        val dateStr = if (monthIndex != -1 && monthIndex + 2 < parts.size) {
+            parts.subList(monthIndex, monthIndex + 3).joinToString(" ")
+        } else ""
+
         return BrowserEntry(
             localFile = null,
-            ftpPath = joinFtpPath(basePath, fallbackName),
-            name = fallbackName,
-            isDirectory = line.endsWith("/"),
-            sizeBytes = 0L,
+            ftpPath = childPath,
+            name = name,
+            isDirectory = isDir,
+            sizeBytes = size,
             modifiedEpochMs = null,
-            modifiedText = ""
+            modifiedText = dateStr
         )
+    }
+
+    private fun decodeFtpName(bytes: ByteArray): String {
+        // 1. Try UTF-8
+        try {
+             // Use decoder to strict check
+            val decoder = Charsets.UTF_8.newDecoder()
+            decoder.onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+            decoder.onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+            return decoder.decode(java.nio.ByteBuffer.wrap(bytes)).toString()
+        } catch (e: Exception) {
+            // Not valid UTF-8
+        }
+        
+        // 2. Try GBK (Common for Chinese)
+        try {
+            return String(bytes, java.nio.charset.Charset.forName("GBK"))
+        } catch (e: Exception) {
+            // Ignore
+        }
+        
+        // 3. Fallback to ISO-8859-1 (original)
+        return String(bytes, Charsets.ISO_8859_1)
     }
 
     private fun openFtpFile(entry: BrowserEntry) {
