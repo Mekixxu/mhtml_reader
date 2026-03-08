@@ -95,7 +95,7 @@ class ReaderFragment : Fragment() {
         webPreview.visibility = View.GONE
         
         selectedTabId = savedInstanceState?.getString(STATE_SELECTED_TAB_ID)
-        valinitialPath = arguments?.getString(ARG_INITIAL_PATH)
+        val initialPath = arguments?.getString(ARG_INITIAL_PATH)
 
         pdfPrevButton.setOnClickListener {
             if (currentPdfPageIndex <= 0) {
@@ -141,8 +141,8 @@ class ReaderFragment : Fragment() {
         }
 
         // Auto-open logic if initial path provided and not restored from state
-        if (savedInstanceState == null && !valinitialPath.isNullOrBlank()) {
-             val file = File(valinitialPath)
+        if (savedInstanceState == null && !initialPath.isNullOrBlank()) {
+             val file = File(initialPath)
              if (file.exists() && file.isFile && isSupportedLocalFile(file.name)) {
                  val request = OpenRequest(
                     source = VfsPath.LocalFile(file.absolutePath),
