@@ -1093,42 +1093,48 @@ class FilesFragment : Fragment() {
             return null
         }
         
-        // Try to parse standard Unix ls -l format
-        // drwxr-xr-x 1 user group size month day time name
-        // We split by whitespace. 
-        // Warning: "name" can contain spaces. "time" can be "year" or "time". "day" is usually 1-31. "month" is Jan-Dec.
-        // We'll iterate from the end to find the name start.
-        
-        val parts = line.split(Regex("\\s+"))
-        if (parts.size < 8) {
-            // Not enough parts for standard ls -l
-            // Fallback for simple name-only or non-standard lines
-            // If it starts with d/- we might still try, but let's be careful.
-            return null 
+        // Try Unix style first
+        // -rw-r--r-- 1 user group 1234 Jan 01 12:00 filename
+        val unixEntry = parseUnixStyle(basePath, line)
+        if (unixEntry != null) {
+            return unixEntry
         }
 
-        // Check permission flag
-        if (!parts[0].startsWith("d") && !parts[0].startsWith("-")) {
+        // Try DOS style
+        // 01-01-24 12:00PM <DIR> filename
+        // 01-01-24 12:00PM 1234 filename
+        val dosEntry = parseDosStyle(basePath, line)
+        if (dosEntry != null) {
+            return dosEntry
+        }
+
+        return null
+    }
+
+    private fun parseUnixStyle(basePath: String, line: String): BrowserEntry? {
+        val parts = line.split(Regex("\\s+"))
+        if (parts.size < 8) {
+             return null 
+        }
+
+        // Check permission flag (d or - or l)
+        if (!parts[0].startsWith("d") && !parts[0].startsWith("-") && !parts[0].startsWith("l")) {
              return null
         }
         val isDir = parts[0].startsWith("d")
-
-        // Find date parts. Usually 3 parts before the name: Month Day Time/Year
-        // e.g. Jan 1 12:00 Name
-        // e.g. Jan 1 2024 Name
-        // The name starts after these 3 parts.
-        // So name is parts[last]... wait, split separates name spaces.
-        // We need to identify where the date ends.
+        // Ignore symlinks for now or treat as files? 
+        // If it's 'l', we might want to follow or show as file.
+        // Let's treat 'l' as file for now, or just ignore to be safe if we can't resolve.
+        // But user said "all files not seen".
         
-        // Heuristic: Month is usually [Jan, Feb, ...].
-        // Let's look for the month index.
+        // Find date parts.
         val months = setOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
         var monthIndex = -1
-        // Scan from index 5 (after perms, links, owner, group, size)
-        // Standard: 0=perms, 1=links, 2=owner, 3=group, 4=size, 5=Month
-        // If group is missing: 0=perms, 1=links, 2=owner, 3=size, 4=Month
         
-        for (i in 3 until parts.size - 3) { // Date needs at least 3 parts, Name needs at least 1
+        // Scan for month. Usually after permissions, links, owner, group, size.
+        // Min index for month is 5 (perms, links, owner, group, size).
+        // If group missing: 4.
+        for (i in 3 until parts.size - 3) {
             if (parts[i] in months) {
                 monthIndex = i
                 break
@@ -1139,14 +1145,12 @@ class FilesFragment : Fragment() {
         val nameStartIndex: Int
         
         if (monthIndex != -1) {
-            // Found month.
-            // Size should be at monthIndex - 1
             size = parts.getOrNull(monthIndex - 1)?.toLongOrNull() ?: 0L
-            // Name starts at monthIndex + 3 (Month + Day + Year/Time)
             nameStartIndex = monthIndex + 3
         } else {
-            // Fallback: Assume fixed columns if month not found (e.g. locale issue)
-            // Just take 4 as size if available, and 8 as name
+            // Fallback: assume strict column layout if month not found
+            // perms links owner group size month day time name
+            // 0     1     2     3     4    5     6   7    8
             size = parts.getOrNull(4)?.toLongOrNull() ?: 0L
             nameStartIndex = 8
         }
@@ -1155,21 +1159,10 @@ class FilesFragment : Fragment() {
             return null
         }
 
-        // Reconstruct name from rawLine because split consumes spaces
-        // We need to find where the date part ends in the raw string.
-        // This is tricky. Let's join the parts from nameStartIndex.
-        // But the spaces between them might be multiple.
-        // Better: find the substring match of the parts before name, and take the rest.
-        
-        // Simple approximation: join parts[nameStartIndex..end] with single space.
-        // Ideally we'd preserve exact spacing but for filename display single space is usually acceptable or we risk complexity.
-        // Wait, for FTP names, exact spacing matters.
-        // Let's try to locate the date string in rawLine and take everything after.
-        
+        // Reconstruct name
         var name = parts.subList(nameStartIndex, parts.size).joinToString(" ")
         
         // Decoding logic
-        // We read rawLine as ISO-8859-1, so `name` characters are 1-to-1 bytes.
         val rawBytes = name.toByteArray(Charsets.ISO_8859_1)
         name = decodeFtpName(rawBytes)
 
@@ -1177,10 +1170,55 @@ class FilesFragment : Fragment() {
         
         val childPath = joinFtpPath(basePath, name)
         
-        // Reconstruct date string for display
         val dateStr = if (monthIndex != -1 && monthIndex + 2 < parts.size) {
             parts.subList(monthIndex, monthIndex + 3).joinToString(" ")
         } else ""
+
+        return BrowserEntry(
+            localFile = null,
+            ftpPath = childPath,
+            name = name,
+            isDirectory = isDir,
+            sizeBytes = size,
+            modifiedEpochMs = null,
+            modifiedText = dateStr
+        )
+    }
+
+    private fun parseDosStyle(basePath: String, line: String): BrowserEntry? {
+        // 02-11-20  11:42PM       <DIR>          Folder
+        // 02-11-20  11:42PM                  123 File.txt
+        val parts = line.split(Regex("\\s+"))
+        if (parts.size < 4) {
+            return null
+        }
+        
+        // Check date format loosely: MM-DD-YY
+        if (!parts[0].contains("-")) {
+            return null
+        }
+        
+        // Check time format loosely: contain :
+        if (!parts[1].contains(":")) {
+            return null
+        }
+
+        val isDir = parts[2].equals("<DIR>", ignoreCase = true)
+        val size = if (isDir) 0L else parts[2].toLongOrNull() ?: 0L
+        
+        val nameStartIndex = 3
+        if (nameStartIndex >= parts.size) return null
+        
+        var name = parts.subList(nameStartIndex, parts.size).joinToString(" ")
+        
+        // Decoding
+        val rawBytes = name.toByteArray(Charsets.ISO_8859_1)
+        name = decodeFtpName(rawBytes)
+        
+        if (name == "." || name == "..") return null
+
+        val childPath = joinFtpPath(basePath, name)
+        val dateStr = "${parts[0]} ${parts[1]}"
 
         return BrowserEntry(
             localFile = null,

@@ -186,11 +186,9 @@ class MainActivity : AppCompatActivity() {
         val current = supportFragmentManager.findFragmentById(R.id.main_content)
         val tag = current?.tag
         val itemId = when {
-            tag == "directory_mode_folders" -> R.id.nav_files
-            // Also map directory_mode to files, just in case, though we prefer directory_mode_folders now
-            tag == "directory_mode" -> R.id.nav_files 
+            tag == "directory_mode_folders" || tag == "directory_mode" -> R.id.nav_files
             current is FoldersOverviewFragment -> R.id.nav_files
-            current is TabsOverviewFragment -> R.id.nav_reader
+            tag == "reader_mode" || current is TabsOverviewFragment -> R.id.nav_reader
             current is MoreFragment -> R.id.nav_more
             else -> R.id.nav_home
         }
