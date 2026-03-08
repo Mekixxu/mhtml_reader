@@ -1,12 +1,9 @@
 package com.html_reader
 
 import android.content.Context
-import androidx.room.Room
-import core.common.DefaultDispatcherProvider
 import core.data.repo.FavoritesRepository
 import core.data.repo.NetworkConfigRepository
 import core.data.repo.TitleCacheRepository
-import core.database.AppDatabase
 import core.session.repo.FolderSessionRepository
 
 object FilesRuntime {
@@ -37,19 +34,19 @@ object FilesRuntime {
             if (recheck != null) {
                 recheck
             } else {
+                CoreRuntime.ensure(context)
+                val db = CoreRuntime.database
+                val dispatcherProvider = CoreRuntime.dispatcherProvider
                 val appContext = context.applicationContext
-                val dispatcherProvider = DefaultDispatcherProvider()
-                val database = Room.databaseBuilder(appContext, AppDatabase::class.java, "app_database")
-                    .fallbackToDestructiveMigration()
-                    .build()
+                
                 Holder(
-                    folderSessionRepository = FolderSessionRepository(database.folderSessionDao(), dispatcherProvider),
+                    folderSessionRepository = FolderSessionRepository(db.folderSessionDao(), dispatcherProvider),
                     currentSessionStore = AppCurrentSessionStore(),
-                    favoritesRepository = FavoritesRepository(database.favoriteDao(), dispatcherProvider),
-                    networkConfigRepository = NetworkConfigRepository(database.networkConfigDao(), dispatcherProvider),
-                    titleCacheRepository = TitleCacheRepository(database.titleCacheDao(), dispatcherProvider),
+                    favoritesRepository = FavoritesRepository(db.favoriteDao(), dispatcherProvider),
+                    networkConfigRepository = NetworkConfigRepository(db.networkConfigDao(), dispatcherProvider),
+                    titleCacheRepository = TitleCacheRepository(db.titleCacheDao(), dispatcherProvider),
                     sessionSourceStore = AppSessionSourceStore(appContext),
-                    authorizedDirStore = AppAuthorizedDirStore(appContext)
+                    authorizedDirStore = AppAuthorizedDirStore(appContext, dispatcherProvider)
                 ).also { holder = it }
             }
         }

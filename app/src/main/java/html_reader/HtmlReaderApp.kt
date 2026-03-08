@@ -25,32 +25,34 @@ class HtmlReaderApp : Application() {
     }
 
     private fun scheduleMaintenanceWorkers() {
-        val workManager = WorkManager.getInstance(this)
+        appScope.launch {
+            val workManager = WorkManager.getInstance(this@HtmlReaderApp)
 
-        val historyInput = Data.Builder()
-            .putInt("maxItems", 500)
-            .putInt("maxDays", 365)
-            .build()
-        val historyRequest = PeriodicWorkRequestBuilder<AppHistoryRetentionWorker>(1, TimeUnit.DAYS)
-            .setInputData(historyInput)
-            .build()
-        workManager.enqueueUniquePeriodicWork(
-            "history_retention_daily",
-            ExistingPeriodicWorkPolicy.UPDATE,
-            historyRequest
-        )
+            val historyInput = Data.Builder()
+                .putInt("maxItems", 500)
+                .putInt("maxDays", 365)
+                .build()
+            val historyRequest = PeriodicWorkRequestBuilder<AppHistoryRetentionWorker>(1, TimeUnit.DAYS)
+                .setInputData(historyInput)
+                .build()
+            workManager.enqueueUniquePeriodicWork(
+                "history_retention_daily",
+                ExistingPeriodicWorkPolicy.UPDATE,
+                historyRequest
+            )
 
-        val orphanInput = Data.Builder()
-            .putInt("daysUnused", 3)
-            .build()
-        val orphanRequest = PeriodicWorkRequestBuilder<AppOrphanCacheCleanupWorker>(1, TimeUnit.DAYS)
-            .setInputData(orphanInput)
-            .build()
-        workManager.enqueueUniquePeriodicWork(
-            "orphan_cache_cleanup_daily",
-            ExistingPeriodicWorkPolicy.UPDATE,
-            orphanRequest
-        )
+            val orphanInput = Data.Builder()
+                .putInt("daysUnused", 3)
+                .build()
+            val orphanRequest = PeriodicWorkRequestBuilder<AppOrphanCacheCleanupWorker>(1, TimeUnit.DAYS)
+                .setInputData(orphanInput)
+                .build()
+            workManager.enqueueUniquePeriodicWork(
+                "orphan_cache_cleanup_daily",
+                ExistingPeriodicWorkPolicy.UPDATE,
+                orphanRequest
+            )
+        }
     }
 
     private fun cleanupOrphanCache() {

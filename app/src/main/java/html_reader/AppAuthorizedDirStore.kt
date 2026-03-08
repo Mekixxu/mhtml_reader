@@ -2,18 +2,32 @@ package com.html_reader
 
 import android.content.Context
 import android.net.Uri
+import core.common.DispatcherProvider
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
 data class AuthorizedDir(
     val treeUri: String,
     val displayName: String
 )
 
-class AppAuthorizedDirStore(context: Context) {
+class AppAuthorizedDirStore(
+    context: Context,
+    private val dispatcherProvider: DispatcherProvider
+) {
     private val prefs = context.applicationContext.getSharedPreferences("app_authorized_dirs", Context.MODE_PRIVATE)
-    private val state = MutableStateFlow(load())
+    private val state = MutableStateFlow<List<AuthorizedDir>>(emptyList())
+    private val scope = CoroutineScope(SupervisorJob() + dispatcherProvider.io)
+
+    init {
+        scope.launch {
+            state.value = load()
+        }
+    }
 
     fun observe(): Flow<List<AuthorizedDir>> = state.asStateFlow()
 
@@ -21,13 +35,19 @@ class AppAuthorizedDirStore(context: Context) {
 
     fun upsert(treeUri: Uri, displayName: String) {
         val uriText = treeUri.toString()
-        val merged = state.value.filterNot { it.treeUri == uriText } + AuthorizedDir(uriText, displayName)
-        save(merged)
+        scope.launch {
+            val current = if (state.value.isEmpty()) load() else state.value
+            val merged = current.filterNot { it.treeUri == uriText } + AuthorizedDir(uriText, displayName)
+            save(merged)
+        }
     }
 
     fun remove(treeUri: String) {
-        val next = state.value.filterNot { it.treeUri == treeUri }
-        save(next)
+        scope.launch {
+            val current = if (state.value.isEmpty()) load() else state.value
+            val next = current.filterNot { it.treeUri == treeUri }
+            save(next)
+        }
     }
 
     private fun load(): List<AuthorizedDir> {
