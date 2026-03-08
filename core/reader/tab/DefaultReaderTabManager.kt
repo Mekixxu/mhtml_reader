@@ -14,6 +14,7 @@ import core.reader.model.ReadingPosition
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
@@ -114,7 +115,7 @@ class DefaultReaderTabManager(
 
         // 4) history：recordOpen 不应强行覆盖旧进度；建议仅 upsert title/fileType/lastAccess
         historyRepo.recordOpen(historyKey, request.fileType, request.fileName)
-    }
+    }.flowOn(dispatcherProvider.io)
 
     override suspend fun closeTab(tabId: String) {
         withContext(dispatcherProvider.io) {

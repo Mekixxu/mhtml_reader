@@ -203,15 +203,15 @@ class FilesFragment : Fragment() {
                 val displayTitle = if (key == null) null else displayTitleByPath[key]
                 val namePart = if (displayTitle.isNullOrBlank() || displayTitle == item.name) item.name else displayTitle
 
-                val typeLabel = if (item.isDirectory) "DIR" else "FILE"
+                val typeLabel = if (item.isDirectory) "[DIR]" else "[FILE]"
                 val sizeLabel = if (item.isDirectory) "" else formatSize(item.sizeBytes)
                 val timeLabel = item.modifiedText ?: item.modifiedEpochMs?.let { DateFormat.getDateTimeInstance().format(Date(it)) }.orEmpty()
                 
-                val metaPart = listOf(typeLabel, sizeLabel, timeLabel).filter { it.isNotBlank() }.joinToString("  •  ")
+                val metaPart = listOf(sizeLabel, timeLabel).filter { it.isNotBlank() }.joinToString("  •  ")
 
                 val selectedPrefix = if (item.isSelected(selectedEntry)) "▶ " else ""
                 
-                text1.text = "$selectedPrefix$namePart"
+                text1.text = "$selectedPrefix$typeLabel $namePart"
                 text2.text = metaPart
                 return view
             }

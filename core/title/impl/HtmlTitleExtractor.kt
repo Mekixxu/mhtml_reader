@@ -52,22 +52,21 @@ class HtmlTitleExtractor(
     }
     
     private fun decodeQuotedPrintable(input: String): String {
+        // 1. Remove soft line breaks (=\r\n, =\n, =\r)
+        val cleaned = input.replace(Regex("=\r\n|=\r|=\n"), "")
+        
         // Simple check if it looks like Quoted-Printable (e.g., =E5=92...)
-        if (!input.contains("=")) return input
+        if (!cleaned.contains("=")) return cleaned
         
         try {
-            // Manual simple decoding for QP in title
-            // Note: Robust QP decoding usually requires MimeUtility, but we want to avoid heavy dependencies if possible.
-            // Let's try a basic approach: replace =XX with bytes and then decode as UTF-8.
-            
             val bytes = java.io.ByteArrayOutputStream()
             var i = 0
-            val len = input.length
+            val len = cleaned.length
             while (i < len) {
-                val c = input[i]
+                val c = cleaned[i]
                 if (c == '=') {
                     if (i + 2 < len) {
-                        val hex = input.substring(i + 1, i + 3)
+                        val hex = cleaned.substring(i + 1, i + 3)
                         try {
                             val b = hex.toInt(16)
                             bytes.write(b)
