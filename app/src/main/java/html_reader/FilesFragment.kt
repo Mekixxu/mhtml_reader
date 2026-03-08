@@ -3,6 +3,10 @@ package com.html_reader
 import android.app.AlertDialog
 import android.net.Uri
 import android.os.Bundle
+import android.content.Intent
+import android.os.Build
+import android.os.Environment
+import android.provider.Settings
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.text.Editable
@@ -304,6 +308,10 @@ class FilesFragment : Fragment() {
             }
             val parent = currentDir?.parentFile
             if (parent != null && parent.exists() && parent.isDirectory) {
+                if (parent.listFiles() == null) {
+                    Toast.makeText(requireContext(), "Cannot access parent folder", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
                 currentDir = parent
                 selectedEntry = null
                 loadEntries()
@@ -456,6 +464,21 @@ class FilesFragment : Fragment() {
                 if (sessionId != null && sessionId != currentSessionId) {
                     switchToSession(sessionId)
                 }
+            }
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (!Environment.isExternalStorageManager()) {
+                AlertDialog.Builder(requireContext())
+                    .setTitle("Permission Required")
+                    .setMessage("This app needs access to all files to function properly. Please grant the permission.")
+                    .setPositiveButton(android.R.string.ok) { _, _ ->
+                        val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                        intent.data = Uri.parse("package:${requireContext().packageName}")
+                        startActivity(intent)
+                    }
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show()
             }
         }
     }

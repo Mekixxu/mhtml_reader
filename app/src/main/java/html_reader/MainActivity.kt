@@ -61,24 +61,29 @@ class MainActivity : AppCompatActivity() {
         showContent(FavoritesFragment(), "favorites_page")
     }
 
-    fun showDirectoryMode() {
-        showContent(FilesFragment(), "directory_mode")
+    fun showDirectoryMode(fromFolders: Boolean = false) {
+        val tag = if (fromFolders) "directory_mode_folders" else "directory_mode"
+        showContent(FilesFragment(), tag)
     }
 
-    fun showDirectoryModeWithPath(path: String) {
-        showContent(FilesFragment.newInstanceForPath(path), "directory_mode")
+    fun showDirectoryModeWithPath(path: String, fromFolders: Boolean = false) {
+        val tag = if (fromFolders) "directory_mode_folders" else "directory_mode"
+        showContent(FilesFragment.newInstanceForPath(path), tag)
     }
 
-    fun showDirectoryModeWithSafTree(treeUri: String) {
-        showContent(FilesFragment.newInstanceForSafTree(treeUri), "directory_mode")
+    fun showDirectoryModeWithSafTree(treeUri: String, fromFolders: Boolean = false) {
+        val tag = if (fromFolders) "directory_mode_folders" else "directory_mode"
+        showContent(FilesFragment.newInstanceForSafTree(treeUri), tag)
     }
 
-    fun showDirectoryModeWithNetwork(networkConfigId: Long) {
-        showContent(FilesFragment.newInstance(networkConfigId), "directory_mode")
+    fun showDirectoryModeWithNetwork(networkConfigId: Long, fromFolders: Boolean = false) {
+        val tag = if (fromFolders) "directory_mode_folders" else "directory_mode"
+        showContent(FilesFragment.newInstance(networkConfigId), tag)
     }
 
-    fun showDirectoryModeWithNetworkPath(networkConfigId: Long, startPath: String) {
-        showContent(FilesFragment.newInstanceForNetworkPath(networkConfigId, startPath), "directory_mode")
+    fun showDirectoryModeWithNetworkPath(networkConfigId: Long, startPath: String, fromFolders: Boolean = false) {
+        val tag = if (fromFolders) "directory_mode_folders" else "directory_mode"
+        showContent(FilesFragment.newInstanceForNetworkPath(networkConfigId, startPath), tag)
     }
 
     fun showReaderMode() {
@@ -103,10 +108,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun syncBottomNavSelection() {
         val current = supportFragmentManager.findFragmentById(R.id.main_content)
-        val itemId = when (current) {
-            is FoldersOverviewFragment -> R.id.nav_files
-            is TabsOverviewFragment -> R.id.nav_reader
-            is MoreFragment -> R.id.nav_more
+        val tag = current?.tag
+        val itemId = when {
+            tag == "directory_mode_folders" -> R.id.nav_files
+            current is FoldersOverviewFragment -> R.id.nav_files
+            current is TabsOverviewFragment -> R.id.nav_reader
+            current is MoreFragment -> R.id.nav_more
             else -> R.id.nav_home
         }
         if (bottomNav.selectedItemId != itemId) {

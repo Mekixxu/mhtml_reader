@@ -38,7 +38,7 @@ class FoldersOverviewFragment : Fragment(R.layout.fragment_folders_overview) {
             val id = selectedId ?: return@setOnClickListener
             viewLifecycleOwner.lifecycleScope.launch {
                 FilesRuntime.currentSessionStore(requireContext()).set(id)
-                (activity as? MainActivity)?.showDirectoryMode()
+                (activity as? MainActivity)?.showDirectoryMode(fromFolders = true)
             }
         }
         deleteButton.setOnClickListener {
