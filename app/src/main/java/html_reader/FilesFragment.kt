@@ -119,7 +119,7 @@ class FilesFragment : Fragment() {
     private var smbCurrentPath: String = "/"
     private var ftpLoadToken: Long = 0L
     private var titleRefreshJob: Job? = null
-    private val supportedExtensions = setOf("mht", "mhtml", "pdf")
+    private val supportedExtensions = setOf("mht", "mhtml", "pdf", "html", "htm")
     private val displayTitleByPath = mutableMapOf<String, String>()
     private val ftpUploadLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -335,31 +335,7 @@ class FilesFragment : Fragment() {
         }
 
         actionUpButton.setOnClickListener {
-            if (browseSource == BrowseSource.FTP) {
-                ftpCurrentPath = ftpParentPath(ftpCurrentPath)
-                selectedEntry = null
-                loadEntries()
-                persistCurrentDir()
-                return@setOnClickListener
-            }
-            if (browseSource == BrowseSource.SMB) {
-                smbCurrentPath = smbParentPath(smbCurrentPath)
-                selectedEntry = null
-                loadEntries()
-                persistCurrentDir()
-                return@setOnClickListener
-            }
-            val parent = currentDir?.parentFile
-            if (parent != null && parent.exists() && parent.isDirectory) {
-                if (parent.listFiles() == null) {
-                    Toast.makeText(requireContext(), "Cannot access parent folder", Toast.LENGTH_SHORT).show()
-                    return@setOnClickListener
-                }
-                currentDir = parent
-                selectedEntry = null
-                loadEntries()
-                persistCurrentDir()
-            }
+            navigateUp()
         }
 
         actionCreateButton.setOnClickListener {
@@ -524,6 +500,48 @@ class FilesFragment : Fragment() {
                     .show()
             }
         }
+    }
+
+    fun navigateUp(): Boolean {
+        if (browseSource == BrowseSource.FTP) {
+            val parent = ftpParentPath(ftpCurrentPath)
+            if (parent == ftpCurrentPath || (ftpCurrentPath == "/" && parent == "/")) {
+                return false
+            }
+            ftpCurrentPath = parent
+            selectedEntry = null
+            loadEntries()
+            persistCurrentDir()
+            return true
+        }
+        if (browseSource == BrowseSource.SMB) {
+            val parent = smbParentPath(smbCurrentPath)
+            if (parent == smbCurrentPath || (smbCurrentPath == "/" && parent == "/")) {
+                return false
+            }
+            smbCurrentPath = parent
+            selectedEntry = null
+            loadEntries()
+            persistCurrentDir()
+            return true
+        }
+        val current = currentDirFile()
+        val parent = current.parentFile
+        if (parent != null && parent.exists() && parent.isDirectory) {
+            // Check if we are at the root of the allowed scope?
+            // For now, standard file system up.
+            // If current is root (e.g. /), parent might be null.
+            if (parent.listFiles() == null) {
+                 // Cannot access parent, treat as root reached?
+                 return false
+            }
+            currentDir = parent
+            selectedEntry = null
+            loadEntries()
+            persistCurrentDir()
+            return true
+        }
+        return false
     }
 
     private fun formatSize(bytes: Long): String {
