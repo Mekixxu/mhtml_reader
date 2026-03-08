@@ -15,7 +15,9 @@
         android:id="@+id/main_bottom_nav"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        app:itemIconTint="@null"
+        app:itemIconTint="@color/bottom_nav_item_tint"
+        app:itemTextColor="@color/bottom_nav_item_tint"
+        app:labelVisibilityMode="labeled"
         app:menu="@menu/main_bottom_nav_menu" />
 
 </LinearLayout>

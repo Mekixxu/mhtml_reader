@@ -82,6 +82,10 @@
     <string name="home_recents_title">Recent Opens</string>
     <string name="home_smb_title">SMB Connections</string>
     <string name="home_ftp_title">FTP Connections</string>
+    <string name="home_network_title">Network</string>
+    <string name="home_network_subtitle">SMB / FTP connections</string>
+    <string name="home_network_add_hint">Tap + to add a network connection</string>
+    <string name="home_local_downloads">Downloads</string>
     <string name="folders_create">Create</string>
     <string name="folders_open">Open</string>
     <string name="folders_delete">Delete</string>

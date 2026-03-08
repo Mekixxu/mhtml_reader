@@ -89,6 +89,10 @@ class MainActivity : AppCompatActivity() {
         showContent(ReaderFragment.newInstance(path), "reader_mode")
     }
 
+    fun showMorePage() {
+        showOverview(MoreFragment(), "more_overview")
+    }
+
     private fun showContent(fragment: Fragment, tag: String) {
         supportFragmentManager.beginTransaction()
             .replace(R.id.main_content, fragment, tag)

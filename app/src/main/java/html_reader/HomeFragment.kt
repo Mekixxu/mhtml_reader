@@ -11,7 +11,6 @@ import android.view.ViewGroup
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.ListView
-import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
@@ -25,18 +24,16 @@ import kotlinx.coroutines.launch
 class HomeFragment : Fragment() {
     private lateinit var openFavoritesButton: Button
     private lateinit var addAuthorizedDirButton: View
+    private lateinit var addNetworkButton: View
     private lateinit var localDirsList: ListView
     private lateinit var recentsList: ListView
-    private lateinit var smbList: ListView
-    private lateinit var ftpList: ListView
+    private lateinit var networkList: ListView
     private lateinit var localDirsAdapter: ArrayAdapter<String>
     private lateinit var recentsAdapter: ArrayAdapter<String>
-    private lateinit var smbAdapter: ArrayAdapter<String>
-    private lateinit var ftpAdapter: ArrayAdapter<String>
+    private lateinit var networkAdapter: ArrayAdapter<String>
     private val localDirs = mutableListOf<HomeLocalEntry>()
     private val recents = mutableListOf<HistoryEntity>()
-    private val smbConfigs = mutableListOf<NetworkConfigEntity>()
-    private val ftpConfigs = mutableListOf<NetworkConfigEntity>()
+    private val networkConfigs = mutableListOf<NetworkConfigEntity>()
     private var authorizedDirs: List<AuthorizedDir> = emptyList()
     private val addAuthorizedDirLauncher = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
@@ -61,20 +58,18 @@ class HomeFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         openFavoritesButton = view.findViewById(R.id.home_open_favorites)
         addAuthorizedDirButton = view.findViewById(R.id.home_add_authorized_dir)
+        addNetworkButton = view.findViewById(R.id.home_add_network)
         localDirsList = view.findViewById(R.id.home_local_dirs_list)
         recentsList = view.findViewById(R.id.home_recents_list)
-        smbList = view.findViewById(R.id.home_smb_list)
-        ftpList = view.findViewById(R.id.home_ftp_list)
+        networkList = view.findViewById(R.id.home_network_list)
         
-        localDirsAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_list_item_1, mutableListOf())
-        recentsAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_list_item_1, mutableListOf())
-        smbAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_list_item_1, mutableListOf())
-        ftpAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_list_item_1, mutableListOf())
+        localDirsAdapter = ArrayAdapter(requireContext(), R.layout.item_home_rect, mutableListOf())
+        recentsAdapter = ArrayAdapter(requireContext(), R.layout.item_home_rect, mutableListOf())
+        networkAdapter = ArrayAdapter(requireContext(), R.layout.item_home_rect, mutableListOf())
         
         localDirsList.adapter = localDirsAdapter
         recentsList.adapter = recentsAdapter
-        smbList.adapter = smbAdapter
-        ftpList.adapter = ftpAdapter
+        networkList.adapter = networkAdapter
         
         refreshLocalDirs()
 
@@ -83,6 +78,10 @@ class HomeFragment : Fragment() {
         }
         addAuthorizedDirButton.setOnClickListener {
             addAuthorizedDirLauncher.launch(null)
+        }
+        addNetworkButton.setOnClickListener {
+            (activity as? MainActivity)?.showMorePage()
+            statusMessage(getString(R.string.home_network_add_hint))
         }
         
         // Remove authorized dir via long press
@@ -137,12 +136,8 @@ class HomeFragment : Fragment() {
             true
         }
         
-        smbList.setOnItemClickListener { _, _, position, _ ->
-            val config = smbConfigs.getOrNull(position) ?: return@setOnItemClickListener
-            (activity as? MainActivity)?.showDirectoryModeWithNetwork(config.id)
-        }
-        ftpList.setOnItemClickListener { _, _, position, _ ->
-            val config = ftpConfigs.getOrNull(position) ?: return@setOnItemClickListener
+        networkList.setOnItemClickListener { _, _, position, _ ->
+            val config = networkConfigs.getOrNull(position) ?: return@setOnItemClickListener
             (activity as? MainActivity)?.showDirectoryModeWithNetwork(config.id)
         }
         viewLifecycleOwner.lifecycleScope.launch {
@@ -156,16 +151,15 @@ class HomeFragment : Fragment() {
         }
         viewLifecycleOwner.lifecycleScope.launch {
             FilesRuntime.networkConfigRepository(requireContext()).observeAll().collect { list ->
-                smbConfigs.clear()
-                ftpConfigs.clear()
-                smbConfigs.addAll(list.filter { it.protocol == NetworkProtocol.SMB })
-                ftpConfigs.addAll(list.filter { it.protocol == NetworkProtocol.FTP })
-                smbAdapter.clear()
-                ftpAdapter.clear()
-                smbAdapter.addAll(smbConfigs.map { "${it.name}  •  ${it.host}:${it.port}  •  ${it.defaultPath}" })
-                ftpAdapter.addAll(ftpConfigs.map { "${it.name}  •  ${it.host}:${it.port}  •  ${it.defaultPath}" })
-                smbAdapter.notifyDataSetChanged()
-                ftpAdapter.notifyDataSetChanged()
+                networkConfigs.clear()
+                networkConfigs.addAll(list.filter { it.protocol == NetworkProtocol.SMB || it.protocol == NetworkProtocol.FTP })
+                networkAdapter.clear()
+                if (networkConfigs.isEmpty()) {
+                    networkAdapter.add(getString(R.string.home_network_add_hint))
+                } else {
+                    networkAdapter.addAll(networkConfigs.map { "${it.protocol.name}  •  ${it.name}  •  ${it.host}:${it.port}" })
+                }
+                networkAdapter.notifyDataSetChanged()
             }
         }
         viewLifecycleOwner.lifecycleScope.launch {
@@ -177,17 +171,14 @@ class HomeFragment : Fragment() {
     }
 
     private fun refreshLocalDirs() {
-        val primaryRoot = requireContext().filesDir.parentFile?.absolutePath ?: requireContext().filesDir.absolutePath
-        val externalRoots = requireContext().getExternalFilesDirs(null)
-            .mapNotNull { it?.parentFile?.parentFile?.parentFile?.absolutePath }
+        val downloadPath = "/storage/emulated/0/Download"
         localDirs.clear()
-        localDirs.add(HomeLocalEntry(primaryRoot, primaryRoot, null))
-        localDirs.addAll(externalRoots.distinct().map { HomeLocalEntry(it, it, null) })
+        localDirs.add(HomeLocalEntry(getString(R.string.home_local_downloads), downloadPath, null))
         localDirs.addAll(
             authorizedDirs.map { authorized ->
                 val resolved = resolveSafTreeToLocalPath(authorized.treeUri)
-                val suffix = if (resolved == null) authorized.treeUri else resolved
-                HomeLocalEntry("${authorized.displayName}  •  $suffix", resolved, authorized.treeUri)
+                val display = if (resolved == null) authorized.displayName else "${authorized.displayName}  •  $resolved"
+                HomeLocalEntry(display, resolved, authorized.treeUri)
             }
         )
         localDirsAdapter.clear()
