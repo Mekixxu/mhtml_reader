@@ -1,0 +1,3 @@
+- [x] FTP `buildFtpUrl` uses correct encoding for URL encoding path segments.
+- [x] User can manually set GBK in Network Config and successfully open files.
+- [x] Uploading a file to FTP with a non-ASCII name works correctly when encoding is set.

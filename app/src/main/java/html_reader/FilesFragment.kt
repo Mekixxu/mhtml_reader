@@ -1172,56 +1172,71 @@ class FilesFragment : Fragment() {
 
     private fun parseUnixStyle(basePath: String, line: String): BrowserEntry? {
         val parts = line.split(Regex("\\s+"))
-        if (parts.size < 8) {
-             return null 
-        }
+        if (parts.size < 6) return null // Minimal: perms links owner size date name
 
         // Check permission flag (d or - or l)
         if (!parts[0].startsWith("d") && !parts[0].startsWith("-") && !parts[0].startsWith("l")) {
              return null
         }
         val isDir = parts[0].startsWith("d")
-        // Ignore symlinks for now or treat as files? 
-        // If it's 'l', we might want to follow or show as file.
-        // Let's treat 'l' as file for now, or just ignore to be safe if we can't resolve.
-        // But user said "all files not seen".
         
         // Find date parts.
         val months = setOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
-        var monthIndex = -1
-        
-        // Scan for month. Usually after permissions, links, owner, group, size.
-        // Min index for month is 5 (perms, links, owner, group, size).
+        var dateStartIdx = -1
+        var dateLength = 0
+        var dateStr = ""
+
+        // Scan for date start
+        // Min index for date is usually 5 (perms, links, owner, group, size).
         // If group missing: 4.
-        for (i in 3 until parts.size - 3) {
-            if (parts[i] in months) {
-                monthIndex = i
+        for (i in 3 until parts.size - 1) {
+            // Month Check (Jan 01 12:00 or Jan 01 2024)
+            if (parts[i] in months && i + 2 < parts.size) {
+                if (parts[i+1].all { it.isDigit() }) {
+                    dateStartIdx = i
+                    dateLength = 3
+                    dateStr = parts.subList(i, i + 3).joinToString(" ")
+                    break
+                }
+            }
+            // ISO Check (YYYY-MM-DD)
+            if (parts[i].matches(Regex("\\d{4}-\\d{2}-\\d{2}"))) {
+                dateStartIdx = i
+                // Check if next is time (HH:MM)
+                if (i + 1 < parts.size && parts[i+1].matches(Regex("\\d{1,2}:\\d{2}(:\\d{2})?"))) {
+                    dateLength = 2
+                } else {
+                    dateLength = 1
+                }
+                dateStr = parts.subList(i, i + dateLength).joinToString(" ")
                 break
             }
         }
 
-        val size: Long
-        val nameStartIndex: Int
-        
-        if (monthIndex != -1) {
-            size = parts.getOrNull(monthIndex - 1)?.toLongOrNull() ?: 0L
-            nameStartIndex = monthIndex + 3
-        } else {
-            // Fallback: assume strict column layout if month not found
-            // perms links owner group size month day time name
-            // 0     1     2     3     4    5     6   7    8
-            size = parts.getOrNull(4)?.toLongOrNull() ?: 0L
-            nameStartIndex = 8
-        }
+        if (dateStartIdx == -1) return null
 
-        if (nameStartIndex >= parts.size) {
-            return null
-        }
-
-        // Reconstruct name
-        val rawNameString = parts.subList(nameStartIndex, parts.size).joinToString(" ")
+        val sizeIdx = dateStartIdx - 1
+        val size = parts.getOrNull(sizeIdx)?.toLongOrNull() ?: 0L
         
-        // Decoding logic
+        val nameStartPartIdx = dateStartIdx + dateLength
+        if (nameStartPartIdx >= parts.size) return null
+
+        // Locate filename start in original string to preserve spaces
+        var currentSearchIdx = 0
+        for (i in 0 until nameStartPartIdx) {
+            val part = parts[i]
+            val foundAt = line.indexOf(part, currentSearchIdx)
+            if (foundAt == -1) return null
+            currentSearchIdx = foundAt + part.length
+        }
+        
+        while (currentSearchIdx < line.length && line[currentSearchIdx].isWhitespace()) {
+            currentSearchIdx++
+        }
+        
+        if (currentSearchIdx >= line.length) return null
+        
+        val rawNameString = line.substring(currentSearchIdx)
         val rawBytes = rawNameString.toByteArray(Charsets.ISO_8859_1)
         var name = decodeFtpName(rawBytes)
 
@@ -1229,10 +1244,6 @@ class FilesFragment : Fragment() {
         
         val childPath = joinFtpPath(basePath, name)
         
-        val dateStr = if (monthIndex != -1 && monthIndex + 2 < parts.size) {
-            parts.subList(monthIndex, monthIndex + 3).joinToString(" ")
-        } else ""
-
         return BrowserEntry(
             localFile = null,
             ftpPath = childPath,
@@ -1247,38 +1258,57 @@ class FilesFragment : Fragment() {
 
     private fun parseDosStyle(basePath: String, line: String): BrowserEntry? {
         // 02-11-20  11:42PM       <DIR>          Folder
-        // 02-11-20  11:42PM                  123 File.txt
+        // 2024-01-01 12:00       <DIR>          Folder
         val parts = line.split(Regex("\\s+"))
-        if (parts.size < 4) {
-            return null
-        }
-        
-        // Check date format loosely: MM-DD-YY
-        if (!parts[0].contains("-")) {
-            return null
-        }
-        
-        // Check time format loosely: contain :
-        if (!parts[1].contains(":")) {
-            return null
-        }
+        if (parts.size < 3) return null
 
-        val isDir = parts[2].equals("<DIR>", ignoreCase = true)
-        val size = if (isDir) 0L else parts[2].toLongOrNull() ?: 0L
+        var dateStartIdx = 0
+        var dateLength = 0
         
-        val nameStartIndex = 3
-        if (nameStartIndex >= parts.size) return null
+        // Check first part for date (MM-DD-YY or YYYY-MM-DD)
+        if (parts[0].matches(Regex("\\d{2}-\\d{2}-\\d{2}")) || parts[0].matches(Regex("\\d{4}-\\d{2}-\\d{2}"))) {
+             if (parts.size > 1 && (parts[1].matches(Regex("\\d{1,2}:\\d{2}.*")))) {
+                 dateLength = 2
+             } else {
+                 dateLength = 1
+             }
+        } else {
+            return null
+        }
         
-        val rawNameString = parts.subList(nameStartIndex, parts.size).joinToString(" ")
+        val metaIdx = dateStartIdx + dateLength
+        if (metaIdx >= parts.size) return null
         
-        // Decoding
+        val metaPart = parts[metaIdx]
+        val isDir = metaPart.equals("<DIR>", ignoreCase = true)
+        val size = if (isDir) 0L else metaPart.toLongOrNull() ?: 0L
+        
+        val nameStartPartIdx = metaIdx + 1
+        if (nameStartPartIdx >= parts.size) return null
+        
+        val dateStr = parts.subList(0, dateLength).joinToString(" ")
+
+        // Locate name start
+        var currentSearchIdx = 0
+        for (i in 0 until nameStartPartIdx) {
+            val part = parts[i]
+            val foundAt = line.indexOf(part, currentSearchIdx)
+            if (foundAt == -1) return null
+            currentSearchIdx = foundAt + part.length
+        }
+         while (currentSearchIdx < line.length && line[currentSearchIdx].isWhitespace()) {
+            currentSearchIdx++
+        }
+        
+        if (currentSearchIdx >= line.length) return null
+        val rawNameString = line.substring(currentSearchIdx)
+        
         val rawBytes = rawNameString.toByteArray(Charsets.ISO_8859_1)
         var name = decodeFtpName(rawBytes)
         
         if (name == "." || name == "..") return null
 
         val childPath = joinFtpPath(basePath, name)
-        val dateStr = "${parts[0]} ${parts[1]}"
 
         return BrowserEntry(
             localFile = null,
@@ -1446,15 +1476,20 @@ class FilesFragment : Fragment() {
     }
 
     private fun buildFtpUrl(config: NetworkConfigEntity, path: String, type: String): String {
+        val charset = if (!config.encoding.isNullOrBlank() && !config.encoding.equals("Auto", ignoreCase = true)) {
+            config.encoding
+        } else {
+            "UTF-8"
+        }
         val user = config.username.trim().ifBlank { "anonymous" }
         val pass = config.password.ifBlank { "anonymous@" }
-        val encodedUser = URLEncoder.encode(user, "UTF-8").replace("+", "%20")
-        val encodedPass = URLEncoder.encode(pass, "UTF-8").replace("+", "%20")
+        val encodedUser = runCatching { URLEncoder.encode(user, charset) }.getOrDefault(URLEncoder.encode(user, "UTF-8")).replace("+", "%20")
+        val encodedPass = runCatching { URLEncoder.encode(pass, charset) }.getOrDefault(URLEncoder.encode(pass, "UTF-8")).replace("+", "%20")
         val normalized = normalizeFtpPath(path)
         val encodedPath = normalized
             .split("/")
             .joinToString("/") { segment ->
-                if (segment.isBlank()) "" else URLEncoder.encode(segment, "UTF-8").replace("+", "%20")
+                if (segment.isBlank()) "" else runCatching { URLEncoder.encode(segment, charset) }.getOrDefault(URLEncoder.encode(segment, "UTF-8")).replace("+", "%20")
             }
         
         // If listing directory (type=d), ensure trailing slash to force directory listing behavior
