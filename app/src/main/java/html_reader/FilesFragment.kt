@@ -76,8 +76,44 @@ class FilesFragment : Fragment() {
         val isDirectory: Boolean,
         val sizeBytes: Long,
         val modifiedEpochMs: Long?,
-        val modifiedText: String? = null
-    )
+        val modifiedText: String? = null,
+        val rawNameBytes: ByteArray? = null
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (javaClass != other?.javaClass) return false
+
+            other as BrowserEntry
+
+            if (localFile != other.localFile) return false
+            if (ftpPath != other.ftpPath) return false
+            if (smbPath != other.smbPath) return false
+            if (name != other.name) return false
+            if (isDirectory != other.isDirectory) return false
+            if (sizeBytes != other.sizeBytes) return false
+            if (modifiedEpochMs != other.modifiedEpochMs) return false
+            if (modifiedText != other.modifiedText) return false
+            if (rawNameBytes != null) {
+                if (other.rawNameBytes == null) return false
+                if (!rawNameBytes.contentEquals(other.rawNameBytes)) return false
+            } else if (other.rawNameBytes != null) return false
+
+            return true
+        }
+
+        override fun hashCode(): Int {
+            var result = localFile?.hashCode() ?: 0
+            result = 31 * result + (ftpPath?.hashCode() ?: 0)
+            result = 31 * result + (smbPath?.hashCode() ?: 0)
+            result = 31 * result + name.hashCode()
+            result = 31 * result + isDirectory.hashCode()
+            result = 31 * result + sizeBytes.hashCode()
+            result = 31 * result + (modifiedEpochMs?.hashCode() ?: 0)
+            result = 31 * result + (modifiedText?.hashCode() ?: 0)
+            result = 31 * result + (rawNameBytes?.contentHashCode() ?: 0)
+            return result
+        }
+    }
 
     private lateinit var queryInput: EditText
     private lateinit var sortSpinner: Spinner
@@ -309,13 +345,16 @@ class FilesFragment : Fragment() {
             }
             options.add(getString(R.string.files_action_add_favorite))
             options.add(getString(R.string.files_action_details))
+            if (browseSource == BrowseSource.FTP) {
+                options.add("Diagnose Encoding")
+            }
 
             AlertDialog.Builder(requireContext())
                 .setItems(options.toTypedArray()) { _, which ->
                     val selectedOption = options[which]
                     when (selectedOption) {
                         "Open in new tab" -> {
-                             if (browseSource == BrowseSource.FTP) {
+                            if (browseSource == BrowseSource.FTP) {
                                 openFtpFile(item)
                             } else if (browseSource == BrowseSource.SMB) {
                                 openSmbFile(item)
@@ -328,6 +367,7 @@ class FilesFragment : Fragment() {
                         }
                         getString(R.string.files_action_add_favorite) -> addEntryToFavorites(item)
                         getString(R.string.files_action_details) -> showEntryDetails(item)
+                        "Diagnose Encoding" -> showDiagnosticDialog(item)
                     }
                 }
                 .show()
@@ -1179,11 +1219,11 @@ class FilesFragment : Fragment() {
         }
 
         // Reconstruct name
-        var name = parts.subList(nameStartIndex, parts.size).joinToString(" ")
+        val rawNameString = parts.subList(nameStartIndex, parts.size).joinToString(" ")
         
         // Decoding logic
-        val rawBytes = name.toByteArray(Charsets.ISO_8859_1)
-        name = decodeFtpName(rawBytes)
+        val rawBytes = rawNameString.toByteArray(Charsets.ISO_8859_1)
+        var name = decodeFtpName(rawBytes)
 
         if (name == "." || name == "..") return null
         
@@ -1200,7 +1240,8 @@ class FilesFragment : Fragment() {
             isDirectory = isDir,
             sizeBytes = size,
             modifiedEpochMs = null,
-            modifiedText = dateStr
+            modifiedText = dateStr,
+            rawNameBytes = rawBytes
         )
     }
 
@@ -1228,11 +1269,11 @@ class FilesFragment : Fragment() {
         val nameStartIndex = 3
         if (nameStartIndex >= parts.size) return null
         
-        var name = parts.subList(nameStartIndex, parts.size).joinToString(" ")
+        val rawNameString = parts.subList(nameStartIndex, parts.size).joinToString(" ")
         
         // Decoding
-        val rawBytes = name.toByteArray(Charsets.ISO_8859_1)
-        name = decodeFtpName(rawBytes)
+        val rawBytes = rawNameString.toByteArray(Charsets.ISO_8859_1)
+        var name = decodeFtpName(rawBytes)
         
         if (name == "." || name == "..") return null
 
@@ -1246,7 +1287,8 @@ class FilesFragment : Fragment() {
             isDirectory = isDir,
             sizeBytes = size,
             modifiedEpochMs = null,
-            modifiedText = dateStr
+            modifiedText = dateStr,
+            rawNameBytes = rawBytes
         )
     }
 
@@ -1613,6 +1655,55 @@ class FilesFragment : Fragment() {
             .setTitle(getString(R.string.files_action_details))
             .setMessage(message)
             .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
+    private fun showDiagnosticDialog(entry: BrowserEntry) {
+        val rawBytes = entry.rawNameBytes
+        if (rawBytes == null) {
+            Toast.makeText(requireContext(), "No raw bytes available for this file (not FTP?)", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val sb = StringBuilder()
+        sb.append("Raw Hex:\n")
+        sb.append(rawBytes.joinToString(" ") { "%02X".format(it) })
+        sb.append("\n\n")
+
+        val charsets = listOf(
+            "UTF-8",
+            "GBK",
+            "ISO-8859-1",
+            "Big5",
+            "Shift_JIS",
+            "windows-1251"
+        )
+
+        sb.append("Decoding Previews:\n")
+        for (csName in charsets) {
+            try {
+                val decoded = String(rawBytes, java.nio.charset.Charset.forName(csName))
+                sb.append("[$csName]: $decoded\n")
+            } catch (e: Exception) {
+                sb.append("[$csName]: <Error: ${e.message}>\n")
+            }
+        }
+        
+        val currentEncoding = ftpConfig?.encoding ?: "Auto"
+        sb.append("\nCurrent Config: $currentEncoding")
+
+        val message = sb.toString()
+
+        AlertDialog.Builder(requireContext())
+            .setTitle("Encoding Diagnosis")
+            .setMessage(message)
+            .setPositiveButton(android.R.string.ok, null)
+            .setNeutralButton("Copy") { _, _ ->
+                val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                val clip = android.content.ClipData.newPlainText("Diagnostic Info", message)
+                clipboard.setPrimaryClip(clip)
+                Toast.makeText(requireContext(), "Copied to clipboard", Toast.LENGTH_SHORT).show()
+            }
             .show()
     }
 

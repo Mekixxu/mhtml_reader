@@ -1,0 +1,5 @@
+- [x] "Diagnose Encoding" option appears in the long-press menu of a file.
+- [x] Selecting it shows a dialog with "Raw Hex: ...".
+- [x] The dialog shows previews for UTF-8, GBK, etc.
+- [x] The raw hex matches what we expect (e.g. for a test file).
+- [x] Copy button works.
