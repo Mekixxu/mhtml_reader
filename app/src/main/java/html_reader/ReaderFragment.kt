@@ -1,5 +1,9 @@
 package com.html_reader
 
+import android.app.AlertDialog
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -163,6 +167,7 @@ class ReaderFragment : Fragment() {
         openProgress.isIndeterminate = true
         statusLabel.visibility = View.VISIBLE
         statusLabel.text = getString(R.string.reader_status_loading)
+        statusLabel.setOnClickListener(null)
         
         viewLifecycleOwner.lifecycleScope.launch {
             try {
@@ -170,9 +175,11 @@ class ReaderFragment : Fragment() {
                     when (state) {
                         is OpenState.Loading -> {
                             statusLabel.text = getString(R.string.reader_status_loading)
+                            statusLabel.setOnClickListener(null)
                             openProgress.isIndeterminate = true
                         }
                         is OpenState.Copying -> {
+                            statusLabel.setOnClickListener(null)
                             if (state.totalBytes > 0L) {
                                 openProgress.isIndeterminate = false
                                 val percent = ((state.bytesCopied * 100L) / state.totalBytes).toInt().coerceIn(0, 100)
@@ -187,19 +194,19 @@ class ReaderFragment : Fragment() {
                         is OpenState.Ready -> {
                             selectedTabId = state.tab.tabId
                             statusLabel.visibility = View.GONE
+                            statusLabel.setOnClickListener(null)
                             openProgress.visibility = View.GONE
                             loadSelectedTabContent()
                         }
                         is OpenState.Error -> {
                             val message = state.error.message ?: state.error.javaClass.simpleName
-                            statusLabel.text = getString(R.string.reader_status_error, message)
-                            statusLabel.visibility = View.VISIBLE
+                            setErrorState(getString(R.string.reader_status_error, message), message)
                         }
                     }
                 }
             } catch (e: Exception) {
-                 statusLabel.text = getString(R.string.reader_status_error, e.message ?: "Unknown error")
-                 statusLabel.visibility = View.VISIBLE
+                 val msg = e.message ?: "Unknown error"
+                 setErrorState(getString(R.string.reader_status_error, msg), msg)
             } finally {
                 opening = false
                 if (statusLabel.text == getString(R.string.reader_status_loading) || statusLabel.text.startsWith("Copying")) {
@@ -207,6 +214,24 @@ class ReaderFragment : Fragment() {
                      openProgress.visibility = View.GONE
                 }
             }
+        }
+    }
+
+    private fun setErrorState(displayMsg: String, fullDetails: String) {
+        statusLabel.text = displayMsg
+        statusLabel.visibility = View.VISIBLE
+        statusLabel.setOnClickListener {
+            AlertDialog.Builder(requireContext())
+                .setTitle("Error Details")
+                .setMessage(fullDetails)
+                .setPositiveButton(android.R.string.ok, null)
+                .setNeutralButton("Copy") { _, _ ->
+                    val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    val clip = ClipData.newPlainText("Error Message", fullDetails)
+                    clipboard.setPrimaryClip(clip)
+                    Toast.makeText(requireContext(), "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                }
+                .show()
         }
     }
 
@@ -260,8 +285,8 @@ class ReaderFragment : Fragment() {
                 pdfReaderController.goToPage(initialPage.coerceIn(0, (pdfPageCount - 1).coerceAtLeast(0)))
                 updatePdfPageControlState()
             } catch (e: Exception) {
-                statusLabel.text = getString(R.string.reader_status_error, e.message ?: e.javaClass.simpleName)
-                statusLabel.visibility = View.VISIBLE
+                val msg = e.message ?: e.javaClass.simpleName
+                setErrorState(getString(R.string.reader_status_error, msg), msg)
                 pdfPreviewImage.setImageDrawable(null)
                 pdfPageCount = 0
                 currentPdfPageIndex = 0
@@ -287,8 +312,8 @@ class ReaderFragment : Fragment() {
         val file = File(cachePath)
         if (!file.exists() || !file.isFile) {
             webPreview.loadUrl("about:blank")
-            statusLabel.text = getString(R.string.reader_status_error, getString(R.string.reader_file_not_found))
-            statusLabel.visibility = View.VISIBLE
+            val msg = getString(R.string.reader_file_not_found)
+            setErrorState(getString(R.string.reader_status_error, msg), msg)
             return
         }
         WebViewConfigurator.configure(webPreview)

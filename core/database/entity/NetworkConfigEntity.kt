@@ -21,5 +21,6 @@ data class NetworkConfigEntity(
     val port: Int,
     val username: String,
     val password: String,
-    val defaultPath: String
+    val defaultPath: String,
+    val encoding: String = "Auto"
 )

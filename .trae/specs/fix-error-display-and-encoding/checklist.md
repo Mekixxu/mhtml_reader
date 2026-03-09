@@ -1,0 +1,5 @@
+- [x] Database migration to version 3 is successful (app doesn't crash on start).
+- [x] Can see "Encoding" spinner in Network Config dialog (More -> Network -> Add/Edit).
+- [x] Can select "GBK" and save.
+- [x] FTP file names displayed correctly (no garbage characters) when using "GBK" for the problematic server.
+- [x] When an error occurs (e.g., disconnect network and try to open), tapping the error status text shows a popup with full details.

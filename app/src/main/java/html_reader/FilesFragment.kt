@@ -897,6 +897,25 @@ class FilesFragment : Fragment() {
         operationStatusLabel.text = value
         val colorRes = if (isError) android.R.color.holo_red_dark else android.R.color.black
         operationStatusLabel.setTextColor(resources.getColor(colorRes, null))
+
+        if (isError) {
+            operationStatusLabel.setOnClickListener {
+                AlertDialog.Builder(requireContext())
+                    .setTitle("Error Details")
+                    .setMessage(value)
+                    .setPositiveButton(android.R.string.ok, null)
+                    .setNeutralButton("Copy") { _, _ ->
+                        val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        val clip = android.content.ClipData.newPlainText("Error Message", value)
+                        clipboard.setPrimaryClip(clip)
+                        Toast.makeText(requireContext(), "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                    }
+                    .show()
+            }
+        } else {
+            operationStatusLabel.setOnClickListener(null)
+            operationStatusLabel.isClickable = false
+        }
     }
 
     private fun loadFtpEntries() {
@@ -1232,7 +1251,17 @@ class FilesFragment : Fragment() {
     }
 
     private fun decodeFtpName(bytes: ByteArray): String {
-        // 1. Try UTF-8
+        // 1. Get encoding from config
+        val encoding = ftpConfig?.encoding
+        if (!encoding.isNullOrBlank() && !encoding.equals("Auto", ignoreCase = true)) {
+            try {
+                return String(bytes, java.nio.charset.Charset.forName(encoding))
+            } catch (e: Exception) {
+                // Fallback if invalid charset
+            }
+        }
+
+        // 2. Try UTF-8
         try {
              // Use decoder to strict check
             val decoder = Charsets.UTF_8.newDecoder()
@@ -1243,14 +1272,14 @@ class FilesFragment : Fragment() {
             // Not valid UTF-8
         }
         
-        // 2. Try GBK (Common for Chinese)
+        // 3. Try GBK (Common for Chinese)
         try {
             return String(bytes, java.nio.charset.Charset.forName("GBK"))
         } catch (e: Exception) {
             // Ignore
         }
         
-        // 3. Fallback to ISO-8859-1 (original)
+        // 4. Fallback to ISO-8859-1 (original)
         return String(bytes, Charsets.ISO_8859_1)
     }
 

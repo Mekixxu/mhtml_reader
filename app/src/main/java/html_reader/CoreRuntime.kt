@@ -23,6 +23,7 @@ object CoreRuntime {
             val appContext = context.applicationContext
             val dispatchers = DefaultDispatcherProvider()
             val db = Room.databaseBuilder(appContext, AppDatabase::class.java, "app_database")
+                .addMigrations(AppDatabase.MIGRATION_2_3)
                 .fallbackToDestructiveMigration()
                 .build()
             holder = Holder(db, dispatchers)

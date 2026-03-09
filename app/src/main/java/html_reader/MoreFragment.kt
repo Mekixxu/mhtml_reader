@@ -143,12 +143,22 @@ class MoreFragment : Fragment() {
         val passwordInput = EditText(requireContext())
         val pathInput = EditText(requireContext())
         val anonymousCheck = CheckBox(requireContext())
+        val encodingSpinner = Spinner(requireContext())
+
         val protocolValues = listOf(NetworkProtocol.SMB, NetworkProtocol.FTP)
+        val encodingValues = listOf("Auto", "UTF-8", "GBK", "Big5", "ISO-8859-1", "Shift_JIS", "Windows-1251")
+
         protocolSpinner.adapter = ArrayAdapter(
             requireContext(),
             android.R.layout.simple_spinner_dropdown_item,
             protocolValues.map { it.name }
         )
+        encodingSpinner.adapter = ArrayAdapter(
+            requireContext(),
+            android.R.layout.simple_spinner_dropdown_item,
+            encodingValues
+        )
+
         nameInput.hint = getString(R.string.more_network_name_hint)
         hostInput.hint = getString(R.string.more_network_host_hint)
         portInput.hint = getString(R.string.more_network_port_hint)
@@ -156,6 +166,7 @@ class MoreFragment : Fragment() {
         passwordInput.hint = getString(R.string.more_network_password_hint)
         pathInput.hint = getString(R.string.more_network_path_hint)
         anonymousCheck.text = getString(R.string.more_network_ftp_anonymous)
+        
         root.addView(protocolSpinner)
         root.addView(nameInput)
         root.addView(hostInput)
@@ -164,6 +175,7 @@ class MoreFragment : Fragment() {
         root.addView(userInput)
         root.addView(passwordInput)
         root.addView(pathInput)
+        root.addView(encodingSpinner)
 
         fun currentProtocol(): NetworkProtocol = protocolValues[protocolSpinner.selectedItemPosition]
         fun applyAuthUiState(protocol: NetworkProtocol, anonymous: Boolean) {
@@ -187,11 +199,13 @@ class MoreFragment : Fragment() {
             passwordInput.setText(existing.password)
             pathInput.setText(existing.defaultPath)
             anonymousCheck.isChecked = existing.protocol == NetworkProtocol.FTP && existing.username.isBlank()
+            encodingSpinner.setSelection(encodingValues.indexOf(existing.encoding).coerceAtLeast(0))
         } else {
             protocolSpinner.setSelection(0)
             portInput.setText("445")
             pathInput.setText("/")
             anonymousCheck.isChecked = false
+            encodingSpinner.setSelection(0)
         }
         applyAuthUiState(currentProtocol(), anonymousCheck.isChecked)
 
@@ -226,6 +240,8 @@ class MoreFragment : Fragment() {
                 val username = if (useAnonymous) "" else userInput.text?.toString()?.trim().orEmpty()
                 val password = if (useAnonymous) "" else passwordInput.text?.toString().orEmpty()
                 val path = pathInput.text?.toString()?.trim().orEmpty().ifBlank { "/" }
+                val encoding = encodingValues[encodingSpinner.selectedItemPosition]
+                
                 if (name.isBlank() || host.isBlank() || port == null || port <= 0) {
                     statusLabel.text = getString(R.string.more_network_invalid)
                     return@setPositiveButton
@@ -238,7 +254,8 @@ class MoreFragment : Fragment() {
                     port = port,
                     username = username,
                     password = password,
-                    defaultPath = path
+                    defaultPath = path,
+                    encoding = encoding
                 )
                 viewLifecycleOwner.lifecycleScope.launch {
                     if (existing == null) {
@@ -268,7 +285,7 @@ class MoreFragment : Fragment() {
                 } else {
                     it.username
                 }
-                "$selected${it.protocol.name}  ${it.name}  •  ${it.host}:${it.port}  •  $authLabel  •  ${it.defaultPath}"
+                "$selected${it.protocol.name}  ${it.name}  •  ${it.host}:${it.port}  •  $authLabel  •  ${it.encoding}  •  ${it.defaultPath}"
             }
         )
         adapter.notifyDataSetChanged()
