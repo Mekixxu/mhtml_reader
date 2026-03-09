@@ -140,6 +140,21 @@ class HomeFragment : Fragment() {
             val config = networkConfigs.getOrNull(position) ?: return@setOnItemClickListener
             (activity as? MainActivity)?.showDirectoryModeWithNetwork(config.id, fromFolders = true)
         }
+        networkList.setOnItemLongClickListener { _, _, position, _ ->
+            val config = networkConfigs.getOrNull(position) ?: return@setOnItemLongClickListener true
+            AlertDialog.Builder(requireContext())
+                .setTitle(R.string.home_network_delete_title)
+                .setMessage("${config.protocol.name}://${config.host}")
+                .setPositiveButton(android.R.string.ok) { _, _ ->
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        FilesRuntime.networkConfigRepository(requireContext()).delete(config.id)
+                        statusMessage(getString(R.string.home_network_deleted))
+                    }
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+            true
+        }
         viewLifecycleOwner.lifecycleScope.launch {
             ReaderRuntime.historyRepository(requireContext()).observeRecent(limit = 30).collect { list ->
                 recents.clear()

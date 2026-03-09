@@ -1379,12 +1379,17 @@ class FilesFragment : Fragment() {
         val pass = config.password.ifBlank { "anonymous@" }
         val encodedUser = URLEncoder.encode(user, "UTF-8").replace("+", "%20")
         val encodedPass = URLEncoder.encode(pass, "UTF-8").replace("+", "%20")
-        val encodedPath = normalizeFtpPath(path)
+        val normalized = normalizeFtpPath(path)
+        val encodedPath = normalized
             .split("/")
             .joinToString("/") { segment ->
                 if (segment.isBlank()) "" else URLEncoder.encode(segment, "UTF-8").replace("+", "%20")
             }
-        return "ftp://$encodedUser:$encodedPass@${config.host}:${config.port}$encodedPath;type=$type"
+        
+        // If listing directory (type=d), ensure trailing slash to force directory listing behavior
+        val finalPath = if (type == "d" && !encodedPath.endsWith("/")) "$encodedPath/" else encodedPath
+        
+        return "ftp://$encodedUser:$encodedPass@${config.host}:${config.port}$finalPath;type=$type"
     }
 
     private fun buildSmbDirUrl(config: NetworkConfigEntity, path: String): String {
