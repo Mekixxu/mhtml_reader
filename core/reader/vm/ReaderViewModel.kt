@@ -13,6 +13,8 @@ class ReaderViewModel(
     private val tabManager: ReaderTabManager
 ) : ViewModel() {
     val tabs: StateFlow<List<core.reader.model.ReaderTab>> = tabManager.observeTabs()
+    val currentTabId: StateFlow<String?> = tabManager.observeCurrentTabId()
+    
     fun open(request: core.reader.model.OpenRequest): Flow<OpenState> = tabManager.openNewTab(request)
     suspend fun closeTab(tabId: String) = tabManager.closeTab(tabId)
     suspend fun closeAll() = tabManager.closeAll()

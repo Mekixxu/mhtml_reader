@@ -343,12 +343,12 @@ class FilesFragment : Fragment() {
             options.add(getString(R.string.files_action_details))
             
             // Check capability instead of just browseSource
-            val canModify = (browseSource == BrowseSource.LOCAL && item.localFile != null) || 
-                            (browseSource == BrowseSource.SMB && item.smbPath != null)
+            val isLocal = browseSource == BrowseSource.LOCAL
+            val isSmb = browseSource == BrowseSource.SMB && item.smbPath != null
             
-            if (canModify) {
-                options.add("Rename")
-                options.add("Delete")
+            if (isLocal || isSmb) {
+                options.add(getString(R.string.action_rename))
+                options.add(getString(R.string.action_delete))
             }
 
             if (browseSource == BrowseSource.FTP) {
@@ -373,8 +373,8 @@ class FilesFragment : Fragment() {
                         }
                         getString(R.string.files_action_add_favorite) -> addEntryToFavorites(item)
                         getString(R.string.files_action_details) -> showEntryDetails(item)
-                        "Rename" -> promptRename(item)
-                        "Delete" -> promptDelete(item)
+                        getString(R.string.action_rename) -> promptRename(item)
+                        getString(R.string.action_delete) -> promptDelete(item)
                         "Diagnose Encoding" -> showDiagnosticDialog(item)
                     }
                 }
@@ -1289,8 +1289,8 @@ class FilesFragment : Fragment() {
         if (!ftpCacheDir.exists()) {
             ftpCacheDir.mkdirs()
         }
-        val ext = displayName.substringAfterLast('.', "").ifBlank { "bin" }
-        val target = File(ftpCacheDir, "ftp_${System.currentTimeMillis()}_${displayName.hashCode()}.$ext")
+        val safeName = displayName.replace(Regex("[^a-zA-Z0-9.\\-_]"), "_")
+        val target = File(ftpCacheDir, safeName)
         val url = URL(buildFtpUrl(config, remotePath, "i"))
         url.openStream().use { input ->
             FileOutputStream(target).use { output ->
@@ -1305,8 +1305,8 @@ class FilesFragment : Fragment() {
         if (!cacheDir.exists()) {
             cacheDir.mkdirs()
         }
-        val ext = displayName.substringAfterLast('.', "").ifBlank { "bin" }
-        val target = File(cacheDir, "smb_${System.currentTimeMillis()}_${displayName.hashCode()}.$ext")
+        val safeName = displayName.replace(Regex("[^a-zA-Z0-9.\\-_]"), "_")
+        val target = File(cacheDir, safeName)
         val source = SmbFile(buildSmbFileUrl(config, remotePath), smbContext(config))
         source.inputStream.use { input ->
             FileOutputStream(target).use { output ->

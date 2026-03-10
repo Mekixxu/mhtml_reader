@@ -35,12 +35,16 @@ class DefaultReaderTabManager(
     private val _tabs = kotlinx.coroutines.flow.MutableStateFlow<List<ReaderTab>>(emptyList())
     override fun observeTabs(): kotlinx.coroutines.flow.StateFlow<List<ReaderTab>> = _tabs
 
+    private val _currentTabId = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    override fun observeCurrentTabId(): kotlinx.coroutines.flow.StateFlow<String?> = _currentTabId
+
     private val tabStates = LinkedHashMap<String, ReaderTab>()
 
     override fun openNewTab(request: OpenRequest): Flow<OpenState> = flow {
         // 0) 检查是否已存在相同 source path 的 tab，若有则直接复用
         val existingTab = tabStates.values.firstOrNull { it.sourcePathRaw == request.source.raw }
         if (existingTab != null) {
+            _currentTabId.value = existingTab.tabId // Auto-switch to existing
             emit(OpenState.Ready(existingTab))
             return@flow
         }
@@ -115,6 +119,9 @@ class DefaultReaderTabManager(
         tabStates[tabId] = tab
         _tabs.value = tabStates.values.toList()
 
+        // Auto-switch to new tab
+        _currentTabId.value = tabId
+
         // bind：以 cacheKey 为准；若你包1 TabCacheRegistry 是 bind(tabId, cacheKey)
         tabCacheRegistry.bind(tabId, contentType.name.lowercase(), cacheKey)
 
@@ -129,16 +136,24 @@ class DefaultReaderTabManager(
             tabCacheRegistry.onTabClosed(tabId)
         }
         tabStates.remove(tabId)
-        _tabs.value = tabStates.values.toList()
+        val remaining = tabStates.values.toList()
+        _tabs.value = remaining
+        
+        if (_currentTabId.value == tabId) {
+            _currentTabId.value = remaining.lastOrNull()?.tabId
+        }
     }
 
     override suspend fun closeAll() {
         val ids = tabStates.keys.toList()
         ids.forEach { closeTab(it) }
+        _currentTabId.value = null
     }
 
     override suspend fun switchTo(tabId: String) {
-        // 仅 UI/VM 层切换当前 tab；数据层无需动作
+        if (tabStates.containsKey(tabId)) {
+            _currentTabId.value = tabId
+        }
     }
 
     private fun inferContentTypeAndExt(fileType: FileType, fileName: String): Pair<ContentType, String?> {

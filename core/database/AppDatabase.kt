@@ -22,7 +22,7 @@ import core.session.entity.FolderSessionEntity
         FolderSessionEntity::class
     ],
     version = 4,
-    exportSchema = true
+    exportSchema = false
 )
 @TypeConverters(RoomConverters::class)
 abstract class AppDatabase : RoomDatabase() {

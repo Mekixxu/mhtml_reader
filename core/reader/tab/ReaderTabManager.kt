@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.Flow
  */
 interface ReaderTabManager {
     fun observeTabs(): StateFlow<List<ReaderTab>>
+    fun observeCurrentTabId(): StateFlow<String?>
     fun openNewTab(request: OpenRequest): Flow<OpenState>
     suspend fun closeTab(tabId: String)
     suspend fun closeAll()

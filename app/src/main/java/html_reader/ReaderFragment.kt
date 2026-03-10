@@ -124,11 +124,18 @@ class ReaderFragment : Fragment() {
             readerViewModel.tabs.collect { newTabs ->
                 tabs.clear()
                 tabs.addAll(newTabs)
-                // If we don't have a selected tab, or the selected tab is gone, pick the last one (newest)
-                if (selectedTabId == null || tabs.none { it.tabId == selectedTabId }) {
-                    selectedTabId = tabs.lastOrNull()?.tabId
+            }
+        }
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            readerViewModel.currentTabId.collect { tabId ->
+                if (tabId != null && tabId != selectedTabId) {
+                    selectedTabId = tabId
+                    loadSelectedTabContent()
+                } else if (tabId == null && selectedTabId != null) {
+                    selectedTabId = null
+                    loadSelectedTabContent()
                 }
-                loadSelectedTabContent()
             }
         }
 
@@ -193,11 +200,11 @@ class ReaderFragment : Fragment() {
                             }
                         }
                         is OpenState.Ready -> {
-                            selectedTabId = state.tab.tabId
+                            // selectedTabId = state.tab.tabId // Handled by currentTabId flow
                             statusLabel.visibility = View.GONE
                             statusLabel.setOnClickListener(null)
                             openProgress.visibility = View.GONE
-                            loadSelectedTabContent()
+                            // loadSelectedTabContent() // Handled by currentTabId flow
                         }
                         is OpenState.Error -> {
                             val message = state.error.message ?: state.error.javaClass.simpleName
