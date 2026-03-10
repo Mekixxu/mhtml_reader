@@ -1680,7 +1680,7 @@ class FilesFragment : Fragment() {
             } else if (browseSource == BrowseSource.LOCAL) {
                 runOperation(
                     FileOpRequest.Rename(
-                        source = entry.localFile!!.toVfsPath(),
+                        target = entry.localFile!!.toVfsPath(),
                         newName = newName
                     )
                 )
@@ -1697,10 +1697,10 @@ class FilesFragment : Fragment() {
                     deleteSmbEntry(entry)
                 } else if (browseSource == BrowseSource.LOCAL) {
                     runOperation(
-                        FileOpRequest.Delete(
-                            targets = listOf(entry.localFile!!.toVfsPath())
-                        )
+                    FileOpRequest.Delete(
+                        target = entry.localFile!!.toVfsPath()
                     )
+                )
                 }
             }
             .setNegativeButton(android.R.string.cancel, null)
