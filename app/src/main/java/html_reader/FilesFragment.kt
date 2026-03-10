@@ -122,11 +122,6 @@ class FilesFragment : Fragment() {
     private lateinit var operationProgress: ProgressBar
     private lateinit var actionUpButton: Button
     private lateinit var actionCreateButton: Button
-    private lateinit var actionRenameButton: Button
-    private lateinit var actionDeleteButton: Button
-    private lateinit var actionDuplicateButton: Button
-    private lateinit var actionMoveParentButton: Button
-    private lateinit var actionNewSessionButton: Button
     private lateinit var listView: android.widget.ListView
     private lateinit var adapter: ArrayAdapter<BrowserEntry>
     private lateinit var executeFileOpUseCase: ExecuteFileOpUseCase
@@ -221,11 +216,6 @@ class FilesFragment : Fragment() {
         operationProgress = view.findViewById(R.id.files_operation_progress)
         actionUpButton = view.findViewById(R.id.files_action_up)
         actionCreateButton = view.findViewById(R.id.files_action_create)
-        actionRenameButton = view.findViewById(R.id.files_action_rename)
-        actionDeleteButton = view.findViewById(R.id.files_action_delete)
-        actionDuplicateButton = view.findViewById(R.id.files_action_duplicate)
-        actionMoveParentButton = view.findViewById(R.id.files_action_move_parent)
-        actionNewSessionButton = view.findViewById(R.id.files_action_new_session)
         listView = view.findViewById(R.id.files_list)
 
         adapter = object : ArrayAdapter<BrowserEntry>(requireContext(), android.R.layout.simple_list_item_2, displayedEntries) {
@@ -339,12 +329,18 @@ class FilesFragment : Fragment() {
             
             val isFile = !item.isDirectory
             val options = mutableListOf<String>()
-            options.add(getString(R.string.files_action_select)) // Keep "Select" as an option if needed, or just rely on the visual selection update
+            
             if (isFile) {
                 options.add("Open in new tab")
             }
             options.add(getString(R.string.files_action_add_favorite))
             options.add(getString(R.string.files_action_details))
+            
+            if (browseSource == BrowseSource.LOCAL || browseSource == BrowseSource.SMB) {
+                options.add("Rename")
+                options.add("Delete")
+            }
+
             if (browseSource == BrowseSource.FTP) {
                 options.add("Diagnose Encoding")
             }
@@ -367,6 +363,8 @@ class FilesFragment : Fragment() {
                         }
                         getString(R.string.files_action_add_favorite) -> addEntryToFavorites(item)
                         getString(R.string.files_action_details) -> showEntryDetails(item)
+                        "Rename" -> promptRename(item)
+                        "Delete" -> promptDelete(item)
                         "Diagnose Encoding" -> showDiagnosticDialog(item)
                     }
                 }
@@ -398,110 +396,6 @@ class FilesFragment : Fragment() {
                         name = folderName
                     )
                 )
-            }
-        }
-
-        actionRenameButton.setOnClickListener {
-            if (browseSource == BrowseSource.SMB) {
-                val selected = selectedEntry
-                if (selected == null || selected.smbPath.isNullOrBlank()) {
-                    Toast.makeText(requireContext(), getString(R.string.files_select_item_first), Toast.LENGTH_SHORT).show()
-                    return@setOnClickListener
-                }
-                promptText(
-                    title = getString(R.string.files_rename_title),
-                    hint = getString(R.string.files_input_hint_new_name),
-                    initialValue = selected.name
-                ) { newName ->
-                    renameSmbEntry(selected, newName)
-                }
-                return@setOnClickListener
-            }
-            val selected = requireLocalSelection() ?: return@setOnClickListener
-            promptText(
-                title = getString(R.string.files_rename_title),
-                hint = getString(R.string.files_input_hint_new_name),
-                initialValue = selected.localFile?.name.orEmpty()
-            ) { newName ->
-                val local = selected.localFile ?: return@promptText
-                runOperation(FileOpRequest.Rename(local.toVfsPath(), newName))
-            }
-        }
-
-        actionDeleteButton.setOnClickListener {
-            if (browseSource == BrowseSource.SMB) {
-                val selected = selectedEntry
-                if (selected == null || selected.smbPath.isNullOrBlank()) {
-                    Toast.makeText(requireContext(), getString(R.string.files_select_item_first), Toast.LENGTH_SHORT).show()
-                    return@setOnClickListener
-                }
-                deleteSmbEntry(selected)
-                return@setOnClickListener
-            }
-            val selected = requireLocalSelection() ?: return@setOnClickListener
-            val local = selected.localFile ?: return@setOnClickListener
-            runOperation(FileOpRequest.Delete(local.toVfsPath(), recursive = true))
-        }
-
-        actionDuplicateButton.setOnClickListener {
-            if (browseSource != BrowseSource.LOCAL) {
-                Toast.makeText(requireContext(), getString(R.string.files_status_action_not_supported), Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-            val selected = requireLocalSelection() ?: return@setOnClickListener
-            val local = selected.localFile ?: return@setOnClickListener
-            runOperation(
-                FileOpRequest.Copy(
-                    from = local.toVfsPath(),
-                    toDir = currentDirFile().toVfsPath(),
-                    conflict = ConflictStrategy.AUTO_RENAME
-                )
-            )
-        }
-
-        actionMoveParentButton.setOnClickListener {
-            if (browseSource != BrowseSource.LOCAL) {
-                Toast.makeText(requireContext(), getString(R.string.files_status_action_not_supported), Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-            val selected = requireLocalSelection() ?: return@setOnClickListener
-            val local = selected.localFile ?: return@setOnClickListener
-            val parentDir = currentDirFile().parentFile
-            if (parentDir == null || !parentDir.exists() || !parentDir.isDirectory) {
-                updateStatus(getString(R.string.files_status_done), isError = true)
-                return@setOnClickListener
-            }
-            runOperation(
-                FileOpRequest.Move(
-                    from = local.toVfsPath(),
-                    toDir = parentDir.toVfsPath(),
-                    conflict = ConflictStrategy.AUTO_RENAME
-                )
-            )
-        }
-        actionNewSessionButton.setOnClickListener {
-            val selected = selectedEntry
-            if (selected == null || !selected.isDirectory) {
-                Toast.makeText(requireContext(), getString(R.string.files_select_folder_first), Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-            viewLifecycleOwner.lifecycleScope.launch {
-                val targetPath = selected.localFile?.absolutePath ?: selected.ftpPath
-                    ?: selected.smbPath
-                if (targetPath.isNullOrBlank()) {
-                    Toast.makeText(requireContext(), getString(R.string.files_select_folder_first), Toast.LENGTH_SHORT).show()
-                    return@launch
-                }
-                val sessionName = selected.name.ifBlank { targetPath }
-                val sessionId = folderSessionRepository.add(sessionName, targetPath)
-                val networkConfigId = if (browseSource != BrowseSource.LOCAL) {
-                    currentSessionId?.let { sessionSourceStore.getNetworkConfigId(it) }
-                } else {
-                    null
-                }
-                sessionSourceStore.setNetworkConfigId(sessionId, networkConfigId)
-                currentSessionStore.set(sessionId)
-                updateStatus(getString(R.string.files_session_created), isError = false)
             }
         }
 
@@ -625,7 +519,6 @@ class FilesFragment : Fragment() {
         allEntries.addAll(displayable)
         displayTitleByPath.clear()
         setLocalActionButtonsEnabled(true)
-        actionNewSessionButton.isEnabled = true
         actionCreateButton.text = getString(R.string.action_new_folder)
         renderEntries()
         refreshTitlesAsync()
@@ -918,19 +811,10 @@ class FilesFragment : Fragment() {
     private fun setOperationButtonsEnabled(enabled: Boolean) {
         actionUpButton.isEnabled = enabled
         actionCreateButton.isEnabled = enabled
-        actionRenameButton.isEnabled = enabled
-        actionDeleteButton.isEnabled = enabled
-        actionDuplicateButton.isEnabled = enabled
-        actionMoveParentButton.isEnabled = enabled
-        actionNewSessionButton.isEnabled = enabled
     }
 
     private fun setLocalActionButtonsEnabled(enabled: Boolean) {
         actionCreateButton.isEnabled = enabled
-        actionRenameButton.isEnabled = enabled
-        actionDeleteButton.isEnabled = enabled
-        actionDuplicateButton.isEnabled = enabled
-        actionMoveParentButton.isEnabled = enabled
     }
 
     private fun updateStatus(value: String, isError: Boolean) {
@@ -1000,11 +884,6 @@ class FilesFragment : Fragment() {
         }
         setLocalActionButtonsEnabled(false)
         actionCreateButton.isEnabled = true
-        actionRenameButton.isEnabled = true
-        actionDeleteButton.isEnabled = true
-        actionDuplicateButton.isEnabled = false
-        actionMoveParentButton.isEnabled = false
-        actionNewSessionButton.isEnabled = true
         actionCreateButton.text = getString(R.string.action_new_folder)
         titleRefreshJob?.cancel()
         displayTitleByPath.clear()
@@ -1788,6 +1667,44 @@ class FilesFragment : Fragment() {
                 }
             }
         }
+    }
+
+    private fun promptRename(entry: BrowserEntry) {
+        promptText(
+            title = "Rename",
+            hint = "New name",
+            initialValue = entry.name
+        ) { newName ->
+            if (browseSource == BrowseSource.SMB) {
+                renameSmbEntry(entry, newName)
+            } else if (browseSource == BrowseSource.LOCAL) {
+                runOperation(
+                    FileOpRequest.Rename(
+                        source = entry.localFile!!.toVfsPath(),
+                        newName = newName
+                    )
+                )
+            }
+        }
+    }
+
+    private fun promptDelete(entry: BrowserEntry) {
+        AlertDialog.Builder(requireContext())
+            .setTitle("Delete")
+            .setMessage("Are you sure you want to delete '${entry.name}'?")
+            .setPositiveButton("Delete") { _, _ ->
+                if (browseSource == BrowseSource.SMB) {
+                    deleteSmbEntry(entry)
+                } else if (browseSource == BrowseSource.LOCAL) {
+                    runOperation(
+                        FileOpRequest.Delete(
+                            targets = listOf(entry.localFile!!.toVfsPath())
+                        )
+                    )
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     private fun File.toVfsPath(): VfsPath.LocalFile = VfsPath.LocalFile(absolutePath)
