@@ -21,7 +21,7 @@ import core.session.entity.FolderSessionEntity
         TitleCacheEntity::class,
         FolderSessionEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = true
 )
 @TypeConverters(RoomConverters::class)

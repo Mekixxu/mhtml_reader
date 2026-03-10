@@ -17,6 +17,8 @@ class FavoritesRepository(
 ) {
     fun observeChildren(parentId: Long?): Flow<List<FavoriteEntity>> = dao.observeChildren(parentId)
 
+    fun observeAll(): Flow<List<FavoriteEntity>> = dao.observeAll()
+
     suspend fun getChildren(parentId: Long?): List<FavoriteEntity> = withContext(dispatcherProvider.io) {
         dao.getChildren(parentId)
     }

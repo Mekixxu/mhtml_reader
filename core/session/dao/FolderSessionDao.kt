@@ -24,6 +24,9 @@ interface FolderSessionDao {
     @Query("DELETE FROM folder_sessions WHERE id = :id")
     suspend fun delete(id: Long)
 
+    @Query("UPDATE folder_sessions SET sortOption = :sortOption WHERE id = :id")
+    suspend fun updateSortOption(id: Long, sortOption: Int)
+
     @Query("DELETE FROM folder_sessions")
     suspend fun deleteAll()
 }

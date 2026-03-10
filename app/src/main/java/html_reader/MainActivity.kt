@@ -185,6 +185,13 @@ class MainActivity : AppCompatActivity() {
         showOverview(MoreFragment(), "more_overview")
     }
 
+    fun showRecentsPage() {
+        supportFragmentManager.beginTransaction()
+            .replace(R.id.main_content, RecentsFragment(), "recents_page")
+            .addToBackStack(null)
+            .commit()
+    }
+
     private fun showContent(fragment: Fragment, tag: String) {
         supportFragmentManager.beginTransaction()
             .replace(R.id.main_content, fragment, tag)

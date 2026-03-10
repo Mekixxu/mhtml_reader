@@ -31,6 +31,9 @@ class FolderSessionRepository(
             dao.update(it.copy(currentPath = currentPath, lastAccess = System.currentTimeMillis()))
         }
     }
+    suspend fun updateSortOption(id: Long, sortOption: Int) = withContext(dispatcherProvider.io) {
+        dao.updateSortOption(id, sortOption)
+    }
     suspend fun switchTo(id: Long) = withContext(dispatcherProvider.io) {
         dao.getById(id)?.let {
             dao.update(it.copy(lastAccess = System.currentTimeMillis()))

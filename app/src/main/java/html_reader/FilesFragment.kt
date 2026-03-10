@@ -274,6 +274,12 @@ class FilesFragment : Fragment() {
         sortSpinner.setOnItemSelectedListener(object : android.widget.AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
                 renderEntries()
+                val sessionId = currentSessionId
+                if (sessionId != null) {
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        folderSessionRepository.updateSortOption(sessionId, position)
+                    }
+                }
             }
 
             override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
@@ -336,7 +342,11 @@ class FilesFragment : Fragment() {
             options.add(getString(R.string.files_action_add_favorite))
             options.add(getString(R.string.files_action_details))
             
-            if (browseSource == BrowseSource.LOCAL || browseSource == BrowseSource.SMB) {
+            // Check capability instead of just browseSource
+            val canModify = (browseSource == BrowseSource.LOCAL && item.localFile != null) || 
+                            (browseSource == BrowseSource.SMB && item.smbPath != null)
+            
+            if (canModify) {
                 options.add("Rename")
                 options.add("Delete")
             }
@@ -673,6 +683,12 @@ class FilesFragment : Fragment() {
         val session = folderSessionRepository.getById(sessionId) ?: return
         currentSessionId = sessionId
         currentSessionStore.set(sessionId)
+        
+        // Restore sort option
+        if (sortSpinner.selectedItemPosition != session.sortOption) {
+            sortSpinner.setSelection(session.sortOption, false)
+        }
+
         val linkedNetworkConfig = sessionSourceStore.getNetworkConfigId(sessionId)
             ?.let { networkConfigRepository.getById(it) }
         currentNetworkLabel = linkedNetworkConfig?.let { "${it.protocol.name}://${it.host}" }

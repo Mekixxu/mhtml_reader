@@ -1,0 +1,6 @@
+- [ ] Large MHTML file (100MB+) opens without crashing.
+- [ ] Large MHTML file scrolling is smooth.
+- [ ] "Recent Opens" on Home is a button.
+- [ ] Clicking "Recent Opens" shows a list with "Clear All".
+- [ ] Long press file in Folders shows "Rename" and "Delete".
+- [ ] Change sort order in Folders -> Switch to Tabs -> Switch back -> Sort order is preserved.

@@ -95,6 +95,7 @@ class ReaderFragment : Fragment() {
         pdfPageInfoLabel.text = getString(R.string.reader_pdf_page_template, 0, 0)
         pdfPrevButton.isEnabled = false
         pdfNextButton.isEnabled = false
+        webPreview.setLayerType(View.LAYER_TYPE_HARDWARE, null)
         WebViewConfigurator.configure(webPreview)
         webPreview.visibility = View.GONE
         
@@ -375,6 +376,16 @@ class ReaderFragment : Fragment() {
 
     private fun showShort(message: String) {
         Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        webProgressTracker?.startTracking()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        webProgressTracker?.stopTracking()
     }
 
     override fun onDestroyView() {
