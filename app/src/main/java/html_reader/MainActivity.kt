@@ -13,6 +13,7 @@ class MainActivity : AppCompatActivity() {
     private val themeModeKey = "theme_mode"
     private var lastFoldersTag: String? = null
     private var lastReaderTag: String? = null
+    private var isProgrammaticSelection = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val mode = getSharedPreferences(settingsPrefsName, MODE_PRIVATE)
@@ -179,21 +180,23 @@ class MainActivity : AppCompatActivity() {
         supportFragmentManager.beginTransaction()
             .replace(R.id.main_content, fragment, tag)
             .commit()
-        syncBottomNavSelection()
+        syncBottomNavSelection(tag)
     }
 
-    private fun syncBottomNavSelection() {
+    private fun syncBottomNavSelection(explicitTag: String? = null) {
         val current = supportFragmentManager.findFragmentById(R.id.main_content)
-        val tag = current?.tag
+        val tag = explicitTag ?: current?.tag
         val itemId = when {
-            tag == "directory_mode_folders" || tag == "directory_mode" -> R.id.nav_files
+            tag == "directory_mode_folders" || tag == "directory_mode" || tag == "folders_overview" -> R.id.nav_files
             current is FoldersOverviewFragment -> R.id.nav_files
-            tag == "reader_mode" || current is TabsOverviewFragment -> R.id.nav_reader
-            current is MoreFragment -> R.id.nav_more
+            tag == "reader_mode" || tag == "tabs_overview" || current is TabsOverviewFragment -> R.id.nav_reader
+            tag == "more_overview" || current is MoreFragment -> R.id.nav_more
             else -> R.id.nav_home
         }
         if (bottomNav.selectedItemId != itemId) {
-            bottomNav.menu.findItem(itemId)?.isChecked = true
+            isProgrammaticSelection = true
+            bottomNav.selectedItemId = itemId
+            isProgrammaticSelection = false
         }
     }
 }

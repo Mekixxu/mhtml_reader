@@ -1,0 +1,3 @@
+- [ ] Open a file from Folders -> Bottom Nav switches to "Tabs"
+- [ ] In Folders screen -> "Duplicate", "Move to Parent", "New Session" buttons are GONE (not just disabled)
+- [ ] Long press a file in Folders -> "Rename" and "Delete" options appear in the menu
