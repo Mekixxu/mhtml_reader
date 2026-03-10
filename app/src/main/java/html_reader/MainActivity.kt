@@ -14,6 +14,7 @@ class MainActivity : AppCompatActivity() {
     private var lastFoldersTag: String? = null
     private var lastReaderTag: String? = null
     private var isProgrammaticSelection = false
+    private var isUserNavigation = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val mode = getSharedPreferences(settingsPrefsName, MODE_PRIVATE)
@@ -51,24 +52,32 @@ class MainActivity : AppCompatActivity() {
         }
         
         bottomNav.setOnItemSelectedListener { item ->
-            // Switching TO a tab
-            when (item.itemId) {
-                R.id.nav_home -> showHomeRoot()
-                R.id.nav_files -> {
-                    if (lastFoldersTag == "directory_mode_folders") {
-                        showContent(FilesFragment(), "directory_mode_folders")
-                    } else {
-                        showOverview(FoldersOverviewFragment(), "folders_overview")
+            if (isProgrammaticSelection) {
+                return@setOnItemSelectedListener true
+            }
+            isUserNavigation = true
+            try {
+                // Switching TO a tab
+                when (item.itemId) {
+                    R.id.nav_home -> showHomeRoot()
+                    R.id.nav_files -> {
+                        if (lastFoldersTag == "directory_mode_folders") {
+                            showContent(FilesFragment(), "directory_mode_folders")
+                        } else {
+                            showOverview(FoldersOverviewFragment(), "folders_overview")
+                        }
                     }
-                }
-                R.id.nav_reader -> {
-                    if (lastReaderTag == "reader_mode") {
-                         showContent(ReaderFragment(), "reader_mode")
-                    } else {
-                        showOverview(TabsOverviewFragment(), "tabs_overview")
+                    R.id.nav_reader -> {
+                        if (lastReaderTag == "reader_mode") {
+                            showContent(ReaderFragment(), "reader_mode")
+                        } else {
+                            showOverview(TabsOverviewFragment(), "tabs_overview")
+                        }
                     }
+                    R.id.nav_more -> showOverview(MoreFragment(), "more_overview")
                 }
-                R.id.nav_more -> showOverview(MoreFragment(), "more_overview")
+            } finally {
+                isUserNavigation = false
             }
             true
         }
