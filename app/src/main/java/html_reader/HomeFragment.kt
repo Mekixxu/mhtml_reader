@@ -72,12 +72,14 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         }
 
         // Initialize Local List (Standard directories)
-        val defaultLocal = requireContext().filesDir.parentFile?.absolutePath ?: "/"
+        val defaultLocal = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS).absolutePath
         localDirs.add(defaultLocal)
         localList.adapter = ArrayAdapter(context, android.R.layout.simple_list_item_1, localDirs)
         localList.setOnItemClickListener { _, _, _, _ ->
             (activity as? MainActivity)?.showDirectoryModeWithPath(defaultLocal)
         }
+
+        checkAndRequestStoragePermission()
 
         // Initialize SD Card List (Check external storage)
         val externalDirs = context.getExternalFilesDirs(null)
@@ -175,5 +177,22 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
             }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+
+    private fun checkAndRequestStoragePermission() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            if (!android.os.Environment.isExternalStorageManager()) {
+                AlertDialog.Builder(requireContext())
+                    .setTitle("Permission Required")
+                    .setMessage("This app needs access to all files to function properly. Please grant the permission.")
+                    .setPositiveButton(android.R.string.ok) { _, _ ->
+                        val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                        intent.data = Uri.parse("package:${requireContext().packageName}")
+                        startActivity(intent)
+                    }
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show()
+            }
+        }
     }
 }
