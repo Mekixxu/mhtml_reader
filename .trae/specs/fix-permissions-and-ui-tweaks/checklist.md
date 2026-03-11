@@ -1,0 +1,12 @@
+- [x] Permission dialog appears when accessing local files in Folders page (if permission not granted)
+- [x] Permission dialog text explains why the permission is needed ("Manage all files")
+- [x] User is directed to `Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION`
+- [x] Local storage browsing works (can see files in `/storage/emulated/0`)
+- [x] Tabs list in `TabsOverviewFragment` is reversed (newest tab at top)
+- [x] Long-press on tab item in `TabsOverviewFragment` shows context menu
+- [x] Context menu contains "Switch", "Close", "Close All"
+- [x] "Switch" navigates to the selected tab
+- [x] "Close" removes the selected tab from the list
+- [x] "Close All" clears the tab list
+- [x] "Favorites" on Home page is a button (not a list) matching "Recent Opens" style
+- [x] Clicking "Favorites" button navigates to `FavoritesFragment`

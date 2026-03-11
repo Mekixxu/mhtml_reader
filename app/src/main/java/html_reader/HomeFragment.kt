@@ -30,10 +30,10 @@ import java.io.File
 
 class HomeFragment : Fragment(R.layout.fragment_home) {
     private lateinit var recentsButton: Button
+    private lateinit var favoritesButton: Button
     private lateinit var localList: ListView
     private lateinit var sdCardList: ListView
     private lateinit var networkList: ListView
-    private lateinit var favoritesShortcutList: ListView
     
     private lateinit var historyRepository: HistoryRepository
     private lateinit var favoritesRepository: FavoritesRepository
@@ -42,7 +42,6 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
     private val localDirs = mutableListOf<String>()
     private val sdCardDirs = mutableListOf<String>()
     private val networkConfigs = mutableListOf<NetworkConfigEntity>()
-    private val favoritesShortcuts = mutableListOf<core.database.entity.FavoriteEntity>()
 
     private val safPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
@@ -59,13 +58,17 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         networkConfigRepository = FilesRuntime.networkConfigRepository(context)
 
         recentsButton = view.findViewById(R.id.home_recents_button)
+        favoritesButton = view.findViewById(R.id.home_favorites_button)
         localList = view.findViewById(R.id.home_local_list)
         sdCardList = view.findViewById(R.id.home_sd_list)
         networkList = view.findViewById(R.id.home_network_list)
-        favoritesShortcutList = view.findViewById(R.id.home_favorites_list)
 
         recentsButton.setOnClickListener {
             (activity as? MainActivity)?.showRecentsPage()
+        }
+        
+        favoritesButton.setOnClickListener {
+            (activity as? MainActivity)?.showFavoritesPage()
         }
 
         // Initialize Local List (Standard directories)
@@ -123,30 +126,6 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
                 netAdapter.clear()
                 netAdapter.addAll(display)
                 netAdapter.notifyDataSetChanged()
-            }
-        }
-
-        // Initialize Favorites Shortcuts
-        val favAdapter = ArrayAdapter(context, android.R.layout.simple_list_item_1, mutableListOf<String>())
-        favoritesShortcutList.adapter = favAdapter
-        favoritesShortcutList.setOnItemClickListener { _, _, position, _ ->
-            val item = favoritesShortcuts.getOrNull(position) ?: return@setOnItemClickListener
-            when (item.sourceType) {
-                SourceType.LOCAL -> (activity as? MainActivity)?.showReaderModeWithPath(item.path)
-                SourceType.FTP -> { /* TODO: Open FTP favorite */ }
-                SourceType.SMB -> { /* TODO: Open SMB favorite */ }
-                else -> {}
-            }
-        }
-
-        viewLifecycleOwner.lifecycleScope.launch {
-            favoritesRepository.observeAll().collect { allFavs ->
-                favoritesShortcuts.clear()
-                favoritesShortcuts.addAll(allFavs.take(5)) // Show top 5
-                val display = favoritesShortcuts.map { "★ ${it.name}" }
-                favAdapter.clear()
-                favAdapter.addAll(display)
-                favAdapter.notifyDataSetChanged()
             }
         }
     }

@@ -431,18 +431,38 @@ class FilesFragment : Fragment() {
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            if (!Environment.isExternalStorageManager()) {
-                AlertDialog.Builder(requireContext())
-                    .setTitle("Permission Required")
-                    .setMessage("This app needs access to all files to function properly. Please grant the permission.")
-                    .setPositiveButton(android.R.string.ok) { _, _ ->
-                        val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
-                        intent.data = Uri.parse("package:${requireContext().packageName}")
-                        startActivity(intent)
-                    }
-                    .setNegativeButton(android.R.string.cancel, null)
-                    .show()
+            if (!checkStoragePermission()) {
+                requestStoragePermission()
             }
+        }
+    }
+
+    private fun checkStoragePermission(): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            return Environment.isExternalStorageManager()
+        }
+        return true
+    }
+
+    private fun requestStoragePermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            AlertDialog.Builder(requireContext())
+                .setTitle("Permission Required")
+                .setMessage("This app needs access to all files to function properly. Please grant the permission.")
+                .setPositiveButton(android.R.string.ok) { _, _ ->
+                    val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                    intent.data = Uri.parse("package:${requireContext().packageName}")
+                    startActivity(intent)
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (browseSource == BrowseSource.LOCAL && !checkStoragePermission()) {
+            // Optional: check again if needed
         }
     }
 
@@ -476,7 +496,11 @@ class FilesFragment : Fragment() {
             // For now, standard file system up.
             // If current is root (e.g. /), parent might be null.
             if (parent.listFiles() == null) {
-                 // Cannot access parent, treat as root reached?
+                if (!checkStoragePermission()) {
+                    requestStoragePermission()
+                } else {
+                    Toast.makeText(requireContext(), "Cannot access parent directory", Toast.LENGTH_SHORT).show()
+                }
                  return false
             }
             currentDir = parent
