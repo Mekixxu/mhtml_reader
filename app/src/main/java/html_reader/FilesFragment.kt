@@ -1289,7 +1289,7 @@ class FilesFragment : Fragment() {
         if (!ftpCacheDir.exists()) {
             ftpCacheDir.mkdirs()
         }
-        val safeName = displayName.replace(Regex("[^a-zA-Z0-9.\\-_]"), "_")
+        val safeName = displayName.replace(Regex("[\\\\/:*?\"<>|]"), "_")
         val target = File(ftpCacheDir, safeName)
         val url = URL(buildFtpUrl(config, remotePath, "i"))
         url.openStream().use { input ->
@@ -1305,7 +1305,7 @@ class FilesFragment : Fragment() {
         if (!cacheDir.exists()) {
             cacheDir.mkdirs()
         }
-        val safeName = displayName.replace(Regex("[^a-zA-Z0-9.\\-_]"), "_")
+        val safeName = displayName.replace(Regex("[\\\\/:*?\"<>|]"), "_")
         val target = File(cacheDir, safeName)
         val source = SmbFile(buildSmbFileUrl(config, remotePath), smbContext(config))
         source.inputStream.use { input ->
