@@ -33,7 +33,17 @@ object ReaderRuntime {
                 
                 val localFileSystem = LocalFileSystem(appContext, dispatcherProvider)
                 val cacheRoot = appContext.cacheDir.resolve("app_cache")
-                val cacheOpenManager = CacheOpenManager(appContext, cacheRoot, localFileSystem, dispatcherProvider)
+                val cacheEvictor = core.cache.CacheEvictor(
+                    cacheRoot = cacheRoot,
+                    maxBytes = 15L * 1024 * 1024 * 1024 // 15GB
+                )
+                val cacheOpenManager = CacheOpenManager(
+                    context = appContext,
+                    cacheRoot = cacheRoot,
+                    fileSystem = localFileSystem,
+                    dispatcherProvider = dispatcherProvider,
+                    cacheEvictor = cacheEvictor
+                )
                 val tabCacheRegistry = TabCacheRegistry(cacheRoot)
                 
                 val historyRepository = HistoryRepository(db.historyDao(), dispatcherProvider)

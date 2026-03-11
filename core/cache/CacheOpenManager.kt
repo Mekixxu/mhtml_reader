@@ -26,7 +26,8 @@ class CacheOpenManager(
     private val context: Context,
     private val cacheRoot: File, // e.g. context.cacheDir/app_cache/
     private val fileSystem: IFileSystem,
-    private val dispatcherProvider: DispatcherProvider
+    private val dispatcherProvider: DispatcherProvider,
+    private val cacheEvictor: CacheEvictor
 ) {
 
     suspend fun openToCache(
@@ -56,6 +57,10 @@ class CacheOpenManager(
             emit(Result.success(CopyProgress(totalBytes, totalBytes)))
             return@flow
         }
+
+        // Proactive eviction
+        cacheEvictor.makeRoomFor(totalBytes)
+
         // 开始流式拷贝
         val inputResult = fileSystem.openInputStream(src)
         val `in` = inputResult.getOrElse {

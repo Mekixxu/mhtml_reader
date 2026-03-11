@@ -11,9 +11,22 @@ class CacheEvictor(
     private val cacheRoot: File,
     private val maxBytes: Long = 2L * 1024 * 1024 * 1024
 ) {
-    suspend fun evictIfNeeded() = withContext(Dispatchers.IO) {
+    suspend fun evictOldFiles(maxAgeMs: Long) = withContext(Dispatchers.IO) {
+        val cutoff = System.currentTimeMillis() - maxAgeMs
+        cacheRoot.listFiles()
+            ?.filter { it.isDirectory }
+            ?.flatMap { dir -> dir.listFiles()?.filter { it.isDirectory }?.map { it } ?: emptyList() }
+            ?.forEach { dir ->
+                if (dir.lastModified() < cutoff) {
+                    dir.deleteRecursively()
+                }
+            }
+    }
+
+    suspend fun makeRoomFor(requiredBytes: Long) = withContext(Dispatchers.IO) {
         var total: Long = cacheRoot.listFiles()?.sumOf { it.sizeAndChildren() } ?: 0L
-        if (total <= maxBytes) return@withContext
+        val limit = maxBytes - requiredBytes
+        if (total <= limit) return@withContext
 
         val items = cacheRoot.listFiles()
             ?.filter { it.isDirectory }
@@ -25,9 +38,11 @@ class CacheEvictor(
             val sz = dir.sizeAndChildren()
             dir.deleteRecursively()
             total -= sz
-            if (total <= maxBytes) break
+            if (total <= limit) break
         }
     }
+
+    suspend fun evictIfNeeded() = makeRoomFor(0L)
 }
 
 /**

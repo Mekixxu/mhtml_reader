@@ -28,7 +28,8 @@ class DefaultMaintenanceManager(
     override suspend fun runStartupMaintenance() = withContext(dispatcherProvider.io) {
         val settings = settingsRepo.observe().first()
         orphanCleaner.clean()
-        cacheEvictor.evictIfNeeded(settings.cacheMaxBytes)
+        cacheEvictor.evictOldFiles(7L * 24 * 3600 * 1000) // 7 days retention
+        cacheEvictor.evictIfNeeded() // Use configured maxBytes (15GB)
         historyRepo.enforceRetention(settings.historyMaxItems, settings.historyMaxDays)
         val cutoff = System.currentTimeMillis() - settings.titleCacheMaxDays * 86400_000L
         titleCacheRepo.deleteOlderThan(cutoff)
