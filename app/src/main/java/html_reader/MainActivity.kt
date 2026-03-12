@@ -1,8 +1,11 @@
 package com.html_reader
 
 import android.os.Bundle
+import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.Fragment
 import androidx.activity.OnBackPressedCallback
 import com.google.android.material.bottomnavigation.BottomNavigationView
@@ -17,11 +20,19 @@ class MainActivity : AppCompatActivity() {
     private var isUserNavigation = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         val mode = getSharedPreferences(settingsPrefsName, MODE_PRIVATE)
             .getInt(themeModeKey, AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
         AppCompatDelegate.setDefaultNightMode(mode)
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        
+        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main_root)) { v, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
+            insets
+        }
+
         bottomNav = findViewById(R.id.main_bottom_nav)
         
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
