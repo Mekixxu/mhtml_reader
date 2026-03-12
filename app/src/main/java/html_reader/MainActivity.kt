@@ -117,10 +117,7 @@ class MainActivity : AppCompatActivity() {
             syncBottomNavSelection()
             return
         }
-        supportFragmentManager.beginTransaction()
-            .replace(R.id.main_content, HomeFragment(), "home_root")
-            .commit()
-        syncBottomNavSelection()
+        switchFragment("home_root", { HomeFragment() }, forceReplace = false)
     }
 
     private fun showOverview(fragment: Fragment, tag: String) {
@@ -134,51 +131,51 @@ class MainActivity : AppCompatActivity() {
             syncBottomNavSelection()
             return
         }
-        showContent(fragment, tag)
+        switchFragment(tag, { fragment }, forceReplace = false)
     }
 
     fun showFavoritesPage() {
-        showContent(FavoritesFragment(), "favorites_page")
+        switchFragment("favorites_page", { FavoritesFragment() }, forceReplace = true)
     }
 
     fun showDirectoryMode(fromFolders: Boolean = false) {
         val tag = if (fromFolders) "directory_mode_folders" else "directory_mode"
         if (tag == "directory_mode_folders") lastFoldersTag = tag
-        showContent(FilesFragment(), tag)
+        switchFragment(tag, { FilesFragment() }, forceReplace = false)
     }
 
     fun showDirectoryModeWithPath(path: String, fromFolders: Boolean = false) {
         val tag = if (fromFolders) "directory_mode_folders" else "directory_mode"
         if (tag == "directory_mode_folders") lastFoldersTag = tag
-        showContent(FilesFragment.newInstanceForPath(path), tag)
+        switchFragment(tag, { FilesFragment.newInstanceForPath(path) }, forceReplace = true)
     }
 
     fun showDirectoryModeWithSafTree(treeUri: String, fromFolders: Boolean = false) {
         val tag = if (fromFolders) "directory_mode_folders" else "directory_mode"
         if (tag == "directory_mode_folders") lastFoldersTag = tag
-        showContent(FilesFragment.newInstanceForSafTree(treeUri), tag)
+        switchFragment(tag, { FilesFragment.newInstanceForSafTree(treeUri) }, forceReplace = true)
     }
 
     fun showDirectoryModeWithNetwork(networkConfigId: Long, fromFolders: Boolean = false) {
         val tag = if (fromFolders) "directory_mode_folders" else "directory_mode"
         if (tag == "directory_mode_folders") lastFoldersTag = tag
-        showContent(FilesFragment.newInstance(networkConfigId), tag)
+        switchFragment(tag, { FilesFragment.newInstance(networkConfigId) }, forceReplace = true)
     }
 
     fun showDirectoryModeWithNetworkPath(networkConfigId: Long, startPath: String, fromFolders: Boolean = false) {
         val tag = if (fromFolders) "directory_mode_folders" else "directory_mode"
         if (tag == "directory_mode_folders") lastFoldersTag = tag
-        showContent(FilesFragment.newInstanceForNetworkPath(networkConfigId, startPath), tag)
+        switchFragment(tag, { FilesFragment.newInstanceForNetworkPath(networkConfigId, startPath) }, forceReplace = true)
     }
 
     fun showReaderMode() {
         lastReaderTag = "reader_mode"
-        showContent(ReaderFragment(), "reader_mode")
+        switchFragment("reader_mode", { ReaderFragment() }, forceReplace = false)
     }
 
     fun showReaderModeWithPath(path: String) {
         lastReaderTag = "reader_mode"
-        showContent(ReaderFragment.newInstance(path), "reader_mode")
+        switchFragment("reader_mode", { ReaderFragment.newInstance(path) }, forceReplace = true)
     }
 
     fun showMorePage() {
@@ -186,16 +183,38 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun showRecentsPage() {
-        supportFragmentManager.beginTransaction()
-            .replace(R.id.main_content, RecentsFragment(), "recents_page")
-            .addToBackStack(null)
-            .commit()
+        switchFragment("recents_page", { RecentsFragment() }, forceReplace = true)
     }
 
     private fun showContent(fragment: Fragment, tag: String) {
-        supportFragmentManager.beginTransaction()
-            .replace(R.id.main_content, fragment, tag)
-            .commit()
+        switchFragment(tag, { fragment }, forceReplace = false)
+    }
+
+    private fun switchFragment(tag: String, create: () -> Fragment, forceReplace: Boolean = false) {
+        val fm = supportFragmentManager
+        val transaction = fm.beginTransaction()
+
+        // 1. Hide all visible fragments
+        fm.fragments.forEach {
+            if (it.isVisible) transaction.hide(it)
+        }
+
+        // 2. Find or create target
+        var target = fm.findFragmentByTag(tag)
+
+        if (target != null && forceReplace) {
+            transaction.remove(target)
+            target = null
+        }
+
+        if (target == null) {
+            target = create()
+            transaction.add(R.id.main_content, target, tag)
+        } else {
+            transaction.show(target)
+        }
+
+        transaction.commit()
         syncBottomNavSelection(tag)
     }
 
