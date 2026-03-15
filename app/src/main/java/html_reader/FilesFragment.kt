@@ -40,6 +40,9 @@ import core.fileops.model.FileOpRequest
 import core.fileops.model.FileOpState
 import core.fileops.usecase.ExecuteFileOpUseCase
 import core.fileops.util.NameConflictResolver
+import core.reader.model.OpenRequest
+import core.reader.model.OpenState
+import core.reader.vm.ReaderViewModel
 import core.session.repo.FolderSessionRepository
 import core.title.impl.HtmlTitleExtractor
 import core.vfs.local.LocalFileSystem
@@ -132,6 +135,7 @@ class FilesFragment : Fragment() {
     private lateinit var currentSessionStore: AppCurrentSessionStore
     private lateinit var sessionSourceStore: AppSessionSourceStore
     private lateinit var htmlTitleExtractor: HtmlTitleExtractor
+    private lateinit var readerViewModel: ReaderViewModel
 
     private val allEntries = mutableListOf<BrowserEntry>()
     private val displayedEntries = mutableListOf<BrowserEntry>()
@@ -255,6 +259,7 @@ class FilesFragment : Fragment() {
         currentSessionStore = FilesRuntime.currentSessionStore(requireContext())
         sessionSourceStore = FilesRuntime.sessionSourceStore(requireContext())
         htmlTitleExtractor = HtmlTitleExtractor(DefaultDispatcherProvider())
+        readerViewModel = ReaderRuntime.viewModel(requireContext())
         initialNetworkConfigId = arguments?.getLong(ARG_NETWORK_CONFIG_ID)?.takeIf { it > 0L }
         initialStartPath = arguments?.getString(ARG_START_PATH)?.trim()?.takeIf { it.isNotBlank() }
         initialSafTreeUri = arguments?.getString(ARG_SAF_TREE_URI)?.trim()?.takeIf { it.isNotBlank() }
@@ -361,13 +366,13 @@ class FilesFragment : Fragment() {
                     when (selectedOption) {
                         "Open in new tab" -> {
                             if (browseSource == BrowseSource.FTP) {
-                                openFtpFile(item)
+                                openFtpFile(item, isBackground = true)
                             } else if (browseSource == BrowseSource.SMB) {
-                                openSmbFile(item)
+                                openSmbFile(item, isBackground = true)
                             } else {
-                                val path = item.localFile?.absolutePath
-                                if (path != null) {
-                                    (activity as? MainActivity)?.showReaderModeWithPath(path)
+                                val localFile = item.localFile
+                                if (localFile != null) {
+                                    openFileInBackground(localFile, item.name)
                                 }
                             }
                         }
@@ -1274,7 +1279,7 @@ class FilesFragment : Fragment() {
         return String(bytes, Charsets.ISO_8859_1)
     }
 
-    private fun openFtpFile(entry: BrowserEntry) {
+    private fun openFtpFile(entry: BrowserEntry, isBackground: Boolean = false) {
         val config = ftpConfig ?: return
         val remotePath = entry.ftpPath ?: return
         updateStatus(getString(R.string.files_status_ftp_downloading), isError = false)
@@ -1284,14 +1289,18 @@ class FilesFragment : Fragment() {
             }
             result.onSuccess { local ->
                 updateStatus(getString(R.string.files_status_done), isError = false)
-                (activity as? MainActivity)?.showReaderModeWithPath(local.absolutePath)
+                if (isBackground) {
+                    openFileInBackground(local, entry.name)
+                } else {
+                    (activity as? MainActivity)?.showReaderModeWithPath(local.absolutePath)
+                }
             }.onFailure { error ->
                 updateStatus(formatNetworkError(error, NetworkProtocol.FTP), isError = true)
             }
         }
     }
 
-    private fun openSmbFile(entry: BrowserEntry) {
+    private fun openSmbFile(entry: BrowserEntry, isBackground: Boolean = false) {
         val config = smbConfig ?: return
         val remotePath = entry.smbPath ?: return
         updateStatus(getString(R.string.files_status_smb_downloading), isError = false)
@@ -1301,7 +1310,11 @@ class FilesFragment : Fragment() {
             }
             result.onSuccess { local ->
                 updateStatus(getString(R.string.files_status_done), isError = false)
-                (activity as? MainActivity)?.showReaderModeWithPath(local.absolutePath)
+                if (isBackground) {
+                    openFileInBackground(local, entry.name)
+                } else {
+                    (activity as? MainActivity)?.showReaderModeWithPath(local.absolutePath)
+                }
             }.onFailure { error ->
                 updateStatus(formatNetworkError(error, NetworkProtocol.SMB), isError = true)
             }
@@ -1745,6 +1758,42 @@ class FilesFragment : Fragment() {
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
+    }
+
+    private fun openFileInBackground(file: File, displayName: String) {
+        val request = OpenRequest(
+            source = VfsPath.LocalFile(file.absolutePath),
+            fileName = displayName,
+            fileType = inferType(file.name),
+            background = true
+        )
+
+        Toast.makeText(requireContext(), "Opening $displayName in background...", Toast.LENGTH_SHORT).show()
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            readerViewModel.open(request).collect { state ->
+                when (state) {
+                    is OpenState.Ready -> {
+                        Toast.makeText(requireContext(), "$displayName opened in background tab", Toast.LENGTH_SHORT).show()
+                    }
+                    is OpenState.Error -> {
+                        Toast.makeText(requireContext(), "Error opening $displayName: ${state.error.message ?: "Unknown error"}", Toast.LENGTH_SHORT).show()
+                    }
+                    else -> {
+                        // Ignore other states
+                    }
+                }
+            }
+        }
+    }
+
+    private fun inferType(fileName: String): FileType {
+        val ext = fileName.substringAfterLast('.', "").lowercase()
+        return when (ext) {
+            "pdf" -> FileType.PDF
+            "mhtml", "mht" -> FileType.MHTML
+            else -> FileType.MHTML // Default or WEB
+        }
     }
 
     private fun File.toVfsPath(): VfsPath.LocalFile = VfsPath.LocalFile(absolutePath)

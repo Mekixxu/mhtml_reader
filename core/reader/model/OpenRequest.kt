@@ -11,7 +11,8 @@ data class OpenRequest(
     val fileName: String,
     val fileType: FileType,
     val openMode: OpenMode = OpenMode.NEW_TAB,
-    val referrerTabId: String? = null
+    val referrerTabId: String? = null,
+    val background: Boolean = false
 )
 
 enum class OpenMode { NEW_TAB, REUSE_CURRENT }

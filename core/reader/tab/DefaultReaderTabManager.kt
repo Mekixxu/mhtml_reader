@@ -44,7 +44,9 @@ class DefaultReaderTabManager(
         // 0) 检查是否已存在相同 source path 的 tab，若有则直接复用
         val existingTab = tabStates.values.firstOrNull { it.sourcePathRaw == request.source.raw }
         if (existingTab != null) {
-            _currentTabId.value = existingTab.tabId // Auto-switch to existing
+            if (!request.background) {
+                _currentTabId.value = existingTab.tabId // Auto-switch to existing
+            }
             emit(OpenState.Ready(existingTab))
             return@flow
         }
@@ -120,7 +122,9 @@ class DefaultReaderTabManager(
         _tabs.value = tabStates.values.toList()
 
         // Auto-switch to new tab
-        _currentTabId.value = tabId
+        if (!request.background) {
+            _currentTabId.value = tabId
+        }
 
         // bind：以 cacheKey 为准；若你包1 TabCacheRegistry 是 bind(tabId, cacheKey)
         tabCacheRegistry.bind(tabId, contentType.name.lowercase(), cacheKey)
