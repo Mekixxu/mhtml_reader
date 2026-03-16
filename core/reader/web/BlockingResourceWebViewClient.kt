@@ -28,7 +28,8 @@ class BlockingResourceWebViewClient(
                 url.startsWith("file://") ||
                 url.startsWith("content://") ||
                 url.startsWith("data:") ||
-                url.startsWith("about:blank")
+                url.startsWith("about:blank") ||
+                url.startsWith("cid:")
 
             if (!allowed) {
                 // 返回空响应比 null InputStream 更安全

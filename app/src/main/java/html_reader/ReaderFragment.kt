@@ -324,17 +324,24 @@ class ReaderFragment : Fragment() {
             setErrorState(getString(R.string.reader_status_error, msg), msg)
             return
         }
-        WebViewConfigurator.configure(webPreview)
-        webPreview.webViewClient = BlockingResourceWebViewClient(
-            fileType = tab.fileType,
-            onOpenLinkInNewTab = NewTabLinkHandler { url ->
-                if (tab.fileType == FileType.WEB) {
-                    webPreview.loadUrl(url)
-                } else {
-                    showShort(getString(R.string.reader_external_link_blocked))
+
+        val targetUrl = file.toURI().toString()
+        val isSameUrl = webPreview.url == targetUrl
+
+        if (!isSameUrl) {
+            WebViewConfigurator.configure(webPreview)
+            webPreview.webViewClient = BlockingResourceWebViewClient(
+                fileType = tab.fileType,
+                onOpenLinkInNewTab = NewTabLinkHandler { url ->
+                    if (tab.fileType == FileType.WEB) {
+                        webPreview.loadUrl(url)
+                    } else {
+                        showShort(getString(R.string.reader_external_link_blocked))
+                    }
                 }
-            }
-        )
+            )
+        }
+
         webProgressTracker?.stopTracking()
         webProgressTracker = WebViewProgressTracker(
             webView = webPreview,
@@ -342,7 +349,10 @@ class ReaderFragment : Fragment() {
             historyRepo = historyRepository,
             coroutineScope = viewLifecycleOwner.lifecycleScope
         ).also { it.startTracking() }
-        webPreview.loadUrl(file.toURI().toString())
+
+        if (!isSameUrl) {
+            webPreview.loadUrl(targetUrl)
+        }
     }
 
     private suspend fun renderCurrentPdfPage() {

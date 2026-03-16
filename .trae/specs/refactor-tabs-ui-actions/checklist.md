@@ -1,0 +1,4 @@
+- [x] Top buttons (Switch, Close, Close All) are gone from Tabs page
+- [x] Long press on a tab shows "Add to Favorites" in menu
+- [x] Clicking "Add to Favorites" adds the item to favorites (verify in Favorites page or via Toast)
+- [x] Switch, Close, Close All still work via context menu

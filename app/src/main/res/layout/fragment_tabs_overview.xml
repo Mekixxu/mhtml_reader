@@ -5,33 +5,6 @@
     android:orientation="vertical"
     android:padding="12dp">
 
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal">
-
-        <Button
-            android:id="@+id/tabs_switch"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/tabs_switch" />
-
-        <Button
-            android:id="@+id/tabs_close"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/tabs_close" />
-
-        <Button
-            android:id="@+id/tabs_close_all"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/tabs_close_all" />
-    </LinearLayout>
-
     <TextView
         android:id="@+id/tabs_status"
         android:layout_width="match_parent"
