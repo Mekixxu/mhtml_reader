@@ -1,0 +1,4 @@
+- [x] Clicking "Tabs" while in Reader view switches to Tabs Overview
+- [x] Clicking "Tabs" while in Tabs Overview switches back to Reader view (if a file was open)
+- [x] Clicking "Folders" while in Files view switches to Folders Overview
+- [x] Clicking "Folders" while in Folders Overview switches back to Files view (if a directory was open)

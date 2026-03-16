@@ -98,18 +98,26 @@ class MainActivity : AppCompatActivity() {
             when (item.itemId) {
                 R.id.nav_files -> {
                     val current = supportFragmentManager.findFragmentById(R.id.main_content)
-                    if (current is FilesFragment) {
-                        showOverview(FoldersOverviewFragment(), "folders_overview")
+                    if (current is FoldersOverviewFragment) {
+                        // Switch back to files if exists
+                        val existing = supportFragmentManager.findFragmentByTag("directory_mode_folders")
+                        if (existing != null) {
+                            switchFragment("directory_mode_folders", { existing }, forceReplace = false)
+                        }
                     } else {
-                        showContent(FilesFragment(), "directory_mode_folders")
+                        showOverview(FoldersOverviewFragment(), "folders_overview")
                     }
                 }
                 R.id.nav_reader -> {
                     val current = supportFragmentManager.findFragmentById(R.id.main_content)
-                    if (current is ReaderFragment) {
-                        showOverview(TabsOverviewFragment(), "tabs_overview")
+                    if (current is TabsOverviewFragment) {
+                        // Switch back to reader if exists
+                        val existing = supportFragmentManager.findFragmentByTag("reader_mode")
+                        if (existing != null) {
+                            switchFragment("reader_mode", { existing }, forceReplace = false)
+                        }
                     } else {
-                        showContent(ReaderFragment(), "reader_mode")
+                        showOverview(TabsOverviewFragment(), "tabs_overview")
                     }
                 }
                 R.id.nav_home -> {
