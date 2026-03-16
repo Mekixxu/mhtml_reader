@@ -37,7 +37,7 @@ class MainActivity : AppCompatActivity() {
         
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                val current = supportFragmentManager.findFragmentById(R.id.main_content)
+                val current = getCurrentVisibleFragment()
                 if (current is FilesFragment) {
                     if (!current.navigateUp()) {
                         showOverview(FoldersOverviewFragment(), "folders_overview")
@@ -94,44 +94,47 @@ class MainActivity : AppCompatActivity() {
         }
 
         bottomNav.setOnItemReselectedListener { item ->
-            // Toggling within the tab
             when (item.itemId) {
                 R.id.nav_files -> {
-                    val current = supportFragmentManager.findFragmentById(R.id.main_content)
+                    val current = getCurrentVisibleFragment()
                     if (current is FoldersOverviewFragment) {
-                        // Switch back to files if exists
-                        val existing = supportFragmentManager.findFragmentByTag("directory_mode_folders")
-                        if (existing != null) {
-                            switchFragment("directory_mode_folders", { existing }, forceReplace = false)
+                        when {
+                            supportFragmentManager.findFragmentByTag("directory_mode_folders") != null -> {
+                                switchFragment("directory_mode_folders", { FilesFragment() }, forceReplace = false)
+                            }
+                            supportFragmentManager.findFragmentByTag("directory_mode") != null -> {
+                                switchFragment("directory_mode", { FilesFragment() }, forceReplace = false)
+                            }
+                            else -> {
+                                showContent(FilesFragment(), "directory_mode_folders")
+                            }
                         }
                     } else {
                         showOverview(FoldersOverviewFragment(), "folders_overview")
                     }
                 }
                 R.id.nav_reader -> {
-                    val current = supportFragmentManager.findFragmentById(R.id.main_content)
+                    val current = getCurrentVisibleFragment()
                     if (current is TabsOverviewFragment) {
-                        // Switch back to reader if exists
-                        val existing = supportFragmentManager.findFragmentByTag("reader_mode")
-                        if (existing != null) {
-                            switchFragment("reader_mode", { existing }, forceReplace = false)
+                        if (supportFragmentManager.findFragmentByTag("reader_mode") != null) {
+                            switchFragment("reader_mode", { ReaderFragment() }, forceReplace = false)
+                        } else {
+                            showContent(ReaderFragment(), "reader_mode")
                         }
                     } else {
                         showOverview(TabsOverviewFragment(), "tabs_overview")
                     }
                 }
                 R.id.nav_home -> {
-                     // Maybe refresh home or scroll to top?
-                     showHomeRoot()
+                    showHomeRoot()
                 }
             }
         }
     }
 
     private fun showHomeRoot() {
-        // Clear back stack
         supportFragmentManager.popBackStack(null, androidx.fragment.app.FragmentManager.POP_BACK_STACK_INCLUSIVE)
-        val current = supportFragmentManager.findFragmentById(R.id.main_content)
+        val current = getCurrentVisibleFragment()
         if (current is HomeFragment) {
             syncBottomNavSelection()
             return
@@ -145,7 +148,7 @@ class MainActivity : AppCompatActivity() {
         } else if (tag == "tabs_overview") {
             lastReaderTag = tag
         }
-        val currentTag = supportFragmentManager.findFragmentById(R.id.main_content)?.tag
+        val currentTag = getCurrentVisibleFragment()?.tag
         if (currentTag == tag) {
             syncBottomNavSelection()
             return
@@ -238,7 +241,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun syncBottomNavSelection(explicitTag: String? = null) {
-        val current = supportFragmentManager.findFragmentById(R.id.main_content)
+        val current = getCurrentVisibleFragment()
         val tag = explicitTag ?: current?.tag
         val itemId = when {
             tag == "directory_mode_folders" || tag == "directory_mode" || tag == "folders_overview" -> R.id.nav_files
@@ -252,5 +255,9 @@ class MainActivity : AppCompatActivity() {
             bottomNav.selectedItemId = itemId
             isProgrammaticSelection = false
         }
+    }
+
+    private fun getCurrentVisibleFragment(): Fragment? {
+        return supportFragmentManager.fragments.lastOrNull { it.isVisible && !it.isHidden }
     }
 }
