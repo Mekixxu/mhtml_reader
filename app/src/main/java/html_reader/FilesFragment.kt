@@ -145,6 +145,7 @@ class FilesFragment : Fragment() {
     private var operationRunning = false
     private var currentSessionId: Long? = null
     private var initialNetworkConfigId: Long? = null
+    private var requestedNetworkEntry: Boolean = false
     private var initialStartPath: String? = null
     private var initialSafTreeUri: String? = null
     private var currentNetworkLabel: String? = null
@@ -264,6 +265,7 @@ class FilesFragment : Fragment() {
         htmlTitleExtractor = HtmlTitleExtractor(DefaultDispatcherProvider())
         readerViewModel = ReaderRuntime.viewModel(requireContext())
         initialNetworkConfigId = arguments?.getLong(ARG_NETWORK_CONFIG_ID)?.takeIf { it > 0L }
+        requestedNetworkEntry = initialNetworkConfigId != null
         initialStartPath = arguments?.getString(ARG_START_PATH)?.trim()?.takeIf { it.isNotBlank() }
         initialSafTreeUri = arguments?.getString(ARG_SAF_TREE_URI)?.trim()?.takeIf { it.isNotBlank() }
 
@@ -774,10 +776,15 @@ class FilesFragment : Fragment() {
         val directory = File(path)
         val active = currentSessionStore.get() ?: return
         val hasNetworkBinding = sessionSourceStore.getNetworkConfigId(active) != null
-        if (hasNetworkBinding) {
+        if (hasNetworkBinding && requestedNetworkEntry) {
             folderSessionRepository.updateCurrentDir(active, path)
         } else if (directory.exists() && directory.isDirectory) {
+            if (hasNetworkBinding) {
+                sessionSourceStore.setNetworkConfigId(active, null)
+            }
             folderSessionRepository.updateCurrentDir(active, directory.absolutePath)
+        } else if (hasNetworkBinding) {
+            folderSessionRepository.updateCurrentDir(active, path)
         } else {
             updateStatus(getString(R.string.files_status_invalid_start_path), isError = true)
         }
@@ -788,12 +795,16 @@ class FilesFragment : Fragment() {
         val treeUriText = initialSafTreeUri ?: return
         val uri = Uri.parse(treeUriText)
         val active = currentSessionStore.get() ?: return
+        val hasNetworkBinding = sessionSourceStore.getNetworkConfigId(active) != null
         val resolvedPath = resolveSafTreeToLocalPath(uri)
         if (resolvedPath == null) {
             updateStatus(getString(R.string.files_status_invalid_start_path), isError = true)
         } else {
             val directory = File(resolvedPath)
             if (directory.exists() && directory.isDirectory) {
+                if (hasNetworkBinding) {
+                    sessionSourceStore.setNetworkConfigId(active, null)
+                }
                 folderSessionRepository.updateCurrentDir(active, directory.absolutePath)
             } else {
                 updateStatus(getString(R.string.files_status_invalid_start_path), isError = true)
