@@ -395,23 +395,37 @@ class ReaderFragment : Fragment() {
         if (viewWidth <= 0) {
             return
         }
-        val contentWidthPx = webPreview.computeHorizontalScrollRange().toFloat()
-        if (contentWidthPx <= 0f) {
-            return
+        webPreview.evaluateJavascript(
+            "(function(){var d=document.documentElement;var b=document.body;var w=Math.max(d?d.scrollWidth:0,b?b.scrollWidth:0,d?d.clientWidth:0,b?b.clientWidth:0);return String(w);})();"
+        ) { jsResult ->
+            if (selectedTabId != tab.tabId) {
+                return@evaluateJavascript
+            }
+            if (activeWebRenderProfile != WebViewConfigurator.RenderProfile.MHTML_DESKTOP) {
+                return@evaluateJavascript
+            }
+            if (mhtmlFallbackRetriedTabIds.contains(tab.tabId)) {
+                return@evaluateJavascript
+            }
+            val docWidth = jsResult?.trim('"')?.toFloatOrNull() ?: return@evaluateJavascript
+            val contentWidthPx = docWidth * webPreview.scale
+            if (contentWidthPx <= 0f) {
+                return@evaluateJavascript
+            }
+            val narrow = contentWidthPx < viewWidth * 0.72f
+            Log.d(
+                "ReaderFragment",
+                "mhtml_layout_check tab=${tab.tabId} viewWidth=$viewWidth docWidth=$docWidth contentWidthPx=$contentWidthPx scale=${webPreview.scale} narrow=$narrow profile=$activeWebRenderProfile"
+            )
+            if (!narrow) {
+                return@evaluateJavascript
+            }
+            mhtmlFallbackRetriedTabIds.add(tab.tabId)
+            activeWebRenderProfile = WebViewConfigurator.RenderProfile.MHTML_FALLBACK
+            WebViewConfigurator.configure(webPreview, profile = activeWebRenderProfile)
+            Log.d("ReaderFragment", "mhtml_layout_fallback_reload tab=${tab.tabId} url=$loadedUrl")
+            webPreview.reload()
         }
-        val narrow = contentWidthPx < viewWidth * 0.72f
-        Log.d(
-            "ReaderFragment",
-            "mhtml_layout_check tab=${tab.tabId} viewWidth=$viewWidth contentWidthPx=$contentWidthPx scale=${webPreview.scale} narrow=$narrow profile=$activeWebRenderProfile"
-        )
-        if (!narrow) {
-            return
-        }
-        mhtmlFallbackRetriedTabIds.add(tab.tabId)
-        activeWebRenderProfile = WebViewConfigurator.RenderProfile.MHTML_FALLBACK
-        WebViewConfigurator.configure(webPreview, profile = activeWebRenderProfile)
-        Log.d("ReaderFragment", "mhtml_layout_fallback_reload tab=${tab.tabId} url=$loadedUrl")
-        webPreview.reload()
     }
 
     private suspend fun renderCurrentPdfPage() {
