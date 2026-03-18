@@ -395,7 +395,7 @@ class ReaderFragment : Fragment() {
         if (viewWidth <= 0) {
             return
         }
-        val contentWidthPx = webPreview.contentWidth.toFloat() * webPreview.scale
+        val contentWidthPx = webPreview.computeHorizontalScrollRange().toFloat()
         if (contentWidthPx <= 0f) {
             return
         }
