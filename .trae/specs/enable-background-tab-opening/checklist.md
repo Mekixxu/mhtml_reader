@@ -1,0 +1,4 @@
+- [x] "Open in new tab" creates a tab but stays in Folders view
+- [x] Normal click opens file and switches to Reader view
+- [x] Network files (FTP/SMB) download and then open in background correctly
+- [x] Status notifications (Toast) appear for background operations

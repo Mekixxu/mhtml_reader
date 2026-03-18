@@ -1,0 +1,5 @@
+- [x] `switchFragment` method implemented in `MainActivity`
+- [x] Switching from Folders to Tabs and back preserves `FilesFragment` instance (log hashcode to verify)
+- [x] Scroll position in `FilesFragment` is preserved after tab switch
+- [x] Opening a directory from Home still works correctly (loads new directory)
+- [x] Back button behavior remains consistent

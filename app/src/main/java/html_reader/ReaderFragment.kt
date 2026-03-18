@@ -5,6 +5,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.os.Bundle
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -57,6 +58,8 @@ class ReaderFragment : Fragment() {
     private var opening = false
     private var pdfPageCount = 0
     private var currentPdfPageIndex = 0
+    private val mhtmlFallbackRetriedTabIds = mutableSetOf<String>()
+    private var activeWebRenderProfile: WebViewConfigurator.RenderProfile = WebViewConfigurator.RenderProfile.DEFAULT
 
     companion object {
         private const val ARG_INITIAL_PATH = "arg_initial_path"
@@ -96,7 +99,7 @@ class ReaderFragment : Fragment() {
         pdfPrevButton.isEnabled = false
         pdfNextButton.isEnabled = false
         webPreview.setLayerType(View.LAYER_TYPE_HARDWARE, null)
-        WebViewConfigurator.configure(webPreview)
+        WebViewConfigurator.configure(webPreview, profile = WebViewConfigurator.RenderProfile.DEFAULT)
         webPreview.visibility = View.GONE
         
         selectedTabId = savedInstanceState?.getString(STATE_SELECTED_TAB_ID)
@@ -329,7 +332,9 @@ class ReaderFragment : Fragment() {
         val isSameUrl = webPreview.url == targetUrl
 
         if (!isSameUrl) {
-            WebViewConfigurator.configure(webPreview)
+            mhtmlFallbackRetriedTabIds.remove(tab.tabId)
+            activeWebRenderProfile = initialRenderProfileFor(tab.fileType)
+            WebViewConfigurator.configure(webPreview, profile = activeWebRenderProfile)
             webPreview.webViewClient = BlockingResourceWebViewClient(
                 fileType = tab.fileType,
                 onOpenLinkInNewTab = NewTabLinkHandler { url ->
@@ -338,6 +343,9 @@ class ReaderFragment : Fragment() {
                     } else {
                         showShort(getString(R.string.reader_external_link_blocked))
                     }
+                },
+                onPageFinishedCallback = { loadedUrl ->
+                    onWebPageFinished(tab = tab, loadedUrl = loadedUrl, targetUrl = targetUrl)
                 }
             )
         }
@@ -353,6 +361,57 @@ class ReaderFragment : Fragment() {
         if (!isSameUrl) {
             webPreview.loadUrl(targetUrl)
         }
+    }
+
+    private fun initialRenderProfileFor(fileType: FileType): WebViewConfigurator.RenderProfile {
+        return if (fileType == FileType.MHTML || fileType == FileType.HTML) {
+            WebViewConfigurator.RenderProfile.MHTML_DESKTOP
+        } else {
+            WebViewConfigurator.RenderProfile.DEFAULT
+        }
+    }
+
+    private fun onWebPageFinished(tab: ReaderTab, loadedUrl: String, targetUrl: String) {
+        if (selectedTabId != tab.tabId) {
+            return
+        }
+        if (!loadedUrl.startsWith(targetUrl)) {
+            return
+        }
+        if (tab.fileType != FileType.MHTML && tab.fileType != FileType.HTML) {
+            return
+        }
+        maybeRetryMhtmlWithFallback(tab, loadedUrl)
+    }
+
+    private fun maybeRetryMhtmlWithFallback(tab: ReaderTab, loadedUrl: String) {
+        if (activeWebRenderProfile != WebViewConfigurator.RenderProfile.MHTML_DESKTOP) {
+            return
+        }
+        if (mhtmlFallbackRetriedTabIds.contains(tab.tabId)) {
+            return
+        }
+        val viewWidth = webPreview.width
+        if (viewWidth <= 0) {
+            return
+        }
+        val contentWidthPx = webPreview.contentWidth.toFloat() * webPreview.scale
+        if (contentWidthPx <= 0f) {
+            return
+        }
+        val narrow = contentWidthPx < viewWidth * 0.72f
+        Log.d(
+            "ReaderFragment",
+            "mhtml_layout_check tab=${tab.tabId} viewWidth=$viewWidth contentWidthPx=$contentWidthPx scale=${webPreview.scale} narrow=$narrow profile=$activeWebRenderProfile"
+        )
+        if (!narrow) {
+            return
+        }
+        mhtmlFallbackRetriedTabIds.add(tab.tabId)
+        activeWebRenderProfile = WebViewConfigurator.RenderProfile.MHTML_FALLBACK
+        WebViewConfigurator.configure(webPreview, profile = activeWebRenderProfile)
+        Log.d("ReaderFragment", "mhtml_layout_fallback_reload tab=${tab.tabId} url=$loadedUrl")
+        webPreview.reload()
     }
 
     private suspend fun renderCurrentPdfPage() {

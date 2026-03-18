@@ -1,0 +1,5 @@
+- [ ] Open FTP file -> Tab title shows original filename (not ftp_xxx).
+- [ ] Open SMB file -> Tab title shows original filename.
+- [ ] Open multiple files (Tabs A, B, C).
+- [ ] Go to Tabs Overview -> Click Tab A -> Reader shows Tab A.
+- [ ] Go to Tabs Overview -> Click Tab B -> Reader shows Tab B.

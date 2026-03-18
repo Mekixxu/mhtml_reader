@@ -1,0 +1,3 @@
+- [x] HtmlTitleExtractor correctly extracts titles from GBK encoded files
+- [x] HtmlTitleExtractor correctly extracts titles from UTF-8 encoded files
+- [x] HtmlTitleExtractor handles files with explicit charset declarations

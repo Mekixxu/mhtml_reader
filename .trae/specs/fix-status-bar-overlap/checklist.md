@@ -1,0 +1,4 @@
+- [x] `enableEdgeToEdge()` is called in `MainActivity.onCreate` (or equivalent manual setup)
+- [x] Root view has an `OnApplyWindowInsetsListener` attached
+- [x] Padding is applied to the root view (or content container) based on `systemBars()` insets
+- [x] App compiles successfully

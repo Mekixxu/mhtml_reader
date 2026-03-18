@@ -12,6 +12,7 @@ import android.provider.OpenableColumns
 import android.provider.Settings
 import android.text.Editable
 import android.text.TextWatcher
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -153,6 +154,7 @@ class FilesFragment : Fragment() {
     private var smbConfig: NetworkConfigEntity? = null
     private var smbCurrentPath: String = "/"
     private var ftpLoadToken: Long = 0L
+    private var ftpResolvedCharset: String? = null
     private var titleRefreshJob: Job? = null
     private val supportedExtensions = setOf("mht", "mhtml", "pdf", "html", "htm")
     private val displayTitleByPath = mutableMapOf<String, String>()
@@ -231,18 +233,19 @@ class FilesFragment : Fragment() {
 
                 val key = item.pathKey()
                 val displayTitle = if (key == null) null else displayTitleByPath[key]
-                val namePart = if (displayTitle.isNullOrBlank() || displayTitle == item.name) item.name else displayTitle
+                val namePart = item.name
+                val titlePart = displayTitle?.takeIf { isUsableDisplayTitle(it, item.name) }
 
                 val typeLabel = if (item.isDirectory) "[DIR]" else "[FILE]"
                 val sizeLabel = if (item.isDirectory) "" else formatSize(item.sizeBytes)
                 val timeLabel = item.modifiedText ?: item.modifiedEpochMs?.let { DateFormat.getDateTimeInstance().format(Date(it)) }.orEmpty()
-                
                 val metaPart = listOf(sizeLabel, timeLabel).filter { it.isNotBlank() }.joinToString("  •  ")
+                val subLine = listOf(titlePart, metaPart).filter { !it.isNullOrBlank() }.joinToString("  •  ")
 
                 val selectedPrefix = if (item.isSelected(selectedEntry)) "▶ " else ""
                 
                 text1.text = "$selectedPrefix$typeLabel $namePart"
-                text2.text = metaPart
+                text2.text = subLine
                 return view
             }
         }
@@ -722,11 +725,13 @@ class FilesFragment : Fragment() {
             ?.let { networkConfigRepository.getById(it) }
         currentNetworkLabel = linkedNetworkConfig?.let { "${it.protocol.name}://${it.host}" }
         ftpConfig = null
+        ftpResolvedCharset = null
         smbConfig = null
         browseSource = BrowseSource.LOCAL
         if (linkedNetworkConfig?.protocol == NetworkProtocol.FTP) {
             browseSource = BrowseSource.FTP
             ftpConfig = linkedNetworkConfig
+            ftpResolvedCharset = configuredFtpCharsetName(linkedNetworkConfig)
             ftpCurrentPath = normalizeFtpPath(session.currentPath.ifBlank { linkedNetworkConfig.defaultPath })
             selectedEntry = null
             loadEntries()
@@ -898,6 +903,9 @@ class FilesFragment : Fragment() {
         actionCreateButton.text = getString(R.string.action_upload_file)
         titleRefreshJob?.cancel()
         displayTitleByPath.clear()
+        if (!isFtpAutoEncoding(config)) {
+            ftpResolvedCharset = configuredFtpCharsetName(config)
+        }
         updateStatus(getString(R.string.files_status_ftp_loading), isError = false)
         currentDirLabel.text = buildCurrentDirText(defaultRootDir())
         val token = ++ftpLoadToken
@@ -1247,35 +1255,58 @@ class FilesFragment : Fragment() {
     }
 
     private fun decodeFtpName(bytes: ByteArray): String {
-        // 1. Get encoding from config
-        val encoding = ftpConfig?.encoding
-        if (!encoding.isNullOrBlank() && !encoding.equals("Auto", ignoreCase = true)) {
+        val configuredCharset = configuredFtpCharsetName(ftpConfig)
+        if (!configuredCharset.isNullOrBlank()) {
             try {
-                return String(bytes, java.nio.charset.Charset.forName(encoding))
+                ftpResolvedCharset = configuredCharset
+                return String(bytes, java.nio.charset.Charset.forName(configuredCharset))
             } catch (e: Exception) {
-                // Fallback if invalid charset
+                Unit
             }
         }
-
-        // 2. Try UTF-8
+        val rememberedCharset = ftpResolvedCharset
+        if (!rememberedCharset.isNullOrBlank()) {
+            try {
+                val decoder = java.nio.charset.Charset.forName(rememberedCharset).newDecoder()
+                decoder.onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+                decoder.onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+                return decoder.decode(java.nio.ByteBuffer.wrap(bytes)).toString()
+            } catch (e: Exception) {
+                Unit
+            }
+        }
         try {
-             // Use decoder to strict check
             val decoder = Charsets.UTF_8.newDecoder()
             decoder.onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
             decoder.onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+            ftpResolvedCharset = "UTF-8"
+            Log.d("FilesFragment", "ftp_charset_detected=UTF-8")
             return decoder.decode(java.nio.ByteBuffer.wrap(bytes)).toString()
         } catch (e: Exception) {
-            // Not valid UTF-8
+            Unit
         }
-        
-        // 3. Try GBK (Common for Chinese)
         try {
-            return String(bytes, java.nio.charset.Charset.forName("GBK"))
+            val decoder = java.nio.charset.Charset.forName("GBK").newDecoder()
+            decoder.onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+            decoder.onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+            ftpResolvedCharset = "GBK"
+            Log.d("FilesFragment", "ftp_charset_detected=GBK")
+            return decoder.decode(java.nio.ByteBuffer.wrap(bytes)).toString()
         } catch (e: Exception) {
-            // Ignore
+            Unit
         }
-        
-        // 4. Fallback to ISO-8859-1 (original)
+        try {
+            val decoder = java.nio.charset.Charset.forName("Big5").newDecoder()
+            decoder.onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+            decoder.onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+            ftpResolvedCharset = "Big5"
+            Log.d("FilesFragment", "ftp_charset_detected=Big5")
+            return decoder.decode(java.nio.ByteBuffer.wrap(bytes)).toString()
+        } catch (e: Exception) {
+            Unit
+        }
+        ftpResolvedCharset = "ISO-8859-1"
+        Log.d("FilesFragment", "ftp_charset_detected=ISO-8859-1")
         return String(bytes, Charsets.ISO_8859_1)
     }
 
@@ -1408,11 +1439,8 @@ class FilesFragment : Fragment() {
     }
 
     private fun buildFtpUrl(config: NetworkConfigEntity, path: String, type: String): String {
-        val charset = if (!config.encoding.isNullOrBlank() && !config.encoding.equals("Auto", ignoreCase = true)) {
-            config.encoding
-        } else {
-            "UTF-8"
-        }
+        val charset = configuredFtpCharsetName(config) ?: ftpResolvedCharset ?: "UTF-8"
+        Log.d("FilesFragment", "ftp_charset_url=$charset auto=${isFtpAutoEncoding(config)}")
         val user = config.username.trim().ifBlank { "anonymous" }
         val pass = config.password.ifBlank { "anonymous@" }
         val encodedUser = runCatching { URLEncoder.encode(user, charset) }.getOrDefault(URLEncoder.encode(user, "UTF-8")).replace("+", "%20")
@@ -1428,6 +1456,19 @@ class FilesFragment : Fragment() {
         val finalPath = if (type == "d" && !encodedPath.endsWith("/")) "$encodedPath/" else encodedPath
         
         return "ftp://$encodedUser:$encodedPass@${config.host}:${config.port}$finalPath;type=$type"
+    }
+
+    private fun isFtpAutoEncoding(config: NetworkConfigEntity?): Boolean {
+        val encoding = config?.encoding
+        return encoding.isNullOrBlank() || encoding.equals("Auto", ignoreCase = true)
+    }
+
+    private fun configuredFtpCharsetName(config: NetworkConfigEntity?): String? {
+        val encoding = config?.encoding?.trim().orEmpty()
+        if (encoding.isBlank() || encoding.equals("Auto", ignoreCase = true)) {
+            return null
+        }
+        return encoding
     }
 
     private fun buildSmbDirUrl(config: NetworkConfigEntity, path: String): String {
@@ -1685,8 +1726,11 @@ class FilesFragment : Fragment() {
             for (file in localFiles) {
                 val path = file.absolutePath
                 val cached = titleCacheRepository.get(path)
-                if (cached != null && cached.lastModified == file.lastModified() && cached.title.isNotBlank()) {
-                    displayTitleByPath[path] = cached.title
+                if (cached != null && cached.lastModified == file.lastModified()) {
+                    val normalizedTitle = normalizeDisplayTitle(cached.title, file.name)
+                    if (!normalizedTitle.isNullOrBlank()) {
+                        displayTitleByPath[path] = normalizedTitle
+                    }
                 }
             }
             renderEntries()
@@ -1697,7 +1741,8 @@ class FilesFragment : Fragment() {
                 }
                 val path = file.absolutePath
                 val cached = titleCacheRepository.get(path)
-                if (cached != null && cached.lastModified == file.lastModified() && cached.title.isNotBlank()) {
+                val cachedTitleUsable = cached?.let { normalizeDisplayTitle(it.title, file.name) } != null
+                if (cached != null && cached.lastModified == file.lastModified() && cachedTitleUsable) {
                     continue
                 }
                 val title = htmlTitleExtractor.extractTitle(
@@ -1706,20 +1751,47 @@ class FilesFragment : Fragment() {
                     fileType = FileType.MHTML,
                     maxBytesToRead = 256L * 1024L
                 )?.trim()
-                if (!title.isNullOrBlank()) {
+                val normalizedTitle = normalizeDisplayTitle(title, file.name)
+                if (!normalizedTitle.isNullOrBlank()) {
                     titleCacheRepository.upsert(
                         TitleCacheEntity(
                             path = path,
-                            title = title,
+                            title = normalizedTitle,
                             lastModified = file.lastModified(),
                             updatedAt = System.currentTimeMillis()
                         )
                     )
-                    displayTitleByPath[path] = title
+                    displayTitleByPath[path] = normalizedTitle
                     renderEntries()
                 }
             }
         }
+    }
+
+    private fun normalizeDisplayTitle(rawTitle: String?, fileName: String): String? {
+        val title = rawTitle?.trim().orEmpty()
+        if (title.isBlank()) {
+            return null
+        }
+        return if (isUsableDisplayTitle(title, fileName)) title else null
+    }
+
+    private fun isUsableDisplayTitle(title: String, fileName: String): Boolean {
+        if (title.equals(fileName, ignoreCase = true)) {
+            return false
+        }
+        if (title.any { it.code < 0x20 && it != '\n' && it != '\t' }) {
+            return false
+        }
+        val replacementCount = title.count { it == '\uFFFD' }
+        if (replacementCount >= 2 || replacementCount.toFloat() / title.length.toFloat() > 0.08f) {
+            return false
+        }
+        val suspiciousCount = title.count { it in listOf('Ã', 'â', '¤', '�') }
+        if (suspiciousCount >= 3 && suspiciousCount.toFloat() / title.length.toFloat() > 0.12f) {
+            return false
+        }
+        return true
     }
 
     private fun promptRename(entry: BrowserEntry) {

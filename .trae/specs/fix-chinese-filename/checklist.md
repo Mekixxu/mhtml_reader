@@ -1,0 +1,3 @@
+- [ ] FTP download preserves Chinese characters in filename.
+- [ ] SMB download preserves Chinese characters in filename.
+- [ ] Invalid characters (like `/` or `:`) are still replaced with `_`.

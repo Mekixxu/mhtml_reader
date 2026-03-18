@@ -1,5 +1,6 @@
 package core.reader.web
 
+import android.util.Log
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
@@ -7,18 +8,12 @@ import android.webkit.WebViewClient
 import core.database.entity.enums.FileType
 import java.io.ByteArrayInputStream
 
-/**
- * 外链资源阻断（SSOT/B）：
- * - 对 HTML/MHTML（从缓存文件打开）：阻止所有网络外链资源加载
- * - 仅允许本地：file://, content://, data:, about:blank
- * - 对 http/https 页面：不拦截资源
- *
- * 链接点击：仅当 hasGesture==true 的 http/https 才新 tab 打开，避免页面自动跳转被误拦。
- */
 class BlockingResourceWebViewClient(
     private val fileType: FileType,
-    private val onOpenLinkInNewTab: NewTabLinkHandler
+    private val onOpenLinkInNewTab: NewTabLinkHandler,
+    private val onPageFinishedCallback: ((url: String) -> Unit)? = null
 ) : WebViewClient() {
+    private val tag = "BlockingWebClient"
 
     override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
         if (fileType == FileType.HTML || fileType == FileType.MHTML) {
@@ -32,7 +27,7 @@ class BlockingResourceWebViewClient(
                 url.startsWith("cid:")
 
             if (!allowed) {
-                // 返回空响应比 null InputStream 更安全
+                Log.d(tag, "blocked_resource fileType=$fileType url=$url")
                 return WebResourceResponse(
                     "text/plain",
                     "utf-8",
@@ -41,6 +36,12 @@ class BlockingResourceWebViewClient(
             }
         }
         return super.shouldInterceptRequest(view, request)
+    }
+
+    override fun onPageFinished(view: WebView?, url: String?) {
+        super.onPageFinished(view, url)
+        val safeUrl = url ?: return
+        onPageFinishedCallback?.invoke(safeUrl)
     }
 
     override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {

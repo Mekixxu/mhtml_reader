@@ -1,0 +1,4 @@
+- [x] WebView cache mode is set to LOAD_DEFAULT
+- [x] BlockingResourceWebViewClient allows `cid:` resources
+- [x] Switching to the currently loaded tab does not trigger `loadUrl`
+- [x] Switching between tabs with different files still triggers `loadUrl`

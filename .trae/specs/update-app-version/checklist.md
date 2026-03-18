@@ -1,0 +1,1 @@
+- [x] `versionName` is `0.0.1` in `app/build.gradle.kts`

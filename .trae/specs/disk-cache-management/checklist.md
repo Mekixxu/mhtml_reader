@@ -1,0 +1,4 @@
+- [ ] CacheEvictor correctly deletes files older than 7 days.
+- [ ] CacheEvictor correctly deletes LRU files when 15GB limit is reached.
+- [ ] Opening a new file triggers eviction if space is needed.
+- [ ] Large files open successfully without crashing (assuming disk space is sufficient).
