@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="home_page_padding">16dp</dimen>
+    <dimen name="home_card_padding">12dp</dimen>
+    <dimen name="home_spacing_xsmall">4dp</dimen>
+    <dimen name="home_spacing_small">8dp</dimen>
+    <dimen name="home_spacing_medium">12dp</dimen>
+    <dimen name="home_spacing_large">16dp</dimen>
+    <dimen name="home_action_min_height">48dp</dimen>
+    <dimen name="home_item_height">52dp</dimen>
+    <dimen name="home_item_horizontal_padding">14dp</dimen>
+    <dimen name="home_local_list_height">52dp</dimen>
+    <dimen name="home_sd_list_height">112dp</dimen>
+    <dimen name="home_network_list_height">172dp</dimen>
+</resources>

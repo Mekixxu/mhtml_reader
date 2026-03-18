@@ -8,25 +8,19 @@ import android.provider.Settings
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
-import android.widget.Spinner
 import android.widget.ListView
-import android.widget.TextView
+import android.widget.Spinner
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
-import core.data.repo.FavoritesRepository
-import core.data.repo.HistoryRepository
 import core.data.repo.NetworkConfigRepository
 import core.database.entity.NetworkConfigEntity
 import core.database.entity.enums.NetworkProtocol
-import core.database.entity.enums.SourceType
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
-import java.io.File
 
 class HomeFragment : Fragment(R.layout.fragment_home) {
     private lateinit var recentsButton: Button
@@ -35,8 +29,6 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
     private lateinit var sdCardList: ListView
     private lateinit var networkList: ListView
     
-    private lateinit var historyRepository: HistoryRepository
-    private lateinit var favoritesRepository: FavoritesRepository
     private lateinit var networkConfigRepository: NetworkConfigRepository
     
     private val localDirs = mutableListOf<String>()
@@ -53,8 +45,6 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         val context = requireContext()
-        historyRepository = ReaderRuntime.historyRepository(context)
-        favoritesRepository = FilesRuntime.favoritesRepository(context)
         networkConfigRepository = FilesRuntime.networkConfigRepository(context)
 
         recentsButton = view.findViewById(R.id.home_recents_button)
@@ -73,8 +63,8 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
 
         // Initialize Local List (Standard directories)
         val defaultLocal = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS).absolutePath
-        localDirs.add(defaultLocal)
-        localList.adapter = ArrayAdapter(context, android.R.layout.simple_list_item_1, localDirs)
+        localDirs.add(getString(R.string.home_local_downloads))
+        localList.adapter = ArrayAdapter(context, R.layout.item_home_rect, localDirs)
         localList.setOnItemClickListener { _, _, _, _ ->
             (activity as? MainActivity)?.showDirectoryModeWithPath(defaultLocal)
         }
@@ -93,13 +83,14 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
                 sdCardDirs.add(root)
             }
         }
+        val addSdCardLabel = getString(R.string.home_sd_add_saf)
         if (sdCardDirs.isEmpty()) {
-            sdCardDirs.add("Add SD Card (SAF)")
+            sdCardDirs.add(addSdCardLabel)
         }
-        sdCardList.adapter = ArrayAdapter(context, android.R.layout.simple_list_item_1, sdCardDirs)
+        sdCardList.adapter = ArrayAdapter(context, R.layout.item_home_rect, sdCardDirs)
         sdCardList.setOnItemClickListener { _, _, position, _ ->
             val path = sdCardDirs[position]
-            if (path == "Add SD Card (SAF)") {
+            if (path == addSdCardLabel) {
                 safPicker.launch(null)
             } else {
                 (activity as? MainActivity)?.showDirectoryModeWithPath(path)
@@ -107,7 +98,7 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         }
 
         // Initialize Network List
-        val netAdapter = ArrayAdapter(context, android.R.layout.simple_list_item_1, mutableListOf<String>())
+        val netAdapter = ArrayAdapter(context, R.layout.item_home_rect, mutableListOf<String>())
         networkList.adapter = netAdapter
         networkList.setOnItemClickListener { _, _, position, _ ->
             if (position == networkConfigs.size) {
@@ -124,7 +115,7 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
                 networkConfigs.clear()
                 networkConfigs.addAll(configs)
                 val display = configs.map { "${it.protocol.name}: ${it.name} (${it.host})" }.toMutableList()
-                display.add("+ Add Network Connection")
+                display.add(getString(R.string.home_network_add_hint))
                 netAdapter.clear()
                 netAdapter.addAll(display)
                 netAdapter.notifyDataSetChanged()
@@ -144,20 +135,22 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         typeSpinner.adapter = ArrayAdapter(
             requireContext(),
             android.R.layout.simple_spinner_dropdown_item,
-            listOf("SMB", "FTP")
+            listOf(
+                getString(R.string.home_network_type_smb),
+                getString(R.string.home_network_type_ftp)
+            )
         )
 
         AlertDialog.Builder(requireContext())
-            .setTitle("Add Network Connection")
+            .setTitle(R.string.home_network_add_title)
             .setView(view)
-            .setPositiveButton("Save") { _, _ ->
+            .setPositiveButton(R.string.home_action_save) { _, _ ->
                 val name = nameInput.text.toString()
                 val host = hostInput.text.toString()
                 val port = portInput.text.toString().toIntOrNull() ?: 0
                 val user = userInput.text.toString()
                 val pass = passInput.text.toString()
-                val typeStr = typeSpinner.selectedItem.toString()
-                val protocol = if (typeStr == "SMB") NetworkProtocol.SMB else NetworkProtocol.FTP
+                val protocol = if (typeSpinner.selectedItemPosition == 0) NetworkProtocol.SMB else NetworkProtocol.FTP
                 
                 if (name.isNotBlank() && host.isNotBlank()) {
                     viewLifecycleOwner.lifecycleScope.launch {
@@ -175,7 +168,7 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
                     }
                 }
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(android.R.string.cancel, null)
             .show()
     }
 
@@ -183,8 +176,8 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
             if (!android.os.Environment.isExternalStorageManager()) {
                 AlertDialog.Builder(requireContext())
-                    .setTitle("Permission Required")
-                    .setMessage("This app needs access to all files to function properly. Please grant the permission.")
+                    .setTitle(R.string.home_permission_required_title)
+                    .setMessage(R.string.home_permission_required_message)
                     .setPositiveButton(android.R.string.ok) { _, _ ->
                         val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
                         intent.data = Uri.parse("package:${requireContext().packageName}")

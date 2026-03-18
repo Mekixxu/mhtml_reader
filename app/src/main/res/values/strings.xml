@@ -78,6 +78,8 @@
     <string name="home_clear_recents">Clear Recents</string>
     <string name="home_recent_deleted">Recent item deleted</string>
     <string name="home_recents_cleared">All recents cleared</string>
+    <string name="home_quick_actions">Quick Actions</string>
+    <string name="home_storage_sources">Storage Sources</string>
     <string name="home_local_dirs_title">Local Directories</string>
     <string name="home_local_dirs">Local Directories</string>
     <string name="home_recents_title">Recent Opens</string>
@@ -87,11 +89,18 @@
     <string name="home_network_title">Network</string>
     <string name="home_network_subtitle">SMB / FTP connections</string>
     <string name="home_network_add_hint">Tap to add network location</string>
+    <string name="home_network_add_title">Add Network Connection</string>
+    <string name="home_network_type_smb">SMB</string>
+    <string name="home_network_type_ftp">FTP</string>
     <string name="home_network_delete_title">Delete Connection</string>
     <string name="home_network_deleted">Connection deleted</string>
     <string name="home_favorites_shortcut">Favorites</string>
     <string name="home_sd_card">SD Card</string>
+    <string name="home_sd_add_saf">Add SD Card (SAF)</string>
     <string name="home_local_downloads">Downloads</string>
+    <string name="home_action_save">Save</string>
+    <string name="home_permission_required_title">Permission Required</string>
+    <string name="home_permission_required_message">This app needs access to all files to function properly. Please grant the permission.</string>
     <string name="folders_create">Create</string>
     <string name="folders_open">Open</string>
     <string name="folders_delete">Delete</string>

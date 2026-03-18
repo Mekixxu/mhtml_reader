@@ -1,73 +1,132 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:fillViewport="true">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="16dp">
+        android:padding="@dimen/home_page_padding">
 
-        <!-- Recents -->
-        <Button
-            android:id="@+id/home_recents_button"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/home_recent_opens" />
+            android:background="@drawable/home_card_bg"
+            android:orientation="vertical"
+            android:padding="@dimen/home_card_padding">
 
-        <!-- Favorites -->
-        <Button
-            android:id="@+id/home_favorites_button"
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/home_quick_actions"
+                android:textAppearance="?android:attr/textAppearanceMedium"
+                android:textColor="?android:attr/textColorPrimary"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/home_recents_button"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/home_spacing_medium"
+                android:minHeight="@dimen/home_action_min_height"
+                android:text="@string/home_recent_opens" />
+
+            <Button
+                android:id="@+id/home_favorites_button"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/home_spacing_small"
+                android:minHeight="@dimen/home_action_min_height"
+                android:text="@string/home_favorites_shortcut" />
+        </LinearLayout>
+
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="@string/home_favorites_shortcut" />
+            android:layout_marginTop="@dimen/home_spacing_large"
+            android:background="@drawable/home_card_bg"
+            android:orientation="vertical"
+            android:padding="@dimen/home_card_padding">
 
-        <!-- Local Directories -->
-        <TextView
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/home_storage_sources"
+                android:textAppearance="?android:attr/textAppearanceMedium"
+                android:textColor="?android:attr/textColorPrimary"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/home_spacing_medium"
+                android:text="@string/home_local_dirs"
+                android:textAppearance="?android:attr/textAppearanceSmall"
+                android:textColor="?android:attr/textColorSecondary" />
+
+            <ListView
+                android:id="@+id/home_local_list"
+                android:layout_width="match_parent"
+                android:layout_height="@dimen/home_local_list_height"
+                android:layout_marginTop="@dimen/home_spacing_small"
+                android:divider="@android:color/transparent"
+                android:dividerHeight="@dimen/home_spacing_small"
+                android:scrollbars="none" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/home_spacing_medium"
+                android:text="@string/home_sd_card"
+                android:textAppearance="?android:attr/textAppearanceSmall"
+                android:textColor="?android:attr/textColorSecondary" />
+
+            <ListView
+                android:id="@+id/home_sd_list"
+                android:layout_width="match_parent"
+                android:layout_height="@dimen/home_sd_list_height"
+                android:layout_marginTop="@dimen/home_spacing_small"
+                android:divider="@android:color/transparent"
+                android:dividerHeight="@dimen/home_spacing_small"
+                android:scrollbars="none" />
+        </LinearLayout>
+
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="@string/home_local_dirs"
-            android:textAppearance="?android:attr/textAppearanceMedium"
-            android:textStyle="bold" />
+            android:layout_marginTop="@dimen/home_spacing_large"
+            android:layout_marginBottom="@dimen/home_spacing_large"
+            android:background="@drawable/home_card_bg"
+            android:orientation="vertical"
+            android:padding="@dimen/home_card_padding">
 
-        <ListView
-            android:id="@+id/home_local_list"
-            android:layout_width="match_parent"
-            android:layout_height="100dp"
-            android:layout_marginTop="8dp" />
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/home_network_title"
+                android:textAppearance="?android:attr/textAppearanceMedium"
+                android:textColor="?android:attr/textColorPrimary"
+                android:textStyle="bold" />
 
-        <!-- SD Card -->
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="@string/home_sd_card"
-            android:textAppearance="?android:attr/textAppearanceMedium"
-            android:textStyle="bold" />
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/home_spacing_xsmall"
+                android:text="@string/home_network_subtitle"
+                android:textAppearance="?android:attr/textAppearanceSmall"
+                android:textColor="?android:attr/textColorSecondary" />
 
-        <ListView
-            android:id="@+id/home_sd_list"
-            android:layout_width="match_parent"
-            android:layout_height="100dp"
-            android:layout_marginTop="8dp" />
-
-        <!-- Network -->
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="@string/home_network_title"
-            android:textAppearance="?android:attr/textAppearanceMedium"
-            android:textStyle="bold" />
-
-        <ListView
-            android:id="@+id/home_network_list"
-            android:layout_width="match_parent"
-            android:layout_height="150dp"
-            android:layout_marginTop="8dp" />
+            <ListView
+                android:id="@+id/home_network_list"
+                android:layout_width="match_parent"
+                android:layout_height="@dimen/home_network_list_height"
+                android:layout_marginTop="@dimen/home_spacing_medium"
+                android:divider="@android:color/transparent"
+                android:dividerHeight="@dimen/home_spacing_small"
+                android:scrollbars="none" />
+        </LinearLayout>
 
     </LinearLayout>
 </ScrollView>
