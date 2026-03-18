@@ -176,13 +176,12 @@ class FavoritesFragment : Fragment() {
             items.map {
                 val selectedPrefix = if (it.id == selectedItemId) "▶ " else ""
                 val typeLabel = if (it.type == FavoriteType.FOLDER) "DIR" else "FILE"
-                val pathLabel = if (it.type == FavoriteType.FOLDER) "" else "  •  ${it.path}"
                 val invalidLabel = if (it.type == FavoriteType.FILE && !isFavoriteReachable(it)) {
                     "  •  ${getString(R.string.favorites_invalid)}"
                 } else {
                     ""
                 }
-                "$selectedPrefix$typeLabel  ${it.name}$pathLabel$invalidLabel"
+                "$selectedPrefix$typeLabel  ${it.name}$invalidLabel"
             }
         )
         adapter.notifyDataSetChanged()
