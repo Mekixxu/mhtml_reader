@@ -16,6 +16,7 @@ import android.widget.Spinner
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import core.database.entity.FavoriteEntity
@@ -51,6 +52,7 @@ class MoreFragment : Fragment() {
     private lateinit var statusLabel: TextView
     private lateinit var listView: ListView
     private lateinit var adapter: ArrayAdapter<String>
+    private var statusDefaultColor: Int = 0
     private val configs = mutableListOf<NetworkConfigEntity>()
     private var selectedId: Long? = null
     private val settingsPrefsName = "app_settings"
@@ -82,10 +84,11 @@ class MoreFragment : Fragment() {
         exportMetaButton = view.findViewById(R.id.more_export_meta)
         importMetaButton = view.findViewById(R.id.more_import_meta)
         statusLabel = view.findViewById(R.id.more_network_status)
+        statusDefaultColor = statusLabel.currentTextColor
         listView = view.findViewById(R.id.more_network_list)
-        adapter = ArrayAdapter(requireContext(), android.R.layout.simple_list_item_1, mutableListOf())
+        adapter = ArrayAdapter(requireContext(), R.layout.item_home_rect, mutableListOf())
         listView.adapter = adapter
-        statusLabel.text = getString(R.string.more_network_ready)
+        showStatus(R.string.more_network_ready)
 
         listView.setOnItemClickListener { _, _, position, _ ->
             selectedId = configs.getOrNull(position)?.id
@@ -101,7 +104,7 @@ class MoreFragment : Fragment() {
             viewLifecycleOwner.lifecycleScope.launch {
                 FilesRuntime.networkConfigRepository(requireContext()).delete(id)
                 selectedId = null
-                statusLabel.text = getString(R.string.more_network_deleted)
+                showStatus(R.string.more_network_deleted, isSuccess = true)
             }
         }
         openFavoritesButton.setOnClickListener {
@@ -243,7 +246,7 @@ class MoreFragment : Fragment() {
                 val encoding = encodingValues[encodingSpinner.selectedItemPosition]
                 
                 if (name.isBlank() || host.isBlank() || port == null || port <= 0) {
-                    statusLabel.text = getString(R.string.more_network_invalid)
+                    showStatus(R.string.more_network_invalid, isError = true)
                     return@setPositiveButton
                 }
                 val entity = NetworkConfigEntity(
@@ -261,11 +264,11 @@ class MoreFragment : Fragment() {
                     if (existing == null) {
                         val newId = FilesRuntime.networkConfigRepository(requireContext()).add(entity)
                         selectedId = newId
-                        statusLabel.text = getString(R.string.more_network_added)
+                        showStatus(R.string.more_network_added, isSuccess = true)
                     } else {
                         FilesRuntime.networkConfigRepository(requireContext()).update(entity)
                         selectedId = existing.id
-                        statusLabel.text = getString(R.string.more_network_updated)
+                        showStatus(R.string.more_network_updated, isSuccess = true)
                     }
                 }
             }
@@ -289,6 +292,12 @@ class MoreFragment : Fragment() {
             }
         )
         adapter.notifyDataSetChanged()
+        val selectedIndex = configs.indexOfFirst { it.id == selectedId }
+        if (selectedIndex >= 0) {
+            listView.setItemChecked(selectedIndex, true)
+        } else {
+            listView.clearChoices()
+        }
     }
 
     private fun showSettingsDialog() {
@@ -324,9 +333,9 @@ class MoreFragment : Fragment() {
                 requireContext().contentResolver.openOutputStream(uri)?.bufferedWriter(Charsets.UTF_8)?.use { writer ->
                     writer.write(jsonText)
                 } ?: throw IllegalStateException("open output stream failed")
-                statusLabel.text = getString(R.string.more_export_success)
+                showStatus(R.string.more_export_success, isSuccess = true)
             }.onFailure {
-                statusLabel.text = getString(R.string.more_export_failed)
+                showStatus(R.string.more_export_failed, isError = true)
             }
         }
     }
@@ -338,9 +347,9 @@ class MoreFragment : Fragment() {
                     BufferedReader(InputStreamReader(input, Charsets.UTF_8)).readText()
                 } ?: throw IllegalStateException("open input stream failed")
                 applyMetadataJson(text)
-                statusLabel.text = getString(R.string.more_import_success)
+                showStatus(R.string.more_import_success, isSuccess = true)
             }.onFailure {
-                statusLabel.text = getString(R.string.more_import_failed)
+                showStatus(R.string.more_import_failed, isError = true)
             }
         }
     }
@@ -352,6 +361,17 @@ class MoreFragment : Fragment() {
     private suspend fun applyMetadataJson(text: String) {
         val result = jsonBackupManager.importAll(text)
         result.getOrThrow()
+    }
+
+    private fun showStatus(messageRes: Int, isSuccess: Boolean = false, isError: Boolean = false) {
+        statusLabel.text = getString(messageRes)
+        statusLabel.setTextColor(
+            when {
+                isError -> ContextCompat.getColor(requireContext(), android.R.color.holo_red_dark)
+                isSuccess -> ContextCompat.getColor(requireContext(), android.R.color.holo_green_dark)
+                else -> statusDefaultColor
+            }
+        )
     }
 
 

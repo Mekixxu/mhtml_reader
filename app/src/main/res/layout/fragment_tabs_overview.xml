@@ -3,20 +3,54 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="12dp">
+    android:padding="@dimen/home_page_padding">
 
-    <TextView
-        android:id="@+id/tabs_status"
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:textAppearance="?android:attr/textAppearanceSmall" />
+        android:layout_height="match_parent"
+        android:background="@drawable/home_card_bg"
+        android:elevation="@dimen/home_card_elevation"
+        android:orientation="vertical"
+        android:padding="@dimen/home_card_padding">
 
-    <ListView
-        android:id="@+id/tabs_list"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_marginTop="8dp"
-        android:layout_weight="1" />
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/tabs_manage_title"
+            android:textAppearance="?android:attr/textAppearanceMedium"
+            android:textColor="?android:attr/textColorPrimary"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/home_spacing_xsmall"
+            android:text="@string/tabs_manage_subtitle"
+            android:textAppearance="?android:attr/textAppearanceSmall"
+            android:textColor="?android:attr/textColorSecondary" />
+
+        <TextView
+            android:id="@+id/tabs_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/home_spacing_medium"
+            android:textAppearance="?android:attr/textAppearanceSmall"
+            android:textColor="?android:attr/textColorSecondary" />
+
+        <ListView
+            android:id="@+id/tabs_list"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_marginTop="@dimen/home_spacing_small"
+            android:layout_weight="1"
+            android:choiceMode="singleChoice"
+            android:clipToPadding="false"
+            android:divider="@android:color/transparent"
+            android:dividerHeight="@dimen/home_spacing_small"
+            android:overScrollMode="never"
+            android:paddingTop="@dimen/home_spacing_xsmall"
+            android:paddingBottom="@dimen/home_spacing_xsmall"
+            android:scrollbars="none" />
+    </LinearLayout>
 
 </LinearLayout>

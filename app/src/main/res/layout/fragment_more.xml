@@ -3,89 +3,156 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="12dp">
+    android:padding="@dimen/home_page_padding">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal">
+        android:background="@drawable/home_card_bg"
+        android:elevation="@dimen/home_card_elevation"
+        android:orientation="vertical"
+        android:padding="@dimen/home_card_padding">
 
-        <Button
-            android:id="@+id/more_network_add"
-            android:layout_width="0dp"
+        <TextView
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/more_network_add" />
+            android:text="@string/more_actions_title"
+            android:textAppearance="?android:attr/textAppearanceMedium"
+            android:textColor="?android:attr/textColorPrimary"
+            android:textStyle="bold" />
 
-        <Button
-            android:id="@+id/more_network_edit"
-            android:layout_width="0dp"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/more_network_edit" />
+            android:layout_marginTop="@dimen/home_spacing_medium"
+            android:orientation="horizontal">
 
-        <Button
-            android:id="@+id/more_network_delete"
-            android:layout_width="0dp"
+            <Button
+                android:id="@+id/more_network_add"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="@dimen/home_spacing_xsmall"
+                android:layout_weight="1"
+                android:minHeight="@dimen/home_action_min_height"
+                android:textAllCaps="false"
+                android:text="@string/more_network_add" />
+
+            <Button
+                android:id="@+id/more_network_edit"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginHorizontal="@dimen/home_spacing_xsmall"
+                android:layout_weight="1"
+                android:minHeight="@dimen/home_action_min_height"
+                android:textAllCaps="false"
+                android:text="@string/more_network_edit" />
+
+            <Button
+                android:id="@+id/more_network_delete"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/home_spacing_xsmall"
+                android:layout_weight="1"
+                android:minHeight="@dimen/home_action_min_height"
+                android:textAllCaps="false"
+                android:text="@string/more_network_delete" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/more_network_delete" />
+            android:layout_marginTop="@dimen/home_spacing_small"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/more_open_favorites"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="@dimen/home_spacing_xsmall"
+                android:layout_weight="1"
+                android:minHeight="@dimen/home_action_min_height"
+                android:textAllCaps="false"
+                android:text="@string/more_open_favorites" />
+
+            <Button
+                android:id="@+id/more_open_settings"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/home_spacing_xsmall"
+                android:layout_weight="1"
+                android:minHeight="@dimen/home_action_min_height"
+                android:textAllCaps="false"
+                android:text="@string/more_open_settings" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/home_spacing_small"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/more_export_meta"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="@dimen/home_spacing_xsmall"
+                android:layout_weight="1"
+                android:minHeight="@dimen/home_action_min_height"
+                android:textAllCaps="false"
+                android:text="@string/more_export_meta" />
+
+            <Button
+                android:id="@+id/more_import_meta"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/home_spacing_xsmall"
+                android:layout_weight="1"
+                android:minHeight="@dimen/home_action_min_height"
+                android:textAllCaps="false"
+                android:text="@string/more_import_meta" />
+        </LinearLayout>
     </LinearLayout>
 
     <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:orientation="horizontal">
-
-        <Button
-            android:id="@+id/more_open_favorites"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/more_open_favorites" />
-
-        <Button
-            android:id="@+id/more_open_settings"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/more_open_settings" />
-    </LinearLayout>
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:orientation="horizontal">
-
-        <Button
-            android:id="@+id/more_export_meta"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/more_export_meta" />
-
-        <Button
-            android:id="@+id/more_import_meta"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/more_import_meta" />
-    </LinearLayout>
-
-    <TextView
-        android:id="@+id/more_network_status"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:textAppearance="?android:attr/textAppearanceSmall" />
-
-    <ListView
-        android:id="@+id/more_network_list"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_marginTop="8dp"
-        android:layout_weight="1" />
+        android:layout_marginTop="@dimen/home_spacing_large"
+        android:layout_weight="1"
+        android:background="@drawable/home_card_bg"
+        android:elevation="@dimen/home_card_elevation"
+        android:orientation="vertical"
+        android:padding="@dimen/home_card_padding">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/more_network_title"
+            android:textAppearance="?android:attr/textAppearanceMedium"
+            android:textColor="?android:attr/textColorPrimary"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/more_network_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/home_spacing_xsmall"
+            android:textAppearance="?android:attr/textAppearanceSmall"
+            android:textColor="?android:attr/textColorSecondary" />
+
+        <ListView
+            android:id="@+id/more_network_list"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_marginTop="@dimen/home_spacing_medium"
+            android:layout_weight="1"
+            android:choiceMode="singleChoice"
+            android:clipToPadding="false"
+            android:divider="@android:color/transparent"
+            android:dividerHeight="@dimen/home_spacing_small"
+            android:overScrollMode="never"
+            android:paddingTop="@dimen/home_spacing_xsmall"
+            android:paddingBottom="@dimen/home_spacing_xsmall"
+            android:scrollbars="none" />
+    </LinearLayout>
 
 </LinearLayout>

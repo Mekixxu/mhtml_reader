@@ -6,6 +6,7 @@
     <dimen name="home_spacing_small">8dp</dimen>
     <dimen name="home_spacing_medium">12dp</dimen>
     <dimen name="home_spacing_large">16dp</dimen>
+    <dimen name="home_card_elevation">1dp</dimen>
     <dimen name="home_action_min_height">48dp</dimen>
     <dimen name="home_item_height">52dp</dimen>
     <dimen name="home_item_horizontal_padding">14dp</dimen>

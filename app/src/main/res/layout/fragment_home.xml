@@ -14,6 +14,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:background="@drawable/home_card_bg"
+            android:elevation="@dimen/home_card_elevation"
             android:orientation="vertical"
             android:padding="@dimen/home_card_padding">
 
@@ -31,6 +32,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/home_spacing_medium"
                 android:minHeight="@dimen/home_action_min_height"
+                android:textAllCaps="false"
                 android:text="@string/home_recent_opens" />
 
             <Button
@@ -39,6 +41,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/home_spacing_small"
                 android:minHeight="@dimen/home_action_min_height"
+                android:textAllCaps="false"
                 android:text="@string/home_favorites_shortcut" />
         </LinearLayout>
 
@@ -47,6 +50,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/home_spacing_large"
             android:background="@drawable/home_card_bg"
+            android:elevation="@dimen/home_card_elevation"
             android:orientation="vertical"
             android:padding="@dimen/home_card_padding">
 
@@ -71,8 +75,12 @@
                 android:layout_width="match_parent"
                 android:layout_height="@dimen/home_local_list_height"
                 android:layout_marginTop="@dimen/home_spacing_small"
+                android:clipToPadding="false"
                 android:divider="@android:color/transparent"
                 android:dividerHeight="@dimen/home_spacing_small"
+                android:overScrollMode="never"
+                android:paddingTop="@dimen/home_spacing_xsmall"
+                android:paddingBottom="@dimen/home_spacing_xsmall"
                 android:scrollbars="none" />
 
             <TextView
@@ -88,8 +96,12 @@
                 android:layout_width="match_parent"
                 android:layout_height="@dimen/home_sd_list_height"
                 android:layout_marginTop="@dimen/home_spacing_small"
+                android:clipToPadding="false"
                 android:divider="@android:color/transparent"
                 android:dividerHeight="@dimen/home_spacing_small"
+                android:overScrollMode="never"
+                android:paddingTop="@dimen/home_spacing_xsmall"
+                android:paddingBottom="@dimen/home_spacing_xsmall"
                 android:scrollbars="none" />
         </LinearLayout>
 
@@ -99,6 +111,7 @@
             android:layout_marginTop="@dimen/home_spacing_large"
             android:layout_marginBottom="@dimen/home_spacing_large"
             android:background="@drawable/home_card_bg"
+            android:elevation="@dimen/home_card_elevation"
             android:orientation="vertical"
             android:padding="@dimen/home_card_padding">
 
@@ -123,8 +136,12 @@
                 android:layout_width="match_parent"
                 android:layout_height="@dimen/home_network_list_height"
                 android:layout_marginTop="@dimen/home_spacing_medium"
+                android:clipToPadding="false"
                 android:divider="@android:color/transparent"
                 android:dividerHeight="@dimen/home_spacing_small"
+                android:overScrollMode="never"
+                android:paddingTop="@dimen/home_spacing_xsmall"
+                android:paddingBottom="@dimen/home_spacing_xsmall"
                 android:scrollbars="none" />
         </LinearLayout>
 

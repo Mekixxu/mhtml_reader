@@ -6,10 +6,10 @@ import android.view.MenuItem
 import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
-import android.widget.Button
 import android.widget.ListView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import core.database.entity.enums.SourceType
@@ -22,20 +22,27 @@ class TabsOverviewFragment : Fragment(R.layout.fragment_tabs_overview) {
     private lateinit var statusLabel: TextView
     private lateinit var adapter: ArrayAdapter<String>
     private lateinit var favoritesRepository: core.data.repo.FavoritesRepository
+    private var statusDefaultColor: Int = 0
     private val tabs = mutableListOf<ReaderTab>()
     private var selectedTabId: String? = null
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         listView = view.findViewById(R.id.tabs_list)
         statusLabel = view.findViewById(R.id.tabs_status)
-        adapter = ArrayAdapter(requireContext(), android.R.layout.simple_list_item_1, mutableListOf())
+        statusDefaultColor = statusLabel.currentTextColor
+        adapter = ArrayAdapter(requireContext(), R.layout.item_home_rect, mutableListOf())
         listView.adapter = adapter
         registerForContextMenu(listView)
         favoritesRepository = FilesRuntime.favoritesRepository(requireContext())
 
         listView.setOnItemClickListener { _, _, position, _ ->
-            selectedTabId = tabs.getOrNull(position)?.tabId
+            val tab = tabs.getOrNull(position) ?: return@setOnItemClickListener
+            selectedTabId = tab.tabId
             renderList()
+            viewLifecycleOwner.lifecycleScope.launch {
+                ReaderRuntime.viewModel(requireContext()).switchTo(tab.tabId)
+                (activity as? MainActivity)?.showReaderMode()
+            }
         }
 
         viewLifecycleOwner.lifecycleScope.launch {
@@ -56,7 +63,6 @@ class TabsOverviewFragment : Fragment(R.layout.fragment_tabs_overview) {
             val info = menuInfo as AdapterView.AdapterContextMenuInfo
             val tab = tabs.getOrNull(info.position) ?: return
             menu.setHeaderTitle(tab.title ?: tab.tabId)
-            menu.add(0, 1, 0, "Switch")
             menu.add(0, 2, 0, "Close")
             menu.add(0, 3, 0, "Close All")
             menu.add(0, 4, 0, getString(R.string.files_action_add_favorite))
@@ -68,7 +74,7 @@ class TabsOverviewFragment : Fragment(R.layout.fragment_tabs_overview) {
             viewLifecycleOwner.lifecycleScope.launch {
                 ReaderRuntime.viewModel(requireContext()).closeAll()
                 selectedTabId = null
-                statusLabel.text = getString(R.string.tabs_closed_all)
+                showStatus(R.string.tabs_closed_all, isSuccess = true)
             }
             return true
         }
@@ -77,17 +83,10 @@ class TabsOverviewFragment : Fragment(R.layout.fragment_tabs_overview) {
         val tab = tabs.getOrNull(info.position) ?: return super.onContextItemSelected(item)
 
         when (item.itemId) {
-            1 -> {
-                viewLifecycleOwner.lifecycleScope.launch {
-                    ReaderRuntime.viewModel(requireContext()).switchTo(tab.tabId)
-                    (activity as? MainActivity)?.showReaderMode()
-                }
-                return true
-            }
             2 -> {
                 viewLifecycleOwner.lifecycleScope.launch {
                     ReaderRuntime.viewModel(requireContext()).closeTab(tab.tabId)
-                    statusLabel.text = getString(R.string.tabs_closed)
+                    showStatus(R.string.tabs_closed, isSuccess = true)
                 }
                 return true
             }
@@ -121,5 +120,22 @@ class TabsOverviewFragment : Fragment(R.layout.fragment_tabs_overview) {
             }
         )
         adapter.notifyDataSetChanged()
+        val selectedIndex = tabs.indexOfFirst { it.tabId == selectedTabId }
+        if (selectedIndex >= 0) {
+            listView.setItemChecked(selectedIndex, true)
+        } else {
+            listView.clearChoices()
+        }
+    }
+
+    private fun showStatus(messageRes: Int, isSuccess: Boolean = false, isError: Boolean = false) {
+        statusLabel.text = getString(messageRes)
+        statusLabel.setTextColor(
+            when {
+                isError -> ContextCompat.getColor(requireContext(), android.R.color.holo_red_dark)
+                isSuccess -> ContextCompat.getColor(requireContext(), android.R.color.holo_green_dark)
+                else -> statusDefaultColor
+            }
+        )
     }
 }

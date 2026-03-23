@@ -7,6 +7,7 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.ListView
 import android.widget.TextView
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import core.session.entity.FolderSessionEntity
@@ -21,6 +22,7 @@ class FoldersOverviewFragment : Fragment(R.layout.fragment_folders_overview) {
     private lateinit var listView: ListView
     private lateinit var statusLabel: TextView
     private lateinit var adapter: ArrayAdapter<String>
+    private var statusDefaultColor: Int = 0
     private val sessions = mutableListOf<FolderSessionEntity>()
     private var selectedId: Long? = null
 
@@ -30,7 +32,8 @@ class FoldersOverviewFragment : Fragment(R.layout.fragment_folders_overview) {
         deleteButton = view.findViewById(R.id.folders_delete)
         listView = view.findViewById(R.id.folders_list)
         statusLabel = view.findViewById(R.id.folders_status)
-        adapter = ArrayAdapter(requireContext(), android.R.layout.simple_list_item_1, mutableListOf())
+        statusDefaultColor = statusLabel.currentTextColor
+        adapter = ArrayAdapter(requireContext(), R.layout.item_home_rect, mutableListOf())
         listView.adapter = adapter
 
         createButton.setOnClickListener { promptCreateSession() }
@@ -47,7 +50,7 @@ class FoldersOverviewFragment : Fragment(R.layout.fragment_folders_overview) {
                 FilesRuntime.folderSessionRepository(requireContext()).delete(id)
                 FilesRuntime.sessionSourceStore(requireContext()).removeSession(id)
                 selectedId = null
-                statusLabel.text = getString(R.string.folders_deleted)
+                showStatus(R.string.folders_deleted, isSuccess = true)
             }
         }
         listView.setOnItemClickListener { _, _, position, _ ->
@@ -80,7 +83,7 @@ class FoldersOverviewFragment : Fragment(R.layout.fragment_folders_overview) {
                         .add(name, root.absolutePath)
                     selectedId = createdId
                     FilesRuntime.currentSessionStore(requireContext()).set(createdId)
-                    statusLabel.text = getString(R.string.folders_created)
+                    showStatus(R.string.folders_created, isSuccess = true)
                 }
             }
             .setNegativeButton(android.R.string.cancel, null)
@@ -96,5 +99,22 @@ class FoldersOverviewFragment : Fragment(R.layout.fragment_folders_overview) {
             }
         )
         adapter.notifyDataSetChanged()
+        val selectedIndex = sessions.indexOfFirst { it.id == selectedId }
+        if (selectedIndex >= 0) {
+            listView.setItemChecked(selectedIndex, true)
+        } else {
+            listView.clearChoices()
+        }
+    }
+
+    private fun showStatus(messageRes: Int, isSuccess: Boolean = false, isError: Boolean = false) {
+        statusLabel.text = getString(messageRes)
+        statusLabel.setTextColor(
+            when {
+                isError -> ContextCompat.getColor(requireContext(), android.R.color.holo_red_dark)
+                isSuccess -> ContextCompat.getColor(requireContext(), android.R.color.holo_green_dark)
+                else -> statusDefaultColor
+            }
+        )
     }
 }

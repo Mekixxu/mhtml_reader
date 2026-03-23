@@ -232,21 +232,17 @@ class FilesFragment : Fragment() {
                 val text1 = view.findViewById<TextView>(android.R.id.text1)
                 val text2 = view.findViewById<TextView>(android.R.id.text2)
 
-                val key = item.pathKey()
-                val displayTitle = if (key == null) null else displayTitleByPath[key]
                 val namePart = item.name
-                val titlePart = displayTitle?.takeIf { isUsableDisplayTitle(it, item.name) }
 
                 val typeLabel = if (item.isDirectory) "[DIR]" else "[FILE]"
                 val sizeLabel = if (item.isDirectory) "" else formatSize(item.sizeBytes)
                 val timeLabel = item.modifiedText ?: item.modifiedEpochMs?.let { DateFormat.getDateTimeInstance().format(Date(it)) }.orEmpty()
                 val metaPart = listOf(sizeLabel, timeLabel).filter { it.isNotBlank() }.joinToString("  •  ")
-                val subLine = listOf(titlePart, metaPart).filter { !it.isNullOrBlank() }.joinToString("  •  ")
 
                 val selectedPrefix = if (item.isSelected(selectedEntry)) "▶ " else ""
                 
                 text1.text = "$selectedPrefix$typeLabel $namePart"
-                text2.text = subLine
+                text2.text = metaPart
                 return view
             }
         }
