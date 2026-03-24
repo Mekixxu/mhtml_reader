@@ -74,6 +74,13 @@
     <string name="reader_pdf_next">Next</string>
     <string name="reader_pdf_page_template">Page %1$d / %2$d</string>
     <string name="reader_external_link_blocked">External links are blocked for local content</string>
+    <string name="reader_save_image_action">保存图片</string>
+    <string name="reader_save_image_success">图片已保存：%1$s</string>
+    <string name="reader_save_image_failed">图片保存失败</string>
+    <string name="reader_save_image_failed_reason">图片保存失败：%1$s</string>
+    <string name="reader_save_image_unsupported_source">暂不支持该图片来源</string>
+    <string name="reader_save_image_invalid_data_url">图片数据格式无效</string>
+    <string name="reader_save_image_empty_data">图片数据为空</string>
     <string name="home_open_directory_mode">Open Directory Mode</string>
     <string name="home_open_reader_mode">Open Reader Mode</string>
     <string name="home_open_favorites">Open Favorites</string>

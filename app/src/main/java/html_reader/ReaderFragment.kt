@@ -3,8 +3,11 @@ package com.html_reader
 import android.app.AlertDialog
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.ContentValues
 import android.content.Context
+import android.net.Uri
 import android.os.Bundle
+import android.provider.MediaStore
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
@@ -37,7 +40,13 @@ import core.reader.web.WebViewProgressTracker
 import core.reader.vm.ReaderViewModel
 import core.vfs.model.VfsPath
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.Locale
+import android.util.Base64
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class ReaderFragment : Fragment() {
     private lateinit var openProgress: ProgressBar
@@ -60,6 +69,12 @@ class ReaderFragment : Fragment() {
     private var currentPdfPageIndex = 0
     private val mhtmlFallbackRetriedTabIds = mutableSetOf<String>()
     private var activeWebRenderProfile: WebViewConfigurator.RenderProfile = WebViewConfigurator.RenderProfile.DEFAULT
+
+    private data class ImagePayload(
+        val bytes: ByteArray,
+        val mimeType: String,
+        val fileName: String
+    )
 
     companion object {
         private const val ARG_INITIAL_PATH = "arg_initial_path"
@@ -101,6 +116,7 @@ class ReaderFragment : Fragment() {
         webPreview.setLayerType(View.LAYER_TYPE_HARDWARE, null)
         WebViewConfigurator.configure(webPreview, profile = WebViewConfigurator.RenderProfile.DEFAULT)
         webPreview.visibility = View.GONE
+        installWebImageLongPressHandler()
         
         selectedTabId = savedInstanceState?.getString(STATE_SELECTED_TAB_ID)
         val initialPath = arguments?.getString(ARG_INITIAL_PATH)
@@ -466,6 +482,154 @@ class ReaderFragment : Fragment() {
 
     private fun showShort(message: String) {
         Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun installWebImageLongPressHandler() {
+        webPreview.setOnLongClickListener {
+            val hitResult = webPreview.hitTestResult
+            val imageSource = when (hitResult.type) {
+                WebView.HitTestResult.IMAGE_TYPE,
+                WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE -> hitResult.extra
+                else -> null
+            }
+            if (imageSource.isNullOrBlank()) {
+                return@setOnLongClickListener false
+            }
+            showImageActions(imageSource)
+            true
+        }
+    }
+
+    private fun showImageActions(imageSource: String) {
+        AlertDialog.Builder(requireContext())
+            .setItems(arrayOf(getString(R.string.reader_save_image_action))) { _, which ->
+                if (which != 0) {
+                    return@setItems
+                }
+                viewLifecycleOwner.lifecycleScope.launch {
+                    runCatching {
+                        val context = requireContext().applicationContext
+                        val payload = withContext(Dispatchers.IO) {
+                            resolveImagePayload(imageSource)
+                        }
+                        withContext(Dispatchers.IO) {
+                            saveImagePayload(context, payload)
+                        }
+                        payload.fileName
+                    }.onSuccess { fileName ->
+                        showShort(getString(R.string.reader_save_image_success, fileName))
+                    }.onFailure {
+                        val message = it.message?.ifBlank { getString(R.string.reader_save_image_failed) }
+                            ?: getString(R.string.reader_save_image_failed)
+                        showShort(getString(R.string.reader_save_image_failed_reason, message))
+                    }
+                }
+            }
+            .show()
+    }
+
+    private fun resolveImagePayload(source: String): ImagePayload {
+        return when {
+            source.startsWith("data:", ignoreCase = true) -> resolveDataUrlPayload(source)
+            source.startsWith("http://", ignoreCase = true) || source.startsWith("https://", ignoreCase = true) -> resolveHttpPayload(source)
+            else -> throw IllegalArgumentException(getString(R.string.reader_save_image_unsupported_source))
+        }
+    }
+
+    private fun resolveHttpPayload(source: String): ImagePayload {
+        val connection = (URL(source).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 10000
+            readTimeout = 15000
+            instanceFollowRedirects = true
+            doInput = true
+        }
+        connection.connect()
+        connection.inputStream.use { stream ->
+            val bytes = stream.readBytes()
+            if (bytes.isEmpty()) {
+                throw IllegalStateException(getString(R.string.reader_save_image_empty_data))
+            }
+            val mimeType = normalizeMimeType(connection.contentType)
+            val fileName = buildHttpFileName(source, mimeType)
+            return ImagePayload(bytes = bytes, mimeType = mimeType, fileName = fileName)
+        }
+    }
+
+    private fun resolveDataUrlPayload(source: String): ImagePayload {
+        val commaIndex = source.indexOf(',')
+        if (commaIndex <= 5) {
+            throw IllegalArgumentException(getString(R.string.reader_save_image_invalid_data_url))
+        }
+        val metadata = source.substring(5, commaIndex)
+        val payload = source.substring(commaIndex + 1)
+        val mimeTypeToken = metadata.substringBefore(';').takeIf { it.contains('/') }
+        val mimeType = normalizeMimeType(mimeTypeToken)
+        val isBase64 = metadata.split(';').any { it.equals("base64", ignoreCase = true) }
+        val bytes = if (isBase64) {
+            Base64.decode(payload, Base64.DEFAULT)
+        } else {
+            Uri.decode(payload).toByteArray(Charsets.UTF_8)
+        }
+        if (bytes.isEmpty()) {
+            throw IllegalStateException(getString(R.string.reader_save_image_empty_data))
+        }
+        val extension = extensionFromMimeType(mimeType)
+        val fileName = "image_${System.currentTimeMillis()}.$extension"
+        return ImagePayload(bytes = bytes, mimeType = mimeType, fileName = fileName)
+    }
+
+    private fun saveImagePayload(context: Context, payload: ImagePayload) {
+        val resolver = context.contentResolver
+        val contentValues = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, payload.fileName)
+            put(MediaStore.Images.Media.MIME_TYPE, payload.mimeType)
+            put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/MHTMLReader")
+        }
+        val itemUri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
+            ?: throw IllegalStateException(getString(R.string.reader_save_image_failed))
+        try {
+            resolver.openOutputStream(itemUri)?.use { outputStream ->
+                outputStream.write(payload.bytes)
+            } ?: throw IllegalStateException(getString(R.string.reader_save_image_failed))
+        } catch (error: Exception) {
+            resolver.delete(itemUri, null, null)
+            throw error
+        }
+    }
+
+    private fun normalizeMimeType(contentType: String?): String {
+        val normalized = contentType
+            ?.substringBefore(';')
+            ?.trim()
+            ?.lowercase(Locale.ROOT)
+            .orEmpty()
+        return if (normalized.startsWith("image/")) normalized else "image/jpeg"
+    }
+
+    private fun buildHttpFileName(source: String, mimeType: String): String {
+        val suggested = Uri.parse(source).lastPathSegment
+            ?.substringBefore('?')
+            ?.substringBefore('#')
+            ?.ifBlank { null }
+        val extension = extensionFromMimeType(mimeType)
+        val baseName = sanitizeFileName(suggested ?: "image_${System.currentTimeMillis()}")
+        return if (baseName.contains('.')) baseName else "$baseName.$extension"
+    }
+
+    private fun sanitizeFileName(value: String): String {
+        val cleaned = value.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+        return cleaned.ifBlank { "image_${System.currentTimeMillis()}" }
+    }
+
+    private fun extensionFromMimeType(mimeType: String): String {
+        return when (mimeType.lowercase(Locale.ROOT)) {
+            "image/png" -> "png"
+            "image/gif" -> "gif"
+            "image/webp" -> "webp"
+            "image/bmp" -> "bmp"
+            "image/svg+xml" -> "svg"
+            else -> "jpg"
+        }
     }
 
     override fun onResume() {
