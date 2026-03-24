@@ -2,10 +2,12 @@ package com.html_reader
 
 import android.os.Bundle
 import android.view.ContextMenu
+import android.view.LayoutInflater
 import android.view.MenuItem
 import android.view.View
+import android.view.ViewGroup
 import android.widget.AdapterView
-import android.widget.ArrayAdapter
+import android.widget.BaseAdapter
 import android.widget.ListView
 import android.widget.TextView
 import android.widget.Toast
@@ -20,7 +22,7 @@ import kotlinx.coroutines.launch
 class TabsOverviewFragment : Fragment(R.layout.fragment_tabs_overview) {
     private lateinit var listView: ListView
     private lateinit var statusLabel: TextView
-    private lateinit var adapter: ArrayAdapter<String>
+    private lateinit var adapter: TabsAdapter
     private lateinit var favoritesRepository: core.data.repo.FavoritesRepository
     private var statusDefaultColor: Int = 0
     private val tabs = mutableListOf<ReaderTab>()
@@ -30,7 +32,7 @@ class TabsOverviewFragment : Fragment(R.layout.fragment_tabs_overview) {
         listView = view.findViewById(R.id.tabs_list)
         statusLabel = view.findViewById(R.id.tabs_status)
         statusDefaultColor = statusLabel.currentTextColor
-        adapter = ArrayAdapter(requireContext(), R.layout.item_home_rect, mutableListOf())
+        adapter = TabsAdapter()
         listView.adapter = adapter
         registerForContextMenu(listView)
         favoritesRepository = FilesRuntime.favoritesRepository(requireContext())
@@ -63,8 +65,7 @@ class TabsOverviewFragment : Fragment(R.layout.fragment_tabs_overview) {
             val info = menuInfo as AdapterView.AdapterContextMenuInfo
             val tab = tabs.getOrNull(info.position) ?: return
             menu.setHeaderTitle(tab.title ?: tab.tabId)
-            menu.add(0, 2, 0, "Close")
-            menu.add(0, 3, 0, "Close All")
+            menu.add(0, 3, 0, getString(R.string.tabs_close_all))
             menu.add(0, 4, 0, getString(R.string.files_action_add_favorite))
         }
     }
@@ -79,18 +80,10 @@ class TabsOverviewFragment : Fragment(R.layout.fragment_tabs_overview) {
             return true
         }
 
-        val info = item.menuInfo as? AdapterView.AdapterContextMenuInfo ?: return super.onContextItemSelected(item)
-        val tab = tabs.getOrNull(info.position) ?: return super.onContextItemSelected(item)
-
         when (item.itemId) {
-            2 -> {
-                viewLifecycleOwner.lifecycleScope.launch {
-                    ReaderRuntime.viewModel(requireContext()).closeTab(tab.tabId)
-                    showStatus(R.string.tabs_closed, isSuccess = true)
-                }
-                return true
-            }
             4 -> {
+                val info = item.menuInfo as? AdapterView.AdapterContextMenuInfo ?: return super.onContextItemSelected(item)
+                val tab = tabs.getOrNull(info.position) ?: return super.onContextItemSelected(item)
                 viewLifecycleOwner.lifecycleScope.launch {
                     val sourceType = when {
                         tab.sourcePathRaw.startsWith("smb://") -> SourceType.SMB
@@ -112,13 +105,6 @@ class TabsOverviewFragment : Fragment(R.layout.fragment_tabs_overview) {
     }
 
     private fun renderList() {
-        adapter.clear()
-        adapter.addAll(
-            tabs.map {
-                val selected = if (it.tabId == selectedTabId) "▶ " else ""
-                "$selected${it.title ?: it.tabId}  •  ${it.fileType.name}"
-            }
-        )
         adapter.notifyDataSetChanged()
         val selectedIndex = tabs.indexOfFirst { it.tabId == selectedTabId }
         if (selectedIndex >= 0) {
@@ -137,5 +123,36 @@ class TabsOverviewFragment : Fragment(R.layout.fragment_tabs_overview) {
                 else -> statusDefaultColor
             }
         )
+    }
+
+    private fun closeTab(tab: ReaderTab) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            ReaderRuntime.viewModel(requireContext()).closeTab(tab.tabId)
+            showStatus(R.string.tabs_closed, isSuccess = true)
+        }
+    }
+
+    private fun formatTabTitle(tab: ReaderTab): String {
+        val selected = if (tab.tabId == selectedTabId) "▶ " else ""
+        return "$selected${tab.title ?: tab.tabId}  •  ${tab.fileType.name}"
+    }
+
+    private inner class TabsAdapter : BaseAdapter() {
+        override fun getCount(): Int = tabs.size
+
+        override fun getItem(position: Int): Any = tabs[position]
+
+        override fun getItemId(position: Int): Long = position.toLong()
+
+        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+            val rowView = convertView ?: LayoutInflater.from(parent.context)
+                .inflate(R.layout.item_tabs_overview_entry, parent, false)
+            val tab = tabs[position]
+            val titleView = rowView.findViewById<TextView>(R.id.tabs_item_title)
+            val closeView = rowView.findViewById<TextView>(R.id.tabs_item_close)
+            titleView.text = formatTabTitle(tab)
+            closeView.setOnClickListener { closeTab(tab) }
+            return rowView
+        }
     }
 }
