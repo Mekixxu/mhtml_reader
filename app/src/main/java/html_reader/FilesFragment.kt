@@ -121,6 +121,7 @@ class FilesFragment : Fragment() {
 
     private lateinit var queryInput: EditText
     private lateinit var sortSpinner: Spinner
+    private lateinit var fontSizeSpinner: Spinner
     private lateinit var currentDirLabel: TextView
     private lateinit var operationStatusLabel: TextView
     private lateinit var operationProgress: ProgressBar
@@ -157,6 +158,7 @@ class FilesFragment : Fragment() {
     private var ftpLoadToken: Long = 0L
     private var ftpResolvedCharset: String? = null
     private var titleRefreshJob: Job? = null
+    private var currentNameTextSizeSp: Float = 16f
     private val supportedExtensions = setOf("mht", "mhtml", "pdf", "html", "htm")
     private val displayTitleByPath = mutableMapOf<String, String>()
     private val ftpUploadLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -174,6 +176,16 @@ class FilesFragment : Fragment() {
         private const val ARG_NETWORK_CONFIG_ID = "arg_network_config_id"
         private const val ARG_START_PATH = "arg_start_path"
         private const val ARG_SAF_TREE_URI = "arg_saf_tree_uri"
+        private const val FILE_BROWSER_PREFS = "files_browser_settings"
+        private const val KEY_NAME_FONT_SIZE_INDEX = "name_font_size_index"
+        private const val FONT_INDEX_SMALL = 0
+        private const val FONT_INDEX_MEDIUM = 1
+        private const val FONT_INDEX_LARGE = 2
+        private const val SORT_INDEX_NAME_ASC = 0
+        private const val SORT_INDEX_NAME_DESC = 1
+        private const val SORT_INDEX_MODIFIED_DESC = 2
+        private const val SORT_INDEX_SIZE_DESC = 3
+        private const val SORT_INDEX_SIZE_ASC = 4
 
         fun newInstance(networkConfigId: Long): FilesFragment {
             return FilesFragment().apply {
@@ -218,6 +230,7 @@ class FilesFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         queryInput = view.findViewById(R.id.files_query_input)
         sortSpinner = view.findViewById(R.id.files_sort_spinner)
+        fontSizeSpinner = view.findViewById(R.id.files_font_size_spinner)
         currentDirLabel = view.findViewById(R.id.files_current_dir)
         operationStatusLabel = view.findViewById(R.id.files_operation_status)
         operationProgress = view.findViewById(R.id.files_operation_progress)
@@ -225,16 +238,16 @@ class FilesFragment : Fragment() {
         actionCreateButton = view.findViewById(R.id.files_action_create)
         listView = view.findViewById(R.id.files_list)
 
-        adapter = object : ArrayAdapter<BrowserEntry>(requireContext(), android.R.layout.simple_list_item_2, displayedEntries) {
+        adapter = object : ArrayAdapter<BrowserEntry>(requireContext(), R.layout.item_files_entry, displayedEntries) {
             override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-                val view = convertView ?: LayoutInflater.from(context).inflate(android.R.layout.simple_list_item_2, parent, false)
+                val view = convertView ?: LayoutInflater.from(context).inflate(R.layout.item_files_entry, parent, false)
                 val item = getItem(position) ?: return view
-                val text1 = view.findViewById<TextView>(android.R.id.text1)
-                val text2 = view.findViewById<TextView>(android.R.id.text2)
+                val text1 = view.findViewById<TextView>(R.id.files_item_name)
+                val text2 = view.findViewById<TextView>(R.id.files_item_meta)
 
                 val namePart = item.name
 
-                val typeLabel = if (item.isDirectory) "[DIR]" else "[FILE]"
+                val typeLabel = if (item.isDirectory) "[D]" else "[F]"
                 val sizeLabel = if (item.isDirectory) "" else formatSize(item.sizeBytes)
                 val timeLabel = item.modifiedText ?: item.modifiedEpochMs?.let { DateFormat.getDateTimeInstance().format(Date(it)) }.orEmpty()
                 val metaPart = listOf(sizeLabel, timeLabel).filter { it.isNotBlank() }.joinToString("  •  ")
@@ -242,11 +255,13 @@ class FilesFragment : Fragment() {
                 val selectedPrefix = if (item.isSelected(selectedEntry)) "▶ " else ""
                 
                 text1.text = "$selectedPrefix$typeLabel $namePart"
+                text1.setTextSize(currentNameTextSizeSp)
                 text2.text = metaPart
                 return view
             }
         }
         listView.adapter = adapter
+        listView.isFastScrollEnabled = true
 
         val dispatcherProvider = DefaultDispatcherProvider()
         val fileSystem = LocalFileSystem(requireContext().applicationContext, dispatcherProvider)
@@ -272,7 +287,8 @@ class FilesFragment : Fragment() {
                 getString(R.string.sort_name_asc),
                 getString(R.string.sort_name_desc),
                 getString(R.string.sort_modified_desc),
-                getString(R.string.sort_size_desc)
+                getString(R.string.sort_size_desc),
+                getString(R.string.sort_size_asc)
             )
         )
 
@@ -286,6 +302,28 @@ class FilesFragment : Fragment() {
                         folderSessionRepository.updateSortOption(sessionId, position)
                     }
                 }
+            }
+
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+        })
+
+        fontSizeSpinner.adapter = ArrayAdapter(
+            requireContext(),
+            android.R.layout.simple_spinner_dropdown_item,
+            listOf(
+                getString(R.string.files_font_small),
+                getString(R.string.files_font_medium),
+                getString(R.string.files_font_large)
+            )
+        )
+        val initialFontSizeIndex = readFontSizeIndex()
+        applyNameTextSize(initialFontSizeIndex)
+        fontSizeSpinner.setSelection(initialFontSizeIndex, false)
+        fontSizeSpinner.setOnItemSelectedListener(object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                applyNameTextSize(position)
+                writeFontSizeIndex(position)
+                adapter.notifyDataSetChanged()
             }
 
             override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
@@ -570,15 +608,53 @@ class FilesFragment : Fragment() {
             query.isBlank() || it.name.lowercase(Locale.getDefault()).contains(query)
         }
         val sorted = when (sortSpinner.selectedItemPosition) {
-            0 -> filtered.sortedBy { it.name.lowercase(Locale.getDefault()) }
-            1 -> filtered.sortedByDescending { it.name.lowercase(Locale.getDefault()) }
-            2 -> filtered.sortedByDescending { it.modifiedEpochMs ?: 0L }
-            3 -> filtered.sortedByDescending { it.sizeBytes }
+            SORT_INDEX_NAME_ASC -> filtered.sortedBy { it.name.lowercase(Locale.getDefault()) }
+            SORT_INDEX_NAME_DESC -> filtered.sortedByDescending { it.name.lowercase(Locale.getDefault()) }
+            SORT_INDEX_MODIFIED_DESC -> filtered.sortedByDescending { it.modifiedEpochMs ?: 0L }
+            SORT_INDEX_SIZE_DESC -> filtered.sortedByDescending { it.sizeBytes }
+            SORT_INDEX_SIZE_ASC -> {
+                val directories = filtered
+                    .filter { it.isDirectory }
+                    .sortedBy { it.name.lowercase(Locale.getDefault()) }
+                val files = filtered
+                    .filter { !it.isDirectory }
+                    .sortedBy { it.sizeBytes }
+                directories + files
+            }
             else -> filtered
         }
         displayedEntries.clear()
         displayedEntries.addAll(sorted)
         adapter.notifyDataSetChanged()
+    }
+
+    private fun applyNameTextSize(index: Int) {
+        currentNameTextSizeSp = when (index) {
+            FONT_INDEX_SMALL -> 14f
+            FONT_INDEX_LARGE -> 18f
+            else -> 16f
+        }
+    }
+
+    private fun readFontSizeIndex(): Int {
+        val prefs = requireContext().getSharedPreferences(FILE_BROWSER_PREFS, Context.MODE_PRIVATE)
+        val value = prefs.getInt(KEY_NAME_FONT_SIZE_INDEX, FONT_INDEX_MEDIUM)
+        return when (value) {
+            FONT_INDEX_SMALL, FONT_INDEX_MEDIUM, FONT_INDEX_LARGE -> value
+            else -> FONT_INDEX_MEDIUM
+        }
+    }
+
+    private fun writeFontSizeIndex(index: Int) {
+        val normalized = when (index) {
+            FONT_INDEX_SMALL, FONT_INDEX_MEDIUM, FONT_INDEX_LARGE -> index
+            else -> FONT_INDEX_MEDIUM
+        }
+        requireContext()
+            .getSharedPreferences(FILE_BROWSER_PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putInt(KEY_NAME_FONT_SIZE_INDEX, normalized)
+            .apply()
     }
 
     private fun File.hasSupportedReaderExtension(): Boolean {
@@ -715,8 +791,9 @@ class FilesFragment : Fragment() {
         currentSessionStore.set(sessionId)
         
         // Restore sort option
-        if (sortSpinner.selectedItemPosition != session.sortOption) {
-            sortSpinner.setSelection(session.sortOption, false)
+        val validSortIndex = session.sortOption.coerceIn(SORT_INDEX_NAME_ASC, SORT_INDEX_SIZE_ASC)
+        if (sortSpinner.selectedItemPosition != validSortIndex) {
+            sortSpinner.setSelection(validSortIndex, false)
         }
 
         val linkedNetworkConfig = sessionSourceStore.getNetworkConfigId(sessionId)

@@ -9,7 +9,11 @@
     <string name="sort_name_asc">Name ↑</string>
     <string name="sort_name_desc">Name ↓</string>
     <string name="sort_modified_desc">Last Modified ↓</string>
+    <string name="sort_size_asc">Size ↑</string>
     <string name="sort_size_desc">Size ↓</string>
+    <string name="files_font_small">Font: Small</string>
+    <string name="files_font_medium">Font: Medium</string>
+    <string name="files_font_large">Font: Large</string>
     <string name="action_up">Up</string>
     <string name="action_new_folder">New Folder</string>
     <string name="action_upload_file">Upload File</string>
