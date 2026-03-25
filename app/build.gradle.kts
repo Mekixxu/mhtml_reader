@@ -15,7 +15,7 @@ android {
         minSdk = 30
         targetSdk = 36
         versionCode = 1
-        versionName = "0.0.1"
+        versionName = "0.0.9"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -36,6 +36,16 @@ android {
 
     kotlinOptions {
         jvmTarget = "17"
+    }
+
+    applicationVariants.all {
+        val variant = this
+        variant.outputs
+            .map { it as com.android.build.gradle.internal.api.BaseVariantOutputImpl }
+            .forEach { output ->
+                val outputFileName = "MHTMLReader_v${variant.versionName}_${variant.buildType.name}.apk"
+                output.outputFileName = outputFileName
+            }
     }
 
     sourceSets {

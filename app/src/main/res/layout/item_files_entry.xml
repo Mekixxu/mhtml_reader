@@ -15,6 +15,7 @@
         android:layout_height="wrap_content"
         android:ellipsize="end"
         android:maxLines="2"
+        android:textColor="?android:attr/textColorPrimary"
         android:textAppearance="?android:attr/textAppearanceMedium" />
 
     <TextView
@@ -22,6 +23,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="2dp"
+        android:textColor="?android:attr/textColorSecondary"
         android:textAppearance="?android:attr/textAppearanceSmall" />
 
 </LinearLayout>

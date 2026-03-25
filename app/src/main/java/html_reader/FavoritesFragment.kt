@@ -55,7 +55,7 @@ class FavoritesFragment : Fragment() {
         renameButton = view.findViewById(R.id.favorites_rename)
         deleteButton = view.findViewById(R.id.favorites_delete)
         listView = view.findViewById(R.id.favorites_list)
-        adapter = ArrayAdapter(requireContext(), android.R.layout.simple_list_item_1, mutableListOf())
+        adapter = ArrayAdapter(requireContext(), R.layout.item_home_rect, mutableListOf())
         listView.adapter = adapter
         refreshTitle()
 

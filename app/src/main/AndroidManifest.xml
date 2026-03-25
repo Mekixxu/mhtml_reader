@@ -11,9 +11,11 @@
         android:allowBackup="true"
         android:largeHeap="true"
         android:label="MHTML Reader"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:usesCleartextTraffic="true"
-        android:theme="@style/Theme.AppCompat.DayNight.NoActionBar">
+        android:theme="@style/Theme.MHTMLReader">
         <activity
             android:name=".MainActivity"
             android:exported="true">

@@ -3,68 +3,106 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="12dp">
-
-    <TextView
-        android:id="@+id/favorites_title"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:textStyle="bold" />
+    android:padding="@dimen/home_page_padding">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:orientation="horizontal">
+        android:background="@drawable/home_card_bg"
+        android:elevation="@dimen/home_card_elevation"
+        android:orientation="vertical"
+        android:padding="@dimen/home_card_padding">
 
-        <Button
-            android:id="@+id/favorites_up"
-            android:layout_width="0dp"
+        <TextView
+            android:id="@+id/favorites_title"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/favorites_up" />
+            android:textAppearance="?android:attr/textAppearanceMedium"
+            android:textColor="?android:attr/textColorPrimary"
+            android:textStyle="bold" />
 
-        <Button
-            android:id="@+id/favorites_add_folder"
-            android:layout_width="0dp"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/favorites_add_folder" />
+            android:layout_marginTop="@dimen/home_spacing_medium"
+            android:orientation="horizontal">
 
-        <Button
-            android:id="@+id/favorites_add_file"
-            android:layout_width="0dp"
+            <Button
+                android:id="@+id/favorites_up"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:minHeight="@dimen/home_action_min_height"
+                android:textAllCaps="false"
+                android:text="@string/favorites_up" />
+
+            <Button
+                android:id="@+id/favorites_add_folder"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:minHeight="@dimen/home_action_min_height"
+                android:textAllCaps="false"
+                android:text="@string/favorites_add_folder" />
+
+            <Button
+                android:id="@+id/favorites_add_file"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:minHeight="@dimen/home_action_min_height"
+                android:textAllCaps="false"
+                android:text="@string/favorites_add_file" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/favorites_add_file" />
+            android:layout_marginTop="@dimen/home_spacing_small"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/favorites_rename"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:minHeight="@dimen/home_action_min_height"
+                android:textAllCaps="false"
+                android:text="@string/favorites_rename" />
+
+            <Button
+                android:id="@+id/favorites_delete"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:minHeight="@dimen/home_action_min_height"
+                android:textAllCaps="false"
+                android:text="@string/favorites_delete" />
+        </LinearLayout>
     </LinearLayout>
 
     <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:orientation="horizontal">
-
-        <Button
-            android:id="@+id/favorites_rename"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/favorites_rename" />
-
-        <Button
-            android:id="@+id/favorites_delete"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/favorites_delete" />
-    </LinearLayout>
-
-    <ListView
-        android:id="@+id/favorites_list"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_marginTop="8dp"
-        android:layout_weight="1" />
+        android:layout_weight="1"
+        android:layout_marginTop="@dimen/home_spacing_large"
+        android:layout_marginBottom="@dimen/home_spacing_large"
+        android:background="@drawable/home_card_bg"
+        android:elevation="@dimen/home_card_elevation"
+        android:orientation="vertical"
+        android:padding="@dimen/home_card_padding">
+
+        <ListView
+            android:id="@+id/favorites_list"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:divider="@android:color/transparent"
+            android:dividerHeight="@dimen/home_spacing_small"
+            android:overScrollMode="never"
+            android:paddingTop="@dimen/home_spacing_xsmall"
+            android:paddingBottom="@dimen/home_spacing_xsmall"
+            android:scrollbars="none" />
+    </LinearLayout>
 
 </LinearLayout>

@@ -247,7 +247,7 @@ class FilesFragment : Fragment() {
 
                 val namePart = item.name
 
-                val typeLabel = if (item.isDirectory) "[D]" else "[F]"
+                val typeLabel = if (item.isDirectory) getString(R.string.icon_dir) else getString(R.string.icon_file)
                 val sizeLabel = if (item.isDirectory) "" else formatSize(item.sizeBytes)
                 val timeLabel = item.modifiedText ?: item.modifiedEpochMs?.let { DateFormat.getDateTimeInstance().format(Date(it)) }.orEmpty()
                 val metaPart = listOf(sizeLabel, timeLabel).filter { it.isNotBlank() }.joinToString("  •  ")

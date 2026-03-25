@@ -3,36 +3,65 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="16dp">
+    android:padding="@dimen/home_page_padding">
 
-    <TextView
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="@string/home_recent_opens"
-        android:textAppearance="?android:attr/textAppearanceLarge"
-        android:textStyle="bold" />
+        android:background="@drawable/home_card_bg"
+        android:elevation="@dimen/home_card_elevation"
+        android:orientation="vertical"
+        android:padding="@dimen/home_card_padding">
 
-    <Button
-        android:id="@+id/recents_clear_button"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:text="Clear All" />
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/home_recent_opens"
+            android:textAppearance="?android:attr/textAppearanceMedium"
+            android:textColor="?android:attr/textColorPrimary"
+            android:textStyle="bold" />
 
-    <TextView
-        android:id="@+id/recents_empty_label"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="32dp"
-        android:gravity="center"
-        android:text="No recent files"
-        android:visibility="gone" />
+        <Button
+            android:id="@+id/recents_clear_button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/home_spacing_medium"
+            android:minHeight="@dimen/home_action_min_height"
+            android:textAllCaps="false"
+            android:text="Clear All" />
+    </LinearLayout>
 
-    <ListView
-        android:id="@+id/recents_list"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_marginTop="8dp"
-        android:layout_weight="1" />
+        android:layout_weight="1"
+        android:layout_marginTop="@dimen/home_spacing_large"
+        android:layout_marginBottom="@dimen/home_spacing_large"
+        android:background="@drawable/home_card_bg"
+        android:elevation="@dimen/home_card_elevation"
+        android:orientation="vertical"
+        android:padding="@dimen/home_card_padding">
+
+        <TextView
+            android:id="@+id/recents_empty_label"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/home_spacing_large"
+            android:gravity="center"
+            android:text="No recent files"
+            android:visibility="gone" />
+
+        <ListView
+            android:id="@+id/recents_list"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:divider="@android:color/transparent"
+            android:dividerHeight="@dimen/home_spacing_small"
+            android:overScrollMode="never"
+            android:paddingTop="@dimen/home_spacing_xsmall"
+            android:paddingBottom="@dimen/home_spacing_xsmall"
+            android:scrollbars="none" />
+    </LinearLayout>
 
 </LinearLayout>

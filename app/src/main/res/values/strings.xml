@@ -176,4 +176,6 @@
     <string name="more_import_failed">Metadata import failed</string>
     <string name="more_import_schema_mismatch">schemaVersion mismatch</string>
     <string name="more_placeholder">More menu is under construction</string>
+    <string name="icon_dir">📁</string>
+    <string name="icon_file">📄</string>
 </resources>

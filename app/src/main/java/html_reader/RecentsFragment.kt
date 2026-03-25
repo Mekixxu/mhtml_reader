@@ -26,7 +26,7 @@ class RecentsFragment : Fragment(R.layout.fragment_recents) {
         emptyLabel = view.findViewById(R.id.recents_empty_label)
         historyRepository = ReaderRuntime.historyRepository(requireContext())
 
-        adapter = ArrayAdapter(requireContext(), android.R.layout.simple_list_item_1, mutableListOf())
+        adapter = ArrayAdapter(requireContext(), R.layout.item_home_rect, mutableListOf())
         listView.adapter = adapter
 
         clearButton.setOnClickListener {
