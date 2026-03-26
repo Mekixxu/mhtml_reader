@@ -906,16 +906,23 @@ class FilesFragment : Fragment() {
     }
 
     private fun buildCurrentDirText(dir: File): String {
-        if (browseSource == BrowseSource.FTP) {
-            val network = currentNetworkLabel ?: "FTP"
-            return getString(R.string.files_current_dir_network_template, network, ftpCurrentPath)
+        val label = when (browseSource) {
+            BrowseSource.FTP -> "[FTP]"
+            BrowseSource.SMB -> "[SMB]"
+            BrowseSource.LOCAL -> {
+                if (currentNetworkLabel == "SD" || dir.absolutePath.startsWith("/storage/") && !dir.absolutePath.startsWith("/storage/emulated/0")) {
+                    "[SD]"
+                } else {
+                    "[LOCAL]"
+                }
+            }
         }
-        if (browseSource == BrowseSource.SMB) {
-            val network = currentNetworkLabel ?: "SMB"
-            return getString(R.string.files_current_dir_network_template, network, smbCurrentPath)
+        val path = when (browseSource) {
+            BrowseSource.FTP -> ftpCurrentPath
+            BrowseSource.SMB -> smbCurrentPath
+            BrowseSource.LOCAL -> dir.absolutePath
         }
-        val network = currentNetworkLabel ?: return dir.absolutePath
-        return getString(R.string.files_current_dir_network_template, network, dir.absolutePath)
+        return getString(R.string.files_current_dir_network_template, label, path)
     }
 
     private fun persistCurrentDir() {
