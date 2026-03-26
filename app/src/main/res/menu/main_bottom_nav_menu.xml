@@ -2,18 +2,18 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
     <item
         android:id="@+id/nav_home"
-        android:icon="@android:drawable/ic_menu_view"
+        android:icon="@drawable/ic_nav_home"
         android:title="@string/tab_home" />
     <item
         android:id="@+id/nav_files"
-        android:icon="@android:drawable/ic_menu_agenda"
+        android:icon="@drawable/ic_nav_folders"
         android:title="@string/tab_files" />
     <item
         android:id="@+id/nav_reader"
-        android:icon="@android:drawable/ic_menu_edit"
+        android:icon="@drawable/ic_nav_tabs"
         android:title="@string/tab_reader" />
     <item
         android:id="@+id/nav_more"
-        android:icon="@android:drawable/ic_menu_more"
+        android:icon="@drawable/ic_nav_more"
         android:title="@string/tab_more" />
 </menu>
