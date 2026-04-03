@@ -27,6 +27,7 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.CancellationException
 import core.common.DefaultDispatcherProvider
 import core.data.repo.FavoritesRepository
 import core.data.repo.NetworkConfigRepository
@@ -119,6 +120,13 @@ class FilesFragment : Fragment() {
         }
     }
 
+    private data class FtpRawEntry(
+        val rawNameBytes: ByteArray,
+        val isDirectory: Boolean,
+        val sizeBytes: Long,
+        val modifiedText: String?
+    )
+
     private lateinit var queryInput: EditText
     private lateinit var sortSpinner: Spinner
     private lateinit var fontSizeSpinner: Spinner
@@ -161,6 +169,7 @@ class FilesFragment : Fragment() {
     private var currentNameTextSizeSp: Float = 16f
     private val supportedExtensions = setOf("mht", "mhtml", "pdf", "html", "htm")
     private val displayTitleByPath = mutableMapOf<String, String>()
+    private val ftpDecodeCache = mutableMapOf<String, String>()
     private val ftpUploadLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             uploadDocumentToFtp(uri)
@@ -246,17 +255,32 @@ class FilesFragment : Fragment() {
                 val text2 = view.findViewById<TextView>(R.id.files_item_meta)
 
                 val namePart = item.name
+                val titlePart = item.pathKey()?.let { displayTitleByPath[it] }
 
                 val typeLabel = if (item.isDirectory) getString(R.string.icon_dir) else getString(R.string.icon_file)
                 val sizeLabel = if (item.isDirectory) "" else formatSize(item.sizeBytes)
                 val timeLabel = item.modifiedText ?: item.modifiedEpochMs?.let { DateFormat.getDateTimeInstance().format(Date(it)) }.orEmpty()
-                val metaPart = listOf(sizeLabel, timeLabel).filter { it.isNotBlank() }.joinToString("  •  ")
+                val metaPart = buildList {
+                    if (!titlePart.isNullOrBlank()) {
+                        add("Title: $titlePart")
+                    }
+                    if (sizeLabel.isNotBlank()) {
+                        add(sizeLabel)
+                    }
+                    if (timeLabel.isNotBlank()) {
+                        add(timeLabel)
+                    }
+                }.joinToString("  •  ")
 
                 val selectedPrefix = if (item.isSelected(selectedEntry)) "▶ " else ""
                 
                 text1.text = "$selectedPrefix$typeLabel $namePart"
                 text1.setTextSize(currentNameTextSizeSp)
                 text2.text = metaPart
+                Log.d(
+                    "FilesFragment",
+                    "display_entry source=${browseSource.name} filename=$namePart title=${titlePart ?: ""}"
+                )
                 return view
             }
         }
@@ -605,27 +629,59 @@ class FilesFragment : Fragment() {
     private fun renderEntries() {
         val query = queryInput.text?.toString()?.trim().orEmpty().lowercase(Locale.getDefault())
         val filtered = allEntries.filter {
-            query.isBlank() || it.name.lowercase(Locale.getDefault()).contains(query)
+            query.isBlank() || matchesQuery(it, query)
         }
-        val sorted = when (sortSpinner.selectedItemPosition) {
-            SORT_INDEX_NAME_ASC -> filtered.sortedBy { it.name.lowercase(Locale.getDefault()) }
-            SORT_INDEX_NAME_DESC -> filtered.sortedByDescending { it.name.lowercase(Locale.getDefault()) }
-            SORT_INDEX_MODIFIED_DESC -> filtered.sortedByDescending { it.modifiedEpochMs ?: 0L }
-            SORT_INDEX_SIZE_DESC -> filtered.sortedByDescending { it.sizeBytes }
-            SORT_INDEX_SIZE_ASC -> {
-                val directories = filtered
-                    .filter { it.isDirectory }
-                    .sortedBy { it.name.lowercase(Locale.getDefault()) }
-                val files = filtered
-                    .filter { !it.isDirectory }
-                    .sortedBy { it.sizeBytes }
-                directories + files
-            }
-            else -> filtered
-        }
+        val directories = filtered.filter { it.isDirectory }
+        val files = filtered.filter { !it.isDirectory }
+        val sorted = sortEntriesWithinGroup(directories) + sortEntriesWithinGroup(files)
         displayedEntries.clear()
         displayedEntries.addAll(sorted)
         adapter.notifyDataSetChanged()
+    }
+
+    private fun matchesQuery(entry: BrowserEntry, query: String): Boolean {
+        if (entry.name.lowercase(Locale.getDefault()).contains(query)) {
+            return true
+        }
+        if (browseSource != BrowseSource.FTP) {
+            return false
+        }
+        val raw = entry.rawNameBytes ?: return false
+        val charsets = listOfNotNull(
+            configuredFtpCharsetName(ftpConfig),
+            ftpResolvedCharset,
+            "UTF-8",
+            "GBK",
+            "Big5",
+            "Shift_JIS"
+        ).distinct()
+        return charsets.any { cs ->
+            decodeFtpBytesWithCharset(raw, cs)?.lowercase(Locale.getDefault())?.contains(query) == true
+        }
+    }
+
+    private fun sortEntriesWithinGroup(entries: List<BrowserEntry>): List<BrowserEntry> {
+        val comparator = when (sortSpinner.selectedItemPosition) {
+            SORT_INDEX_NAME_ASC -> compareBy<BrowserEntry> { it.name.lowercase(Locale.getDefault()) }
+                .thenBy { it.modifiedEpochMs ?: Long.MIN_VALUE }
+                .thenBy { it.sizeBytes }
+            SORT_INDEX_NAME_DESC -> compareByDescending<BrowserEntry> { it.name.lowercase(Locale.getDefault()) }
+                .thenByDescending { it.modifiedEpochMs ?: Long.MIN_VALUE }
+                .thenByDescending { it.sizeBytes }
+            SORT_INDEX_MODIFIED_DESC -> compareByDescending<BrowserEntry> { it.modifiedEpochMs ?: Long.MIN_VALUE }
+                .thenBy { it.name.lowercase(Locale.getDefault()) }
+                .thenByDescending { it.sizeBytes }
+            SORT_INDEX_SIZE_DESC -> compareByDescending<BrowserEntry> { it.sizeBytes }
+                .thenBy { it.name.lowercase(Locale.getDefault()) }
+                .thenByDescending { it.modifiedEpochMs ?: Long.MIN_VALUE }
+            SORT_INDEX_SIZE_ASC -> compareBy<BrowserEntry> { it.sizeBytes }
+                .thenBy { it.name.lowercase(Locale.getDefault()) }
+                .thenByDescending { it.modifiedEpochMs ?: Long.MIN_VALUE }
+            else -> compareBy<BrowserEntry> { it.name.lowercase(Locale.getDefault()) }
+                .thenByDescending { it.modifiedEpochMs ?: Long.MIN_VALUE }
+                .thenByDescending { it.sizeBytes }
+        }
+        return entries.sortedWith(comparator)
     }
 
     private fun applyNameTextSize(index: Int) {
@@ -762,6 +818,11 @@ class FilesFragment : Fragment() {
                         }
                     }
                 }
+            } catch (e: CancellationException) {
+                updateStatus("Operation canceled", isError = true)
+            } catch (t: Throwable) {
+                val message = t.message ?: t.javaClass.simpleName
+                updateStatus(message, isError = true)
             } finally {
                 operationRunning = false
                 setOperationButtonsEnabled(true)
@@ -997,6 +1058,7 @@ class FilesFragment : Fragment() {
         if (!isFtpAutoEncoding(config)) {
             ftpResolvedCharset = configuredFtpCharsetName(config)
         }
+        ftpDecodeCache.clear()
         updateStatus(getString(R.string.files_status_ftp_loading), isError = false)
         currentDirLabel.text = buildCurrentDirText(defaultRootDir())
         val token = ++ftpLoadToken
@@ -1159,9 +1221,33 @@ class FilesFragment : Fragment() {
 
     private suspend fun fetchFtpEntries(config: NetworkConfigEntity, path: String): List<BrowserEntry> = withContext(Dispatchers.IO) {
         val url = URL(buildFtpUrl(config, path, "d"))
-        // Use ISO-8859-1 to preserve raw bytes for manual decoding
         val lines = url.openStream().bufferedReader(Charsets.ISO_8859_1).use { it.readLines() }
-        val entries = lines.mapNotNull { parseFtpLine(path, it) }
+        val rawEntries = lines.mapNotNull { parseFtpLine(it) }
+        val decidedCharset = resolveFtpCharsetForEntries(rawEntries.map { it.rawNameBytes })
+        ftpResolvedCharset = decidedCharset
+        Log.d(
+            "FilesFragment",
+            "ftp_charset_decision charset=$decidedCharset source=FTP path=$path sample_count=${rawEntries.size}"
+        )
+        val entries = rawEntries.mapNotNull { raw ->
+            val name = decodeFtpBytesWithCharset(raw.rawNameBytes, decidedCharset)
+                ?: String(raw.rawNameBytes, Charsets.ISO_8859_1)
+            if (name == "." || name == "..") {
+                null
+            } else {
+                val childPath = joinFtpPath(path, name)
+                BrowserEntry(
+                    localFile = null,
+                    ftpPath = childPath,
+                    name = name,
+                    isDirectory = raw.isDirectory,
+                    sizeBytes = raw.sizeBytes,
+                    modifiedEpochMs = null,
+                    modifiedText = raw.modifiedText,
+                    rawNameBytes = raw.rawNameBytes
+                )
+            }
+        }
         val folders = entries.filter { it.isDirectory }.sortedBy { it.name.lowercase(Locale.getDefault()) }
         val files = entries
             .filter { !it.isDirectory && it.name.substringAfterLast('.', "").lowercase(Locale.getDefault()) in supportedExtensions }
@@ -1169,23 +1255,18 @@ class FilesFragment : Fragment() {
         folders + files
     }
 
-    private fun parseFtpLine(basePath: String, rawLine: String): BrowserEntry? {
+    private fun parseFtpLine(rawLine: String): FtpRawEntry? {
         val line = rawLine.trim()
         if (line.isBlank() || line.startsWith("total ")) {
             return null
         }
         
-        // Try Unix style first
-        // -rw-r--r-- 1 user group 1234 Jan 01 12:00 filename
-        val unixEntry = parseUnixStyle(basePath, line)
+        val unixEntry = parseUnixStyle(line)
         if (unixEntry != null) {
             return unixEntry
         }
 
-        // Try DOS style
-        // 01-01-24 12:00PM <DIR> filename
-        // 01-01-24 12:00PM 1234 filename
-        val dosEntry = parseDosStyle(basePath, line)
+        val dosEntry = parseDosStyle(line)
         if (dosEntry != null) {
             return dosEntry
         }
@@ -1193,7 +1274,7 @@ class FilesFragment : Fragment() {
         return null
     }
 
-    private fun parseUnixStyle(basePath: String, line: String): BrowserEntry? {
+    private fun parseUnixStyle(line: String): FtpRawEntry? {
         val parts = line.split(Regex("\\s+"))
         if (parts.size < 6) return null // Minimal: perms links owner size date name
 
@@ -1261,27 +1342,15 @@ class FilesFragment : Fragment() {
         
         val rawNameString = line.substring(currentSearchIdx)
         val rawBytes = rawNameString.toByteArray(Charsets.ISO_8859_1)
-        var name = decodeFtpName(rawBytes)
-
-        if (name == "." || name == "..") return null
-        
-        val childPath = joinFtpPath(basePath, name)
-        
-        return BrowserEntry(
-            localFile = null,
-            ftpPath = childPath,
-            name = name,
+        return FtpRawEntry(
+            rawNameBytes = rawBytes,
             isDirectory = isDir,
             sizeBytes = size,
-            modifiedEpochMs = null,
-            modifiedText = dateStr,
-            rawNameBytes = rawBytes
+            modifiedText = dateStr
         )
     }
 
-    private fun parseDosStyle(basePath: String, line: String): BrowserEntry? {
-        // 02-11-20  11:42PM       <DIR>          Folder
-        // 2024-01-01 12:00       <DIR>          Folder
+    private fun parseDosStyle(line: String): FtpRawEntry? {
         val parts = line.split(Regex("\\s+"))
         if (parts.size < 3) return null
 
@@ -1327,78 +1396,69 @@ class FilesFragment : Fragment() {
         val rawNameString = line.substring(currentSearchIdx)
         
         val rawBytes = rawNameString.toByteArray(Charsets.ISO_8859_1)
-        var name = decodeFtpName(rawBytes)
-        
-        if (name == "." || name == "..") return null
-
-        val childPath = joinFtpPath(basePath, name)
-
-        return BrowserEntry(
-            localFile = null,
-            ftpPath = childPath,
-            name = name,
+        return FtpRawEntry(
+            rawNameBytes = rawBytes,
             isDirectory = isDir,
             sizeBytes = size,
-            modifiedEpochMs = null,
-            modifiedText = dateStr,
-            rawNameBytes = rawBytes
+            modifiedText = dateStr
         )
     }
 
-    private fun decodeFtpName(bytes: ByteArray): String {
+    private fun resolveFtpCharsetForEntries(rawNames: List<ByteArray>): String {
         val configuredCharset = configuredFtpCharsetName(ftpConfig)
         if (!configuredCharset.isNullOrBlank()) {
-            try {
-                ftpResolvedCharset = configuredCharset
-                return String(bytes, java.nio.charset.Charset.forName(configuredCharset))
-            } catch (e: Exception) {
-                Unit
+            return configuredCharset
+        }
+        val sampled = rawNames.take(24)
+        if (sampled.isEmpty()) {
+            return ftpResolvedCharset ?: "UTF-8"
+        }
+        val candidates = listOfNotNull(
+            ftpResolvedCharset,
+            "UTF-8",
+            "GBK",
+            "Big5",
+            "Shift_JIS",
+            "ISO-8859-1"
+        ).distinct()
+        return candidates.maxByOrNull { charset ->
+            scoreFtpCharset(sampled, charset)
+        } ?: "UTF-8"
+    }
+
+    private fun scoreFtpCharset(rawNames: List<ByteArray>, charsetName: String): Int {
+        var score = 0
+        for (bytes in rawNames) {
+            val decoded = decodeFtpBytesWithCharset(bytes, charsetName) ?: return Int.MIN_VALUE / 2
+            if (decoded.isBlank()) {
+                score -= 30
+                continue
             }
+            val replacementCount = decoded.count { it == '\uFFFD' }
+            val controlCount = decoded.count { it.code < 0x20 && it != '\n' && it != '\t' }
+            val suspiciousCount = decoded.count { it in listOf('Ã', 'â', '¤', '�') }
+            score += 120
+            score -= replacementCount * 80
+            score -= controlCount * 40
+            score -= suspiciousCount * 18
         }
-        val rememberedCharset = ftpResolvedCharset
-        if (!rememberedCharset.isNullOrBlank()) {
-            try {
-                val decoder = java.nio.charset.Charset.forName(rememberedCharset).newDecoder()
-                decoder.onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
-                decoder.onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
-                return decoder.decode(java.nio.ByteBuffer.wrap(bytes)).toString()
-            } catch (e: Exception) {
-                Unit
-            }
+        return score
+    }
+
+    private fun decodeFtpBytesWithCharset(bytes: ByteArray, charsetName: String): String? {
+        val cacheKey = "${charsetName}:${bytes.contentHashCode()}:${bytes.size}"
+        val cached = ftpDecodeCache[cacheKey]
+        if (cached != null) {
+            return cached
         }
-        try {
-            val decoder = Charsets.UTF_8.newDecoder()
+        return runCatching {
+            val decoder = java.nio.charset.Charset.forName(charsetName).newDecoder()
             decoder.onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
             decoder.onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
-            ftpResolvedCharset = "UTF-8"
-            Log.d("FilesFragment", "ftp_charset_detected=UTF-8")
-            return decoder.decode(java.nio.ByteBuffer.wrap(bytes)).toString()
-        } catch (e: Exception) {
-            Unit
+            decoder.decode(java.nio.ByteBuffer.wrap(bytes)).toString()
+        }.getOrNull()?.also {
+            ftpDecodeCache[cacheKey] = it
         }
-        try {
-            val decoder = java.nio.charset.Charset.forName("GBK").newDecoder()
-            decoder.onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
-            decoder.onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
-            ftpResolvedCharset = "GBK"
-            Log.d("FilesFragment", "ftp_charset_detected=GBK")
-            return decoder.decode(java.nio.ByteBuffer.wrap(bytes)).toString()
-        } catch (e: Exception) {
-            Unit
-        }
-        try {
-            val decoder = java.nio.charset.Charset.forName("Big5").newDecoder()
-            decoder.onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
-            decoder.onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
-            ftpResolvedCharset = "Big5"
-            Log.d("FilesFragment", "ftp_charset_detected=Big5")
-            return decoder.decode(java.nio.ByteBuffer.wrap(bytes)).toString()
-        } catch (e: Exception) {
-            Unit
-        }
-        ftpResolvedCharset = "ISO-8859-1"
-        Log.d("FilesFragment", "ftp_charset_detected=ISO-8859-1")
-        return String(bytes, Charsets.ISO_8859_1)
     }
 
     private fun openFtpFile(entry: BrowserEntry, isBackground: Boolean = false) {
@@ -1530,23 +1590,33 @@ class FilesFragment : Fragment() {
     }
 
     private fun buildFtpUrl(config: NetworkConfigEntity, path: String, type: String): String {
-        val charset = configuredFtpCharsetName(config) ?: ftpResolvedCharset ?: "UTF-8"
+        val charset = ftpEffectiveCharset(config)
         Log.d("FilesFragment", "ftp_charset_url=$charset auto=${isFtpAutoEncoding(config)}")
         val user = config.username.trim().ifBlank { "anonymous" }
         val pass = config.password.ifBlank { "anonymous@" }
-        val encodedUser = runCatching { URLEncoder.encode(user, charset) }.getOrDefault(URLEncoder.encode(user, "UTF-8")).replace("+", "%20")
-        val encodedPass = runCatching { URLEncoder.encode(pass, charset) }.getOrDefault(URLEncoder.encode(pass, "UTF-8")).replace("+", "%20")
+        val encodedUser = encodeFtpSegment(user, charset)
+        val encodedPass = encodeFtpSegment(pass, charset)
         val normalized = normalizeFtpPath(path)
         val encodedPath = normalized
             .split("/")
             .joinToString("/") { segment ->
-                if (segment.isBlank()) "" else runCatching { URLEncoder.encode(segment, charset) }.getOrDefault(URLEncoder.encode(segment, "UTF-8")).replace("+", "%20")
+                if (segment.isBlank()) "" else encodeFtpSegment(segment, charset)
             }
         
         // If listing directory (type=d), ensure trailing slash to force directory listing behavior
         val finalPath = if (type == "d" && !encodedPath.endsWith("/")) "$encodedPath/" else encodedPath
         
         return "ftp://$encodedUser:$encodedPass@${config.host}:${config.port}$finalPath;type=$type"
+    }
+
+    private fun ftpEffectiveCharset(config: NetworkConfigEntity): String {
+        return configuredFtpCharsetName(config) ?: ftpResolvedCharset ?: "UTF-8"
+    }
+
+    private fun encodeFtpSegment(value: String, charset: String): String {
+        return runCatching { URLEncoder.encode(value, charset) }
+            .getOrDefault(URLEncoder.encode(value, "UTF-8"))
+            .replace("+", "%20")
     }
 
     private fun isFtpAutoEncoding(config: NetworkConfigEntity?): Boolean {
@@ -1709,11 +1779,16 @@ class FilesFragment : Fragment() {
             BrowseSource.FTP -> {
                 val config = ftpConfig ?: return
                 val remote = entry.ftpPath ?: return
+                val charset = ftpEffectiveCharset(config)
                 val encodedPath = normalizeFtpPath(remote)
+                    .split("/")
+                    .joinToString("/") { segment ->
+                        if (segment.isBlank()) "" else encodeFtpSegment(segment, charset)
+                    }
                 val user = config.username.trim().ifBlank { "anonymous" }
                 val pass = config.password.ifBlank { "anonymous@" }
-                val encodedUser = URLEncoder.encode(user, "UTF-8").replace("+", "%20")
-                val encodedPass = URLEncoder.encode(pass, "UTF-8").replace("+", "%20")
+                val encodedUser = encodeFtpSegment(user, charset)
+                val encodedPass = encodeFtpSegment(pass, charset)
                 "ftp://$encodedUser:$encodedPass@${config.host}:${config.port}$encodedPath"
             }
             BrowseSource.SMB -> {
@@ -1728,12 +1803,21 @@ class FilesFragment : Fragment() {
             BrowseSource.SMB -> SourceType.SMB
         }
         viewLifecycleOwner.lifecycleScope.launch {
-            favoritesRepository.addFile(
-                parentId = null,
-                name = entry.name,
-                path = favoritePath,
-                sourceType = sourceType
-            )
+            if (entry.isDirectory) {
+                favoritesRepository.addDirectory(
+                    parentId = null,
+                    name = entry.name,
+                    path = favoritePath,
+                    sourceType = sourceType
+                )
+            } else {
+                favoritesRepository.addFile(
+                    parentId = null,
+                    name = entry.name,
+                    path = favoritePath,
+                    sourceType = sourceType
+                )
+            }
             Toast.makeText(requireContext(), getString(R.string.favorites_added), Toast.LENGTH_SHORT).show()
         }
     }
@@ -1864,25 +1948,31 @@ class FilesFragment : Fragment() {
         if (title.isBlank()) {
             return null
         }
-        return if (isUsableDisplayTitle(title, fileName)) title else null
+        val gateReason = titleRejectReason(title, fileName)
+        val gateHit = gateReason != null
+        Log.d(
+            "FilesFragment",
+            "title_gate_hit=$gateHit source=${browseSource.name} file=$fileName reason=${gateReason ?: "none"} title=$title"
+        )
+        return if (!gateHit) title else null
     }
 
-    private fun isUsableDisplayTitle(title: String, fileName: String): Boolean {
+    private fun titleRejectReason(title: String, fileName: String): String? {
         if (title.equals(fileName, ignoreCase = true)) {
-            return false
+            return "same_as_filename"
         }
         if (title.any { it.code < 0x20 && it != '\n' && it != '\t' }) {
-            return false
+            return "control_character"
         }
         val replacementCount = title.count { it == '\uFFFD' }
         if (replacementCount >= 2 || replacementCount.toFloat() / title.length.toFloat() > 0.08f) {
-            return false
+            return "replacement_ratio_high"
         }
         val suspiciousCount = title.count { it in listOf('Ã', 'â', '¤', '�') }
         if (suspiciousCount >= 3 && suspiciousCount.toFloat() / title.length.toFloat() > 0.12f) {
-            return false
+            return "suspicious_symbol_density_high"
         }
-        return true
+        return null
     }
 
     private fun promptRename(entry: BrowserEntry) {
@@ -1894,9 +1984,14 @@ class FilesFragment : Fragment() {
             if (browseSource == BrowseSource.SMB) {
                 renameSmbEntry(entry, newName)
             } else if (browseSource == BrowseSource.LOCAL) {
+                val localFile = entry.localFile
+                if (localFile == null) {
+                    updateStatus(getString(R.string.files_select_item_first), isError = true)
+                    return@promptText
+                }
                 runOperation(
                     FileOpRequest.Rename(
-                        target = entry.localFile!!.toVfsPath(),
+                        target = localFile.toVfsPath(),
                         newName = newName
                     )
                 )
@@ -1912,11 +2007,16 @@ class FilesFragment : Fragment() {
                 if (browseSource == BrowseSource.SMB) {
                     deleteSmbEntry(entry)
                 } else if (browseSource == BrowseSource.LOCAL) {
+                    val localFile = entry.localFile
+                    if (localFile == null) {
+                        updateStatus(getString(R.string.files_select_item_first), isError = true)
+                        return@setPositiveButton
+                    }
                     runOperation(
-                    FileOpRequest.Delete(
-                        target = entry.localFile!!.toVfsPath()
+                        FileOpRequest.Delete(
+                            target = localFile.toVfsPath()
+                        )
                     )
-                )
                 }
             }
             .setNegativeButton(android.R.string.cancel, null)

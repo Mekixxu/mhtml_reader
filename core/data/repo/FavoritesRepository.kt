@@ -49,6 +49,19 @@ class FavoritesRepository(
         )
     }
 
+    suspend fun addDirectory(parentId: Long?, name: String, path: String, sourceType: SourceType): Long = withContext(dispatcherProvider.io) {
+        dao.insert(
+            FavoriteEntity(
+                parentId = parentId,
+                name = name,
+                type = FavoriteType.FOLDER,
+                path = path,
+                sourceType = sourceType,
+                createdAt = System.currentTimeMillis()
+            )
+        )
+    }
+
     suspend fun move(id: Long, newParentId: Long?) = withContext(dispatcherProvider.io) { dao.updateParent(id, newParentId) }
     suspend fun rename(id: Long, newName: String) = withContext(dispatcherProvider.io) { dao.rename(id, newName) }
     suspend fun deleteSubtree(id: Long) = withContext(dispatcherProvider.io) { dao.deleteSubtree(id) }

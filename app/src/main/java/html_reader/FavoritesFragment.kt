@@ -62,7 +62,8 @@ class FavoritesFragment : Fragment() {
         listView.setOnItemClickListener { _, _, position, _ ->
             val item = items.getOrNull(position) ?: return@setOnItemClickListener
             selectedItemId = item.id
-            if (item.type == FavoriteType.FOLDER) {
+            val effectiveType = resolveFavoriteType(item)
+            if (effectiveType == FavoriteType.FOLDER && item.path.isBlank()) {
                 currentParentId = item.id
                 selectedItemId = null
                 observeCurrentFolder()
@@ -74,13 +75,25 @@ class FavoritesFragment : Fragment() {
             }
             if (item.sourceType == SourceType.LOCAL) {
                 val target = File(item.path)
-                if (!target.exists() || !target.isFile) {
+                if (!target.exists()) {
                     showShort(getString(R.string.favorites_unreachable))
                     return@setOnItemClickListener
                 }
-                (activity as? MainActivity)?.showReaderModeWithPath(item.path)
+                if (effectiveType == FavoriteType.FOLDER) {
+                    if (!target.isDirectory) {
+                        showShort(getString(R.string.favorites_unreachable))
+                        return@setOnItemClickListener
+                    }
+                    (activity as? MainActivity)?.showDirectoryModeWithPath(item.path)
+                } else {
+                    if (!target.isFile) {
+                        showShort(getString(R.string.favorites_unreachable))
+                        return@setOnItemClickListener
+                    }
+                    (activity as? MainActivity)?.showReaderModeWithPath(item.path)
+                }
             } else if (item.sourceType == SourceType.FTP || item.sourceType == SourceType.SMB) {
-                openNetworkFavorite(item)
+                openNetworkFavorite(item, effectiveType)
             } else {
                 showShort(getString(R.string.favorites_unreachable))
             }
@@ -175,8 +188,9 @@ class FavoritesFragment : Fragment() {
         adapter.addAll(
             items.map {
                 val selectedPrefix = if (it.id == selectedItemId) "▶ " else ""
-                val typeLabel = if (it.type == FavoriteType.FOLDER) "DIR" else "FILE"
-                val invalidLabel = if (it.type == FavoriteType.FILE && !isFavoriteReachable(it)) {
+                val effectiveType = resolveFavoriteType(it)
+                val typeLabel = if (effectiveType == FavoriteType.FOLDER) "DIR" else "FILE"
+                val invalidLabel = if (effectiveType == FavoriteType.FILE && !isFavoriteReachable(it)) {
                     "  •  ${getString(R.string.favorites_invalid)}"
                 } else {
                     ""
@@ -239,12 +253,53 @@ class FavoritesFragment : Fragment() {
                 }
                 val sourceType = inferSourceType(path)
                 viewLifecycleOwner.lifecycleScope.launch {
-                    FilesRuntime.favoritesRepository(requireContext()).addFile(
-                        parentId = currentParentId,
-                        name = name,
-                        path = path,
-                        sourceType = sourceType
-                    )
+                    val repo = FilesRuntime.favoritesRepository(requireContext())
+                    when (sourceType) {
+                        SourceType.LOCAL -> {
+                            val f = File(path)
+                            if (f.isDirectory) {
+                                repo.addDirectory(
+                                    parentId = currentParentId,
+                                    name = name,
+                                    path = path,
+                                    sourceType = sourceType
+                                )
+                            } else {
+                                repo.addFile(
+                                    parentId = currentParentId,
+                                    name = name,
+                                    path = path,
+                                    sourceType = sourceType
+                                )
+                            }
+                        }
+                        SourceType.FTP, SourceType.SMB -> {
+                            val isDir = path.endsWith("/")
+                            if (isDir) {
+                                repo.addDirectory(
+                                    parentId = currentParentId,
+                                    name = name,
+                                    path = path,
+                                    sourceType = sourceType
+                                )
+                            } else {
+                                repo.addFile(
+                                    parentId = currentParentId,
+                                    name = name,
+                                    path = path,
+                                    sourceType = sourceType
+                                )
+                            }
+                        }
+                        else -> {
+                            repo.addFile(
+                                parentId = currentParentId,
+                                name = name,
+                                path = path,
+                                sourceType = sourceType
+                            )
+                        }
+                    }
                     showShort(getString(R.string.favorites_added))
                 }
             }
@@ -285,7 +340,7 @@ class FavoritesFragment : Fragment() {
         Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
     }
 
-    private fun openNetworkFavorite(item: FavoriteEntity) {
+    private fun openNetworkFavorite(item: FavoriteEntity, effectiveType: FavoriteType) {
         val uri = runCatching { Uri.parse(item.path) }.getOrNull() ?: run {
             showShort(getString(R.string.favorites_unreachable))
             return
@@ -319,7 +374,7 @@ class FavoritesFragment : Fragment() {
             }
             val rawPath = URLDecoder.decode(uri.encodedPath.orEmpty().ifBlank { "/" }, "UTF-8")
             val normalized = if (rawPath.startsWith("/")) rawPath else "/$rawPath"
-            val openPath = if (item.type == FavoriteType.FILE) {
+            val openPath = if (effectiveType == FavoriteType.FILE) {
                 val index = normalized.lastIndexOf('/')
                 if (index <= 0) "/" else normalized.substring(0, index)
             } else {
@@ -327,6 +382,25 @@ class FavoritesFragment : Fragment() {
             }
             (activity as? MainActivity)?.showDirectoryModeWithNetworkPath(config.id, openPath)
         }
+    }
+
+    private fun resolveFavoriteType(item: FavoriteEntity): FavoriteType {
+        if (item.path.isBlank()) {
+            return item.type
+        }
+        if (item.sourceType == SourceType.LOCAL) {
+            val local = File(item.path)
+            if (local.isDirectory) {
+                return FavoriteType.FOLDER
+            }
+            if (local.isFile) {
+                return FavoriteType.FILE
+            }
+        }
+        if ((item.sourceType == SourceType.FTP || item.sourceType == SourceType.SMB) && item.path.endsWith("/")) {
+            return FavoriteType.FOLDER
+        }
+        return item.type
     }
 
     private fun createAdHocNetworkConfig(

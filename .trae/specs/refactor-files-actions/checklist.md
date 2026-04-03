@@ -1,5 +1,5 @@
-- [ ] "Rename" and "Delete" buttons are removed from UI.
-- [ ] "Duplicate", "Move to Parent", and "New Session" buttons are removed from UI.
-- [ ] Long-press on a file shows "Rename" and "Delete" options.
-- [ ] Renaming a file works (Local/SMB).
-- [ ] Deleting a file works (Local/SMB).
+- [x] "Rename" and "Delete" buttons are removed from UI.
+- [x] "Duplicate", "Move to Parent", and "New Session" buttons are removed from UI.
+- [x] Long-press on a file shows "Rename" and "Delete" options.
+- [x] Renaming a file works (Local/SMB).
+- [x] Deleting a file works (Local/SMB).
