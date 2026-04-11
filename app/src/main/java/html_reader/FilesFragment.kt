@@ -8,7 +8,6 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.DocumentsContract
-import android.provider.OpenableColumns
 import android.provider.Settings
 import android.text.Editable
 import android.text.TextWatcher
@@ -29,10 +28,14 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import com.html_reader.files.BrowseSource
 import com.html_reader.files.BrowserEntry
+import com.html_reader.files.FilesFtpCodec
+import com.html_reader.files.FilesFtpDiagnosticBuilder
+import com.html_reader.files.FilesFavoritePathBuilder
 import com.html_reader.files.FilesNetworkGateway
+import com.html_reader.files.FilesSmbGateway
 import com.html_reader.files.FilesTitleRefresher
+import com.html_reader.files.FilesTransferGateway
 import com.html_reader.files.FilesUiBinder
-import com.html_reader.files.FtpRawEntry
 import com.html_reader.files.isSamePathAs
 import com.html_reader.files.pathKey
 import kotlinx.coroutines.CancellationException
@@ -43,7 +46,6 @@ import core.data.repo.TitleCacheRepository
 import core.database.entity.NetworkConfigEntity
 import core.database.entity.enums.FileType
 import core.database.entity.enums.NetworkProtocol
-import core.database.entity.enums.SourceType
 import core.fileops.model.ConflictStrategy
 import core.fileops.model.FileOpRequest
 import core.fileops.model.FileOpState
@@ -57,16 +59,11 @@ import core.title.impl.HtmlTitleExtractor
 import core.vfs.local.LocalFileSystem
 import core.vfs.model.VfsPath
 import java.io.File
-import java.io.FileOutputStream
 import java.net.URL
 import java.net.URLEncoder
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
-import jcifs.CIFSContext
-import jcifs.context.SingletonContext
-import jcifs.smb.NtlmPasswordAuthenticator
-import jcifs.smb.SmbFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collect
@@ -198,10 +195,10 @@ class FilesFragment : Fragment() {
 
         adapter = object : ArrayAdapter<BrowserEntry>(requireContext(), R.layout.item_files_entry, displayedEntries) {
             override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-                val view = convertView ?: LayoutInflater.from(context).inflate(R.layout.item_files_entry, parent, false)
-                val item = getItem(position) ?: return view
-                val text1 = view.findViewById<TextView>(R.id.files_item_name)
-                val text2 = view.findViewById<TextView>(R.id.files_item_meta)
+                val itemView = convertView ?: LayoutInflater.from(context).inflate(R.layout.item_files_entry, parent, false)
+                val item = getItem(position) ?: return itemView
+                val text1 = itemView.findViewById<TextView>(R.id.files_item_name)
+                val text2 = itemView.findViewById<TextView>(R.id.files_item_meta)
 
                 val namePart = item.name
                 val titlePart = item.pathKey()?.let { displayTitleByPath[it] }
@@ -226,7 +223,7 @@ class FilesFragment : Fragment() {
                 text1.text = "$selectedPrefix$typeLabel $namePart"
                 text1.setTextSize(currentNameTextSizeSp)
                 text2.text = metaPart
-                return view
+                return itemView
             }
         }
         listView.adapter = adapter
@@ -495,7 +492,7 @@ class FilesFragment : Fragment() {
 
     fun navigateUp(): Boolean {
         if (browseSource == BrowseSource.FTP) {
-            val parent = ftpParentPath(ftpCurrentPath)
+            val parent = FilesNetworkGateway.ftpParentPath(ftpCurrentPath)
             if (parent == ftpCurrentPath || (ftpCurrentPath == "/" && parent == "/")) {
                 return false
             }
@@ -506,7 +503,7 @@ class FilesFragment : Fragment() {
             return true
         }
         if (browseSource == BrowseSource.SMB) {
-            val parent = smbParentPath(smbCurrentPath)
+            val parent = FilesNetworkGateway.smbParentPath(smbCurrentPath)
             if (parent == smbCurrentPath || (smbCurrentPath == "/" && parent == "/")) {
                 return false
             }
@@ -619,7 +616,7 @@ class FilesFragment : Fragment() {
             "Shift_JIS"
         ).distinct()
         return charsets.any { cs ->
-            decodeFtpBytesWithCharset(raw, cs)?.lowercase(Locale.getDefault())?.contains(query) == true
+            FilesFtpCodec.decodeForSearch(raw, cs, ftpDecodeCache)?.lowercase(Locale.getDefault())?.contains(query) == true
         }
     }
 
@@ -823,7 +820,7 @@ class FilesFragment : Fragment() {
             browseSource = BrowseSource.FTP
             ftpConfig = linkedNetworkConfig
             ftpResolvedCharset = configuredFtpCharsetName(linkedNetworkConfig)
-            ftpCurrentPath = normalizeFtpPath(session.currentPath.ifBlank { linkedNetworkConfig.defaultPath })
+            ftpCurrentPath = FilesNetworkGateway.normalizeFtpPath(session.currentPath.ifBlank { linkedNetworkConfig.defaultPath })
             selectedEntry = null
             loadEntries()
             return
@@ -831,7 +828,7 @@ class FilesFragment : Fragment() {
         if (linkedNetworkConfig?.protocol == NetworkProtocol.SMB) {
             browseSource = BrowseSource.SMB
             smbConfig = linkedNetworkConfig
-            smbCurrentPath = normalizeSmbPath(session.currentPath.ifBlank { linkedNetworkConfig.defaultPath })
+            smbCurrentPath = FilesNetworkGateway.normalizeSmbPath(session.currentPath.ifBlank { linkedNetworkConfig.defaultPath })
             selectedEntry = null
             loadEntries()
             return
@@ -851,8 +848,8 @@ class FilesFragment : Fragment() {
         val config = networkConfigRepository.getById(networkConfigId) ?: return
         val sessionName = "${config.protocol.name}: ${config.name}"
         val initialPath = when (config.protocol) {
-            NetworkProtocol.FTP -> normalizeFtpPath(config.defaultPath)
-            NetworkProtocol.SMB -> normalizeSmbPath(config.defaultPath)
+            NetworkProtocol.FTP -> FilesNetworkGateway.normalizeFtpPath(config.defaultPath)
+            NetworkProtocol.SMB -> FilesNetworkGateway.normalizeSmbPath(config.defaultPath)
         }
         val sessionId = folderSessionRepository.add(sessionName, initialPath)
         sessionSourceStore.setNetworkConfigId(sessionId, config.id)
@@ -1052,7 +1049,7 @@ class FilesFragment : Fragment() {
         currentDirLabel.text = buildCurrentDirText(defaultRootDir())
         val token = ++ftpLoadToken
         viewLifecycleOwner.lifecycleScope.launch {
-            val result = runCatching { fetchSmbEntries(config, smbCurrentPath) }
+            val result = runCatching { FilesSmbGateway.fetchEntries(config, smbCurrentPath, supportedExtensions) }
             if (!isAdded || token != ftpLoadToken) {
                 return@launch
             }
@@ -1071,41 +1068,10 @@ class FilesFragment : Fragment() {
         }
     }
 
-    private suspend fun fetchSmbEntries(config: NetworkConfigEntity, path: String): List<BrowserEntry> = withContext(Dispatchers.IO) {
-        val dir = SmbFile(buildSmbDirUrl(config, path), smbContext(config))
-        val children = dir.listFiles()?.toList().orEmpty()
-        val entries = children.map { child ->
-            val resolvedName = child.name.trimEnd('/').ifBlank { child.canonicalPath.substringAfterLast('/').trimEnd('/') }
-            val isDirectory = child.isDirectory
-            val childPath = joinSmbPath(path, resolvedName)
-            BrowserEntry(
-                localFile = null,
-                ftpPath = null,
-                smbPath = childPath,
-                name = resolvedName,
-                isDirectory = isDirectory,
-                sizeBytes = if (isDirectory) 0L else child.length(),
-                modifiedEpochMs = child.lastModified(),
-                modifiedText = null
-            )
-        }
-        val folders = entries.filter { it.isDirectory }.sortedBy { it.name.lowercase(Locale.getDefault()) }
-        val files = entries
-            .filter { !it.isDirectory && it.name.substringAfterLast('.', "").lowercase(Locale.getDefault()) in supportedExtensions }
-            .sortedBy { it.name.lowercase(Locale.getDefault()) }
-        folders + files
-    }
-
     private fun createSmbFolder(name: String) {
         val config = smbConfig ?: return
         runNetworkSmbOperation {
-            withContext(Dispatchers.IO) {
-                val targetPath = joinSmbPath(smbCurrentPath, name)
-                val target = SmbFile(buildSmbDirUrl(config, targetPath), smbContext(config))
-                if (!target.exists()) {
-                    target.mkdir()
-                }
-            }
+            FilesSmbGateway.createFolder(config, smbCurrentPath, name)
         }
     }
 
@@ -1133,287 +1099,36 @@ class FilesFragment : Fragment() {
 
     private fun renameSmbEntry(entry: BrowserEntry, newName: String) {
         val config = smbConfig ?: return
-        val oldPath = entry.smbPath ?: return
         runNetworkSmbOperation {
-            withContext(Dispatchers.IO) {
-                val parent = smbParentPath(oldPath)
-                val newPath = joinSmbPath(parent, newName)
-                val from = SmbFile(
-                    if (entry.isDirectory) buildSmbDirUrl(config, oldPath) else buildSmbFileUrl(config, oldPath),
-                    smbContext(config)
-                )
-                val to = SmbFile(
-                    if (entry.isDirectory) buildSmbDirUrl(config, newPath) else buildSmbFileUrl(config, newPath),
-                    smbContext(config)
-                )
-                from.renameTo(to)
-            }
+            FilesSmbGateway.renameEntry(config, entry, newName)
         }
     }
 
     private fun deleteSmbEntry(entry: BrowserEntry) {
         val config = smbConfig ?: return
-        val targetPath = entry.smbPath ?: return
         runNetworkSmbOperation {
-            withContext(Dispatchers.IO) {
-                val root = SmbFile(
-                    if (entry.isDirectory) buildSmbDirUrl(config, targetPath) else buildSmbFileUrl(config, targetPath),
-                    smbContext(config)
-                )
-                deleteSmbRecursively(root)
-            }
+            FilesSmbGateway.deleteEntry(config, entry)
         }
-    }
-
-    private fun deleteSmbRecursively(target: SmbFile) {
-        if (target.isDirectory) {
-            target.listFiles()?.forEach { child ->
-                deleteSmbRecursively(child)
-            }
-        }
-        target.delete()
     }
 
     private suspend fun fetchFtpEntries(config: NetworkConfigEntity, path: String): List<BrowserEntry> = withContext(Dispatchers.IO) {
         val url = URL(buildFtpUrl(config, path, "d"))
         val lines = url.openStream().bufferedReader(Charsets.ISO_8859_1).use { it.readLines() }
-        val rawEntries = lines.mapNotNull { parseFtpLine(it) }
-        val decidedCharset = resolveFtpCharsetForEntries(rawEntries.map { it.rawNameBytes })
+        val parseResult = FilesFtpCodec.parseEntries(
+            lines = lines,
+            path = path,
+            configuredCharset = configuredFtpCharsetName(ftpConfig),
+            previousResolvedCharset = ftpResolvedCharset,
+            supportedExtensions = supportedExtensions,
+            decodeCache = ftpDecodeCache
+        )
+        val decidedCharset = parseResult.resolvedCharset
         ftpResolvedCharset = decidedCharset
         Log.d(
             "FilesFragment",
-            "ftp_charset_decision charset=$decidedCharset source=FTP path=$path sample_count=${rawEntries.size}"
+            "ftp_charset_decision charset=$decidedCharset source=FTP path=$path sample_count=${lines.size}"
         )
-        val entries = rawEntries.mapNotNull { raw ->
-            val name = decodeFtpBytesWithCharset(raw.rawNameBytes, decidedCharset)
-                ?: String(raw.rawNameBytes, Charsets.ISO_8859_1)
-            if (name == "." || name == "..") {
-                null
-            } else {
-                val childPath = joinFtpPath(path, name)
-                BrowserEntry(
-                    localFile = null,
-                    ftpPath = childPath,
-                    name = name,
-                    isDirectory = raw.isDirectory,
-                    sizeBytes = raw.sizeBytes,
-                    modifiedEpochMs = null,
-                    modifiedText = raw.modifiedText,
-                    rawNameBytes = raw.rawNameBytes
-                )
-            }
-        }
-        val folders = entries.filter { it.isDirectory }.sortedBy { it.name.lowercase(Locale.getDefault()) }
-        val files = entries
-            .filter { !it.isDirectory && it.name.substringAfterLast('.', "").lowercase(Locale.getDefault()) in supportedExtensions }
-            .sortedBy { it.name.lowercase(Locale.getDefault()) }
-        folders + files
-    }
-
-    private fun parseFtpLine(rawLine: String): FtpRawEntry? {
-        val line = rawLine.trim()
-        if (line.isBlank() || line.startsWith("total ")) {
-            return null
-        }
-        
-        val unixEntry = parseUnixStyle(line)
-        if (unixEntry != null) {
-            return unixEntry
-        }
-
-        val dosEntry = parseDosStyle(line)
-        if (dosEntry != null) {
-            return dosEntry
-        }
-
-        return null
-    }
-
-    private fun parseUnixStyle(line: String): FtpRawEntry? {
-        val parts = line.split(Regex("\\s+"))
-        if (parts.size < 6) return null // Minimal: perms links owner size date name
-
-        // Check permission flag (d or - or l)
-        if (!parts[0].startsWith("d") && !parts[0].startsWith("-") && !parts[0].startsWith("l")) {
-             return null
-        }
-        val isDir = parts[0].startsWith("d")
-        
-        // Find date parts.
-        val months = setOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
-        var dateStartIdx = -1
-        var dateLength = 0
-        var dateStr = ""
-
-        // Scan for date start
-        // Min index for date is usually 5 (perms, links, owner, group, size).
-        // If group missing: 4.
-        for (i in 3 until parts.size - 1) {
-            // Month Check (Jan 01 12:00 or Jan 01 2024)
-            if (parts[i] in months && i + 2 < parts.size) {
-                if (parts[i+1].all { it.isDigit() }) {
-                    dateStartIdx = i
-                    dateLength = 3
-                    dateStr = parts.subList(i, i + 3).joinToString(" ")
-                    break
-                }
-            }
-            // ISO Check (YYYY-MM-DD)
-            if (parts[i].matches(Regex("\\d{4}-\\d{2}-\\d{2}"))) {
-                dateStartIdx = i
-                // Check if next is time (HH:MM)
-                if (i + 1 < parts.size && parts[i+1].matches(Regex("\\d{1,2}:\\d{2}(:\\d{2})?"))) {
-                    dateLength = 2
-                } else {
-                    dateLength = 1
-                }
-                dateStr = parts.subList(i, i + dateLength).joinToString(" ")
-                break
-            }
-        }
-
-        if (dateStartIdx == -1) return null
-
-        val sizeIdx = dateStartIdx - 1
-        val size = parts.getOrNull(sizeIdx)?.toLongOrNull() ?: 0L
-        
-        val nameStartPartIdx = dateStartIdx + dateLength
-        if (nameStartPartIdx >= parts.size) return null
-
-        // Locate filename start in original string to preserve spaces
-        var currentSearchIdx = 0
-        for (i in 0 until nameStartPartIdx) {
-            val part = parts[i]
-            val foundAt = line.indexOf(part, currentSearchIdx)
-            if (foundAt == -1) return null
-            currentSearchIdx = foundAt + part.length
-        }
-        
-        while (currentSearchIdx < line.length && line[currentSearchIdx].isWhitespace()) {
-            currentSearchIdx++
-        }
-        
-        if (currentSearchIdx >= line.length) return null
-        
-        val rawNameString = line.substring(currentSearchIdx)
-        val rawBytes = rawNameString.toByteArray(Charsets.ISO_8859_1)
-        return FtpRawEntry(
-            rawNameBytes = rawBytes,
-            isDirectory = isDir,
-            sizeBytes = size,
-            modifiedText = dateStr
-        )
-    }
-
-    private fun parseDosStyle(line: String): FtpRawEntry? {
-        val parts = line.split(Regex("\\s+"))
-        if (parts.size < 3) return null
-
-        var dateStartIdx = 0
-        var dateLength = 0
-        
-        // Check first part for date (MM-DD-YY or YYYY-MM-DD)
-        if (parts[0].matches(Regex("\\d{2}-\\d{2}-\\d{2}")) || parts[0].matches(Regex("\\d{4}-\\d{2}-\\d{2}"))) {
-             if (parts.size > 1 && (parts[1].matches(Regex("\\d{1,2}:\\d{2}.*")))) {
-                 dateLength = 2
-             } else {
-                 dateLength = 1
-             }
-        } else {
-            return null
-        }
-        
-        val metaIdx = dateStartIdx + dateLength
-        if (metaIdx >= parts.size) return null
-        
-        val metaPart = parts[metaIdx]
-        val isDir = metaPart.equals("<DIR>", ignoreCase = true)
-        val size = if (isDir) 0L else metaPart.toLongOrNull() ?: 0L
-        
-        val nameStartPartIdx = metaIdx + 1
-        if (nameStartPartIdx >= parts.size) return null
-        
-        val dateStr = parts.subList(0, dateLength).joinToString(" ")
-
-        // Locate name start
-        var currentSearchIdx = 0
-        for (i in 0 until nameStartPartIdx) {
-            val part = parts[i]
-            val foundAt = line.indexOf(part, currentSearchIdx)
-            if (foundAt == -1) return null
-            currentSearchIdx = foundAt + part.length
-        }
-         while (currentSearchIdx < line.length && line[currentSearchIdx].isWhitespace()) {
-            currentSearchIdx++
-        }
-        
-        if (currentSearchIdx >= line.length) return null
-        val rawNameString = line.substring(currentSearchIdx)
-        
-        val rawBytes = rawNameString.toByteArray(Charsets.ISO_8859_1)
-        return FtpRawEntry(
-            rawNameBytes = rawBytes,
-            isDirectory = isDir,
-            sizeBytes = size,
-            modifiedText = dateStr
-        )
-    }
-
-    private fun resolveFtpCharsetForEntries(rawNames: List<ByteArray>): String {
-        val configuredCharset = configuredFtpCharsetName(ftpConfig)
-        if (!configuredCharset.isNullOrBlank()) {
-            return configuredCharset
-        }
-        val sampled = rawNames.take(24)
-        if (sampled.isEmpty()) {
-            return ftpResolvedCharset ?: "UTF-8"
-        }
-        val candidates = listOfNotNull(
-            ftpResolvedCharset,
-            "UTF-8",
-            "GBK",
-            "Big5",
-            "Shift_JIS",
-            "ISO-8859-1"
-        ).distinct()
-        return candidates.maxByOrNull { charset ->
-            scoreFtpCharset(sampled, charset)
-        } ?: "UTF-8"
-    }
-
-    private fun scoreFtpCharset(rawNames: List<ByteArray>, charsetName: String): Int {
-        var score = 0
-        for (bytes in rawNames) {
-            val decoded = decodeFtpBytesWithCharset(bytes, charsetName) ?: return Int.MIN_VALUE / 2
-            if (decoded.isBlank()) {
-                score -= 30
-                continue
-            }
-            val replacementCount = decoded.count { it == '\uFFFD' }
-            val controlCount = decoded.count { it.code < 0x20 && it != '\n' && it != '\t' }
-            val suspiciousCount = decoded.count { it in listOf('Ã', 'â', '¤', '�') }
-            score += 120
-            score -= replacementCount * 80
-            score -= controlCount * 40
-            score -= suspiciousCount * 18
-        }
-        return score
-    }
-
-    private fun decodeFtpBytesWithCharset(bytes: ByteArray, charsetName: String): String? {
-        val cacheKey = "${charsetName}:${bytes.contentHashCode()}:${bytes.size}"
-        val cached = ftpDecodeCache[cacheKey]
-        if (cached != null) {
-            return cached
-        }
-        return runCatching {
-            val decoder = java.nio.charset.Charset.forName(charsetName).newDecoder()
-            decoder.onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
-            decoder.onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
-            decoder.decode(java.nio.ByteBuffer.wrap(bytes)).toString()
-        }.getOrNull()?.also {
-            ftpDecodeCache[cacheKey] = it
-        }
+        parseResult.entries
     }
 
     private fun openFtpFile(entry: BrowserEntry, isBackground: Boolean = false) {
@@ -1459,51 +1174,23 @@ class FilesFragment : Fragment() {
     }
 
     private suspend fun downloadFtpToLocal(config: NetworkConfigEntity, remotePath: String, displayName: String): File = withContext(Dispatchers.IO) {
-        val ftpCacheDir = requireContext().cacheDir.resolve("ftp_open")
-        val target = FilesNetworkGateway.createUniqueCacheFile(ftpCacheDir, displayName, "ftp:$remotePath")
-        val url = URL(buildFtpUrl(config, remotePath, "i"))
-        url.openStream().use { input ->
-            FileOutputStream(target).use { output ->
-                input.copyTo(output, 64 * 1024)
-            }
-        }
-        target
+        val charset = ftpEffectiveCharset(config)
+        FilesTransferGateway.downloadFtpToLocal(
+            cacheDir = requireContext().cacheDir,
+            config = config,
+            remotePath = remotePath,
+            displayName = displayName,
+            charset = charset
+        )
     }
 
     private suspend fun downloadSmbToLocal(config: NetworkConfigEntity, remotePath: String, displayName: String): File = withContext(Dispatchers.IO) {
-        val cacheDir = requireContext().cacheDir.resolve("smb_open")
-        val target = FilesNetworkGateway.createUniqueCacheFile(cacheDir, displayName, "smb:$remotePath")
-        val source = SmbFile(buildSmbFileUrl(config, remotePath), smbContext(config))
-        source.inputStream.use { input ->
-            FileOutputStream(target).use { output ->
-                input.copyTo(output, 64 * 1024)
-            }
-        }
-        target
-    }
-
-    private fun normalizeFtpPath(path: String): String {
-        return FilesNetworkGateway.normalizeFtpPath(path)
-    }
-
-    private fun joinFtpPath(parent: String, child: String): String {
-        return FilesNetworkGateway.joinFtpPath(parent, child)
-    }
-
-    private fun ftpParentPath(path: String): String {
-        return FilesNetworkGateway.ftpParentPath(path)
-    }
-
-    private fun normalizeSmbPath(path: String): String {
-        return FilesNetworkGateway.normalizeSmbPath(path)
-    }
-
-    private fun joinSmbPath(parent: String, child: String): String {
-        return FilesNetworkGateway.joinSmbPath(parent, child)
-    }
-
-    private fun smbParentPath(path: String): String {
-        return FilesNetworkGateway.smbParentPath(path)
+        FilesTransferGateway.downloadSmbToLocal(
+            cacheDir = requireContext().cacheDir,
+            config = config,
+            remotePath = remotePath,
+            displayName = displayName
+        )
     }
 
     private fun buildFtpUrl(config: NetworkConfigEntity, path: String, type: String): String {
@@ -1514,10 +1201,6 @@ class FilesFragment : Fragment() {
 
     private fun ftpEffectiveCharset(config: NetworkConfigEntity): String {
         return configuredFtpCharsetName(config) ?: ftpResolvedCharset ?: "UTF-8"
-    }
-
-    private fun encodeFtpSegment(value: String, charset: String): String {
-        return FilesNetworkGateway.encodeSegment(value, charset)
     }
 
     private fun isFtpAutoEncoding(config: NetworkConfigEntity?): Boolean {
@@ -1531,21 +1214,6 @@ class FilesFragment : Fragment() {
             return null
         }
         return encoding
-    }
-
-    private fun buildSmbDirUrl(config: NetworkConfigEntity, path: String): String {
-        return FilesNetworkGateway.buildSmbDirUrl(config, path)
-    }
-
-    private fun buildSmbFileUrl(config: NetworkConfigEntity, path: String): String {
-        return FilesNetworkGateway.buildSmbFileUrl(config, path)
-    }
-
-    private fun smbContext(config: NetworkConfigEntity): CIFSContext {
-        val user = config.username.trim().ifBlank { "guest" }
-        val pass = config.password
-        val auth = NtlmPasswordAuthenticator("", user, pass)
-        return SingletonContext.getInstance().withCredentials(auth)
     }
 
     private fun formatNetworkError(error: Throwable, protocol: NetworkProtocol): String {
@@ -1571,20 +1239,14 @@ class FilesFragment : Fragment() {
         updateStatus(getString(R.string.files_status_ftp_uploading), isError = false)
         viewLifecycleOwner.lifecycleScope.launch {
             val result = runCatching {
-                withContext(Dispatchers.IO) {
-                    val fileName = resolveUploadFileName(uri)
-                    val targetPath = joinFtpPath(ftpCurrentPath, fileName)
-                    val targetUrl = URL(buildFtpUrl(config, targetPath, "i"))
-                    val connection = targetUrl.openConnection().apply { doOutput = true }
-                    requireContext().contentResolver.openInputStream(uri).use { input ->
-                        if (input == null) {
-                            error("open input stream failed")
-                        }
-                        connection.getOutputStream().use { output ->
-                            input.copyTo(output, 64 * 1024)
-                        }
-                    }
-                }
+                val charset = ftpEffectiveCharset(config)
+                FilesTransferGateway.uploadToFtp(
+                    contentResolver = requireContext().contentResolver,
+                    uri = uri,
+                    config = config,
+                    currentPath = ftpCurrentPath,
+                    charset = charset
+                )
             }
             result.onSuccess {
                 updateStatus(getString(R.string.files_status_ftp_uploaded), isError = false)
@@ -1600,19 +1262,12 @@ class FilesFragment : Fragment() {
         updateStatus(getString(R.string.files_status_smb_uploading), isError = false)
         viewLifecycleOwner.lifecycleScope.launch {
             val result = runCatching {
-                withContext(Dispatchers.IO) {
-                    val fileName = resolveUploadFileName(uri)
-                    val targetPath = joinSmbPath(smbCurrentPath, fileName)
-                    val target = SmbFile(buildSmbFileUrl(config, targetPath), smbContext(config))
-                    requireContext().contentResolver.openInputStream(uri).use { input ->
-                        if (input == null) {
-                            error("open input stream failed")
-                        }
-                        target.outputStream.use { output ->
-                            input.copyTo(output, 64 * 1024)
-                        }
-                    }
-                }
+                FilesTransferGateway.uploadToSmb(
+                    contentResolver = requireContext().contentResolver,
+                    uri = uri,
+                    config = config,
+                    currentPath = smbCurrentPath
+                )
             }
             result.onSuccess {
                 updateStatus(getString(R.string.files_status_smb_uploaded), isError = false)
@@ -1648,48 +1303,15 @@ class FilesFragment : Fragment() {
         }
     }
 
-    private fun resolveUploadFileName(uri: Uri): String {
-        val resolver = requireContext().contentResolver
-        val fromCursor = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
-            ?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                    if (index >= 0) cursor.getString(index) else null
-                } else {
-                    null
-                }
-            }
-        val raw = fromCursor ?: uri.lastPathSegment ?: "upload_${System.currentTimeMillis()}.bin"
-        return raw.replace("/", "_").ifBlank { "upload_${System.currentTimeMillis()}.bin" }
-    }
-
     private fun addEntryToFavorites(entry: BrowserEntry) {
-        val favoritePath = when (browseSource) {
-            BrowseSource.LOCAL -> entry.localFile?.absolutePath
-            BrowseSource.FTP -> {
-                val config = ftpConfig ?: return
-                val remote = entry.ftpPath ?: return
-                val charset = ftpEffectiveCharset(config)
-                val encodedPath = normalizeFtpPath(remote)
-                    .split("/")
-                    .joinToString("/") { segment ->
-                        if (segment.isBlank()) "" else encodeFtpSegment(segment, charset)
-                    }
-                val user = config.username.trim().ifBlank { "anonymous" }
-                val encodedUser = encodeFtpSegment(user, charset)
-                "ftp://$encodedUser@${config.host}:${config.port}$encodedPath"
-            }
-            BrowseSource.SMB -> {
-                val config = smbConfig ?: return
-                val remote = entry.smbPath ?: return
-                "smb://${config.host}:${config.port}${normalizeSmbPath(remote)}"
-            }
-        } ?: return
-        val sourceType = when (browseSource) {
-            BrowseSource.LOCAL -> SourceType.LOCAL
-            BrowseSource.FTP -> SourceType.FTP
-            BrowseSource.SMB -> SourceType.SMB
-        }
+        val favoritePath = FilesFavoritePathBuilder.buildPath(
+            source = browseSource,
+            entry = entry,
+            ftpConfig = ftpConfig,
+            smbConfig = smbConfig,
+            ftpCharsetProvider = { ftpEffectiveCharset(it) }
+        ) ?: return
+        val sourceType = FilesFavoritePathBuilder.sourceTypeFor(browseSource)
         viewLifecycleOwner.lifecycleScope.launch {
             if (entry.isDirectory) {
                 favoritesRepository.addDirectory(
@@ -1735,35 +1357,8 @@ class FilesFragment : Fragment() {
             Toast.makeText(requireContext(), "No raw bytes available for this file (not FTP?)", Toast.LENGTH_SHORT).show()
             return
         }
-
-        val sb = StringBuilder()
-        sb.append("Raw Hex:\n")
-        sb.append(rawBytes.joinToString(" ") { "%02X".format(it) })
-        sb.append("\n\n")
-
-        val charsets = listOf(
-            "UTF-8",
-            "GBK",
-            "ISO-8859-1",
-            "Big5",
-            "Shift_JIS",
-            "windows-1251"
-        )
-
-        sb.append("Decoding Previews:\n")
-        for (csName in charsets) {
-            try {
-                val decoded = String(rawBytes, java.nio.charset.Charset.forName(csName))
-                sb.append("[$csName]: $decoded\n")
-            } catch (e: Exception) {
-                sb.append("[$csName]: <Error: ${e.message}>\n")
-            }
-        }
-        
         val currentEncoding = ftpConfig?.encoding ?: "Auto"
-        sb.append("\nCurrent Config: $currentEncoding")
-
-        val message = sb.toString()
+        val message = FilesFtpDiagnosticBuilder.buildMessage(rawBytes, currentEncoding)
 
         AlertDialog.Builder(requireContext())
             .setTitle("Encoding Diagnosis")

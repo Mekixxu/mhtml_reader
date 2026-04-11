@@ -36,6 +36,7 @@
 - `MoreFragment.kt`：设置、网络配置、导入导出等
 - `TabsOverviewFragment.kt`：阅读标签总览
 - `FoldersOverviewFragment.kt`：目录会话总览
+- `app/src/main/java/html_reader/files/`：Files 页面拆分后的辅助组件（FTP/SMB 网关、传输、标题刷新、模型）
 
 ## 5. 运行时装配索引
 
