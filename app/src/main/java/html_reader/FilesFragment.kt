@@ -7,7 +7,6 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
-import android.provider.DocumentsContract
 import android.provider.Settings
 import android.text.Editable
 import android.text.TextWatcher
@@ -34,6 +33,7 @@ import com.html_reader.files.FilesEntryDetailsBuilder
 import com.html_reader.files.FilesErrorFormatter
 import com.html_reader.files.FilesFavoritePathBuilder
 import com.html_reader.files.FilesNetworkGateway
+import com.html_reader.files.FilesPathHelper
 import com.html_reader.files.NetworkErrorTexts
 import com.html_reader.files.FilesSmbGateway
 import com.html_reader.files.FilesTitleRefresher
@@ -902,63 +902,31 @@ class FilesFragment : Fragment() {
     }
 
     private fun resolveSafTreeToLocalPath(uri: Uri): String? {
-        return runCatching {
-            val treeDocId = DocumentsContract.getTreeDocumentId(uri)
-            val split = treeDocId.split(":", limit = 2)
-            if (split.size != 2) {
-                null
-            } else {
-                val volume = split[0]
-                val relative = split[1].trim('/')
-                val base = if (volume.equals("primary", ignoreCase = true)) {
-                    "/storage/emulated/0"
-                } else {
-                    "/storage/$volume"
-                }
-                if (relative.isBlank()) base else "$base/$relative"
-            }
-        }.getOrNull()
+        return FilesPathHelper.resolveSafTreeToLocalPath(uri)
     }
 
     private fun buildCurrentDirText(dir: File): String {
-        val label = when (browseSource) {
-            BrowseSource.FTP -> "[FTP]"
-            BrowseSource.SMB -> "[SMB]"
-            BrowseSource.LOCAL -> {
-                if (currentNetworkLabel == "SD" || dir.absolutePath.startsWith("/storage/") && !dir.absolutePath.startsWith("/storage/emulated/0")) {
-                    "[SD]"
-                } else {
-                    "[LOCAL]"
-                }
-            }
+        return FilesPathHelper.buildCurrentDirText(
+            source = browseSource,
+            currentNetworkLabel = currentNetworkLabel,
+            localDir = dir,
+            ftpCurrentPath = ftpCurrentPath,
+            smbCurrentPath = smbCurrentPath
+        ) { label, path ->
+            getString(R.string.files_current_dir_network_template, label, path)
         }
-        val path = when (browseSource) {
-            BrowseSource.FTP -> ftpCurrentPath
-            BrowseSource.SMB -> smbCurrentPath
-            BrowseSource.LOCAL -> dir.absolutePath
-        }
-        return getString(R.string.files_current_dir_network_template, label, path)
     }
 
     private fun persistCurrentDir() {
         val sessionId = currentSessionId ?: return
-        if (browseSource == BrowseSource.FTP) {
-            val path = ftpCurrentPath
-            viewLifecycleOwner.lifecycleScope.launch {
-                folderSessionRepository.updateCurrentDir(sessionId, path)
-            }
-            return
-        }
-        if (browseSource == BrowseSource.SMB) {
-            val path = smbCurrentPath
-            viewLifecycleOwner.lifecycleScope.launch {
-                folderSessionRepository.updateCurrentDir(sessionId, path)
-            }
-            return
-        }
-        val dir = currentDir ?: return
+        val dir = FilesPathHelper.pathForPersist(
+            source = browseSource,
+            currentDir = currentDir,
+            ftpCurrentPath = ftpCurrentPath,
+            smbCurrentPath = smbCurrentPath
+        ) ?: return
         viewLifecycleOwner.lifecycleScope.launch {
-            folderSessionRepository.updateCurrentDir(sessionId, dir.absolutePath)
+            folderSessionRepository.updateCurrentDir(sessionId, dir)
         }
     }
 
@@ -1111,7 +1079,7 @@ class FilesFragment : Fragment() {
     }
 
     private suspend fun fetchFtpEntries(config: NetworkConfigEntity, path: String): List<BrowserEntry> = withContext(Dispatchers.IO) {
-        val url = URL(buildFtpUrl(config, path, "d"))
+        val url = URL(FilesNetworkGateway.buildFtpUrl(config, path, "d", ftpEffectiveCharset(config)))
         val lines = url.openStream().bufferedReader(Charsets.ISO_8859_1).use { it.readLines() }
         val parseResult = FilesFtpCodec.parseEntries(
             lines = lines,
@@ -1131,71 +1099,42 @@ class FilesFragment : Fragment() {
     }
 
     private fun openFtpFile(entry: BrowserEntry, isBackground: Boolean = false) {
-        val config = ftpConfig ?: return
-        val remotePath = entry.ftpPath ?: return
-        updateStatus(getString(R.string.files_status_ftp_downloading), isError = false)
-        viewLifecycleOwner.lifecycleScope.launch {
-            val result = runCatching {
-                downloadFtpToLocal(config, remotePath, entry.name)
+        openRemoteFile(
+            entry = entry,
+            isBackground = isBackground,
+            protocol = NetworkProtocol.FTP,
+            downloadingStatus = getString(R.string.files_status_ftp_downloading),
+            resolveConfig = { ftpConfig },
+            resolveRemotePath = { it.ftpPath },
+            downloader = { config, remotePath, displayName ->
+                FilesTransferGateway.downloadFtpToLocal(
+                    cacheDir = requireContext().cacheDir,
+                    config = config,
+                    remotePath = remotePath,
+                    displayName = displayName,
+                    charset = ftpEffectiveCharset(config)
+                )
             }
-            result.onSuccess { local ->
-                updateStatus(getString(R.string.files_status_done), isError = false)
-                if (isBackground) {
-                    openFileInBackground(local, entry.name)
-                } else {
-                    (activity as? MainActivity)?.showReaderModeWithPath(local.absolutePath)
-                }
-            }.onFailure { error ->
-                updateStatus(formatNetworkError(error, NetworkProtocol.FTP), isError = true)
-            }
-        }
+        )
     }
 
     private fun openSmbFile(entry: BrowserEntry, isBackground: Boolean = false) {
-        val config = smbConfig ?: return
-        val remotePath = entry.smbPath ?: return
-        updateStatus(getString(R.string.files_status_smb_downloading), isError = false)
-        viewLifecycleOwner.lifecycleScope.launch {
-            val result = runCatching {
-                downloadSmbToLocal(config, remotePath, entry.name)
+        openRemoteFile(
+            entry = entry,
+            isBackground = isBackground,
+            protocol = NetworkProtocol.SMB,
+            downloadingStatus = getString(R.string.files_status_smb_downloading),
+            resolveConfig = { smbConfig },
+            resolveRemotePath = { it.smbPath },
+            downloader = { config, remotePath, displayName ->
+                FilesTransferGateway.downloadSmbToLocal(
+                    cacheDir = requireContext().cacheDir,
+                    config = config,
+                    remotePath = remotePath,
+                    displayName = displayName
+                )
             }
-            result.onSuccess { local ->
-                updateStatus(getString(R.string.files_status_done), isError = false)
-                if (isBackground) {
-                    openFileInBackground(local, entry.name)
-                } else {
-                    (activity as? MainActivity)?.showReaderModeWithPath(local.absolutePath)
-                }
-            }.onFailure { error ->
-                updateStatus(formatNetworkError(error, NetworkProtocol.SMB), isError = true)
-            }
-        }
-    }
-
-    private suspend fun downloadFtpToLocal(config: NetworkConfigEntity, remotePath: String, displayName: String): File = withContext(Dispatchers.IO) {
-        val charset = ftpEffectiveCharset(config)
-        FilesTransferGateway.downloadFtpToLocal(
-            cacheDir = requireContext().cacheDir,
-            config = config,
-            remotePath = remotePath,
-            displayName = displayName,
-            charset = charset
         )
-    }
-
-    private suspend fun downloadSmbToLocal(config: NetworkConfigEntity, remotePath: String, displayName: String): File = withContext(Dispatchers.IO) {
-        FilesTransferGateway.downloadSmbToLocal(
-            cacheDir = requireContext().cacheDir,
-            config = config,
-            remotePath = remotePath,
-            displayName = displayName
-        )
-    }
-
-    private fun buildFtpUrl(config: NetworkConfigEntity, path: String, type: String): String {
-        val charset = ftpEffectiveCharset(config)
-        Log.d("FilesFragment", "ftp_charset_url=$charset auto=${isFtpAutoEncoding(config)}")
-        return FilesNetworkGateway.buildFtpUrl(config, path, type, charset)
     }
 
     private fun ftpEffectiveCharset(config: NetworkConfigEntity): String {
@@ -1230,33 +1169,30 @@ class FilesFragment : Fragment() {
     }
 
     private fun uploadDocumentToFtp(uri: Uri) {
-        val config = ftpConfig ?: return
-        updateStatus(getString(R.string.files_status_ftp_uploading), isError = false)
-        viewLifecycleOwner.lifecycleScope.launch {
-            val result = runCatching {
-                val charset = ftpEffectiveCharset(config)
+        uploadRemoteDocument(
+            protocol = NetworkProtocol.FTP,
+            uploadingStatus = getString(R.string.files_status_ftp_uploading),
+            uploadedStatus = getString(R.string.files_status_ftp_uploaded),
+            resolveConfig = { ftpConfig },
+            uploader = { config ->
                 FilesTransferGateway.uploadToFtp(
                     contentResolver = requireContext().contentResolver,
                     uri = uri,
                     config = config,
                     currentPath = ftpCurrentPath,
-                    charset = charset
+                    charset = ftpEffectiveCharset(config)
                 )
             }
-            result.onSuccess {
-                updateStatus(getString(R.string.files_status_ftp_uploaded), isError = false)
-                loadEntries()
-            }.onFailure { error ->
-                updateStatus(formatNetworkError(error, NetworkProtocol.FTP), isError = true)
-            }
-        }
+        )
     }
 
     private fun uploadDocumentToSmb(uri: Uri) {
-        val config = smbConfig ?: return
-        updateStatus(getString(R.string.files_status_smb_uploading), isError = false)
-        viewLifecycleOwner.lifecycleScope.launch {
-            val result = runCatching {
+        uploadRemoteDocument(
+            protocol = NetworkProtocol.SMB,
+            uploadingStatus = getString(R.string.files_status_smb_uploading),
+            uploadedStatus = getString(R.string.files_status_smb_uploaded),
+            resolveConfig = { smbConfig },
+            uploader = { config ->
                 FilesTransferGateway.uploadToSmb(
                     contentResolver = requireContext().contentResolver,
                     uri = uri,
@@ -1264,11 +1200,49 @@ class FilesFragment : Fragment() {
                     currentPath = smbCurrentPath
                 )
             }
+        )
+    }
+
+    private fun openRemoteFile(
+        entry: BrowserEntry,
+        isBackground: Boolean,
+        protocol: NetworkProtocol,
+        downloadingStatus: String,
+        resolveConfig: () -> NetworkConfigEntity?,
+        resolveRemotePath: (BrowserEntry) -> String?,
+        downloader: suspend (NetworkConfigEntity, String, String) -> File
+    ) {
+        val config = resolveConfig() ?: return
+        val remotePath = resolveRemotePath(entry) ?: return
+        updateStatus(downloadingStatus, isError = false)
+        viewLifecycleOwner.lifecycleScope.launch {
+            val result = runCatching { downloader(config, remotePath, entry.name) }
+            result.onSuccess { local ->
+                updateStatus(getString(R.string.files_status_done), isError = false)
+                if (isBackground) openFileInBackground(local, entry.name)
+                else (activity as? MainActivity)?.showReaderModeWithPath(local.absolutePath)
+            }.onFailure { error ->
+                updateStatus(formatNetworkError(error, protocol), isError = true)
+            }
+        }
+    }
+
+    private fun uploadRemoteDocument(
+        protocol: NetworkProtocol,
+        uploadingStatus: String,
+        uploadedStatus: String,
+        resolveConfig: () -> NetworkConfigEntity?,
+        uploader: suspend (NetworkConfigEntity) -> Unit
+    ) {
+        val config = resolveConfig() ?: return
+        updateStatus(uploadingStatus, isError = false)
+        viewLifecycleOwner.lifecycleScope.launch {
+            val result = runCatching { uploader(config) }
             result.onSuccess {
-                updateStatus(getString(R.string.files_status_smb_uploaded), isError = false)
+                updateStatus(uploadedStatus, isError = false)
                 loadEntries()
             }.onFailure { error ->
-                updateStatus(formatNetworkError(error, NetworkProtocol.SMB), isError = true)
+                updateStatus(formatNetworkError(error, protocol), isError = true)
             }
         }
     }
