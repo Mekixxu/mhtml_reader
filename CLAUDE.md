@@ -1,4 +1,171 @@
-请不要分析bundle_*.txt和apply_bundle.py。
-请仔细阅读以下的要求，严格按照设计要求和思路进行开发。
+# CLAUDE 协作开发指南（mhtml_reader）
 
-在得到用户明确的允许之前，不要删除或者增加任何功能。
+## 0. 协作硬性约束
+
+1. 不要分析 `bundle_*.txt` 和 `apply_bundle.py`。  
+2. 先理解需求与现有设计，再实施开发。  
+3. 在得到用户明确允许之前，不要删除任何功能。  
+
+---
+
+## 1. 项目说明
+
+### 1.1 应用用途
+
+`mhtml_reader` 是一个 Android 本地文档阅读与文件管理应用，核心目标：
+
+- 阅读：支持 `MHTML/MHT` 与 `PDF`。
+- 管理：本地目录、SAF 目录、网络目录（SMB/FTP）浏览与打开。
+- 体验：多标签阅读、阅读进度记录、收藏与历史、缓存与后台维护任务。
+
+### 1.2 技术栈与关键版本（以当前代码为准）
+
+- 平台：Android
+- 语言：Kotlin（`kotlin.code.style=official`）
+- UI：View + XML（非 Compose）
+- 构建：AGP `8.5.2` + Gradle `8.10`
+- JDK 目标：Java `17`（`sourceCompatibility/targetCompatibility/jvmTarget=17`）
+- SDK：
+  - `compileSdk = 36`
+  - `targetSdk = 36`
+  - `minSdk = 30`
+- 核心依赖：
+  - AndroidX（AppCompat、Lifecycle、WorkManager、WebKit）
+  - Room
+  - Hilt
+  - Coroutines
+  - jcifs-ng（SMB）
+
+### 1.3 架构概览
+
+- 工程形态：Android 多模块（`app` + `core-*` + `feature-*`）。
+- 运行方式：`app` 为 UI 壳与导航入口，主要业务实现位于 `core/` 目录。
+- 当前依赖装配：存在 Runtime 装配对象（如 `CoreRuntime`、`FilesRuntime`、`ReaderRuntime`）进行依赖组织。
+
+---
+
+## 2. Coding Style 要求
+
+### 2.1 通用规范
+
+1. 遵循 Kotlin 官方风格，保持简洁、可读、可维护。  
+2. 优先小函数与单一职责：普通函数实现体不超过 40 行；Fragment 内函数实现体不超过 60 行；超过阈值必须拆分。  
+3. 命名语义化：
+   - 类名/对象名：名词或名词短语
+   - 函数名：动词或动宾短语
+   - 常量：`UPPER_SNAKE_CASE`
+4. 避免魔法值，提取为常量或集中配置。
+5. 新增日志必须可检索且有上下文（模块名/场景/关键参数），避免噪音日志。
+
+### 2.2 Kotlin/Android 实践
+
+1. 空安全优先：先处理可空分支，减少 `!!`。  
+2. 协程必须绑定生命周期（如 `viewLifecycleOwner.lifecycleScope`），禁止悬挂任务泄漏。  
+3. I/O 与主线程职责明确：重操作在 `Dispatchers.IO`，UI 更新在主线程。  
+4. Fragment 中注意状态一致性：
+   - 先校验当前选中 tab/页面，再更新 UI 或提交副作用。
+   - 处理配置切换与重复回调的幂等性。  
+5. WebView/PDF 相关改动必须兼顾：
+   - 安全边界（外链、脚本、资源访问）
+   - 阅读体验（缩放/布局）
+   - 进度记录一致性
+
+### 2.3 提交与重构要求
+
+1. 不做无关重构；每次改动聚焦当前需求。  
+2. 若调整公共能力（如 `core/*`），需要同步检查引用方（`app` 页面与 Runtime 装配）。  
+3. 影响行为的改动，至少补充：
+   - 关键路径手工验证步骤
+   - 必要日志或测试说明
+
+---
+
+## 3. 开发环境说明
+
+### 3.1 本地环境基线
+
+- Android Studio（近期稳定版，支持 AGP 8.5+）
+- JDK 17
+- Android SDK Platform 36 + Build-Tools 36.1.0
+- Gradle 使用 Wrapper（`gradle-8.10-bin.zip`）
+
+### 3.2 常用命令（Windows / 项目根目录）
+
+```bash
+.\gradlew.bat :app:assembleDebug
+.\gradlew.bat :app:installDebug
+.\gradlew.bat test
+.\gradlew.bat connectedAndroidTest
+```
+
+### 3.3 构建与运行注意事项
+
+1. 本项目已在 `gradle.properties` 中配置部分 kapt 稳定性参数，避免随意回退。  
+2. Manifest 涉及存储与网络权限，调试文件系统能力前先确认设备授权状态。  
+3. 若改动数据库实体/DAO，需同步评估迁移策略（当前可见 `MIGRATION_2_3` 与 destructive fallback）。  
+
+---
+
+## 4. 项目文件结构（快速定位）
+
+> 目标：减少无效目录扫描，优先定位“入口文件 + 能力目录”。  
+> **强制要求：后续重构代码时，必须同步更新本节内容。**
+
+### 4.1 根目录关键项
+
+- `app/`：应用入口、页面 UI、导航与运行时装配
+- `core/`：核心业务实现（阅读、文件、数据、缓存、网络、任务）
+- `core-base/` `core-data/` `core-domain/` `core-storage/`：模块配置与基础能力
+- `feature-files/` `feature-reader/`：功能模块配置
+- `settings.gradle.kts`：模块注册入口
+- `app/build.gradle.kts`：应用构建配置与 SDK 版本
+
+### 4.2 App 页面快速定位
+
+- `app/src/main/java/html_reader/MainActivity.kt`：主导航与页面切换
+- `app/src/main/java/html_reader/HomeFragment.kt`：首页入口
+- `app/src/main/java/html_reader/FilesFragment.kt`：文件浏览/操作页
+- `app/src/main/java/html_reader/ReaderFragment.kt`：阅读页（WebView + PDF）
+- `app/src/main/java/html_reader/FavoritesFragment.kt`：收藏页
+- `app/src/main/java/html_reader/RecentsFragment.kt`：历史页
+- `app/src/main/java/html_reader/MoreFragment.kt`：更多/设置页
+- `app/src/main/java/html_reader/TabsOverviewFragment.kt`：阅读标签总览
+- `app/src/main/java/html_reader/FoldersOverviewFragment.kt`：目录会话总览
+
+### 4.3 Runtime 与核心入口
+
+- `app/src/main/java/html_reader/CoreRuntime.kt`：数据库与基础调度初始化
+- `app/src/main/java/html_reader/FilesRuntime.kt`：文件域依赖装配
+- `app/src/main/java/html_reader/ReaderRuntime.kt`：阅读域依赖装配
+
+### 4.4 Core 能力目录索引
+
+- `core/database/`：Room 数据库、DAO、实体、迁移
+- `core/data/repo/`：仓储实现（收藏/历史/网络配置/标题缓存）
+- `core/files/`：目录会话与目录观察
+- `core/fileops/`：复制/移动/删除/重命名/建目录
+- `core/reader/`：阅读器模型、标签、PDF/Web 适配、ViewModel
+- `core/vfs/`：虚拟文件系统抽象与本地实现
+- `core/network/`：网络配置与连接测试用例
+- `core/cache/`：缓存打开、淘汰与清理
+- `core/work/`：后台任务调度与 Worker
+- `core/settings/`：应用设置与 DataStore
+- `core/favorites/`：收藏树模型与用例
+- `core/title/`：标题提取能力（HTML/PDF）
+
+### 4.5 Web 阅读相关（高频）
+
+- `core/reader/web/WebViewConfigurator.kt`：WebView 渲染配置
+- `core/reader/web/BlockingResourceWebViewClient.kt`：外链/资源拦截策略
+- `core/reader/web/WebViewProgressTracker.kt`：阅读进度跟踪
+
+---
+
+## 5. 文档维护规则
+
+1. 变更以下任一内容时，必须同步更新本文件：
+   - 模块结构、目录职责、入口文件路径
+   - SDK/JDK/AGP/Gradle 版本基线
+   - 开发约束与协作规范
+2. 若新增跨模块能力，先补“目录索引与定位说明”，再提交代码。  
+3. 文档内容应与仓库当前状态一致，禁止保留过期说明。  
