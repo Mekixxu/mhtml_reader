@@ -33,12 +33,16 @@ import com.html_reader.files.FilesEntryDetailsBuilder
 import com.html_reader.files.FilesErrorFormatter
 import com.html_reader.files.FilesFavoritePathBuilder
 import com.html_reader.files.FilesNetworkGateway
+import com.html_reader.files.FilesOperationRunner
 import com.html_reader.files.FilesPathHelper
+import com.html_reader.files.FilesOpProgress
 import com.html_reader.files.NetworkErrorTexts
 import com.html_reader.files.FilesSmbGateway
+import com.html_reader.files.FilesStartupHandler
 import com.html_reader.files.FilesTitleRefresher
 import com.html_reader.files.FilesTransferGateway
 import com.html_reader.files.FilesUiBinder
+import com.html_reader.files.InitialOpenState
 import com.html_reader.files.isSamePathAs
 import com.html_reader.files.pathKey
 import kotlinx.coroutines.CancellationException
@@ -439,9 +443,24 @@ class FilesFragment : Fragment() {
     private fun restoreSessionAndLoad() {
         viewLifecycleOwner.lifecycleScope.launch {
             ensureDefaultSession()
-            openFromNetworkIfNeeded()
-            openFromPathIfNeeded()
-            openFromSafTreeIfNeeded()
+            val updated = FilesStartupHandler.applyInitialOpen(
+                state = InitialOpenState(
+                    networkConfigId = initialNetworkConfigId,
+                    startPath = initialStartPath,
+                    safTreeUri = initialSafTreeUri
+                ),
+                requestedNetworkEntry = requestedNetworkEntry,
+                networkConfigRepository = networkConfigRepository,
+                folderSessionRepository = folderSessionRepository,
+                sessionSourceStore = sessionSourceStore,
+                currentSessionStore = currentSessionStore,
+                onInvalidStartPath = {
+                    updateStatus(getString(R.string.files_status_invalid_start_path), isError = true)
+                }
+            )
+            initialNetworkConfigId = updated.networkConfigId
+            initialStartPath = updated.startPath
+            initialSafTreeUri = updated.safTreeUri
             val active = currentSessionStore.get()
             if (active != null) switchToSession(active) else loadEntries()
         }
@@ -734,49 +753,26 @@ class FilesFragment : Fragment() {
         operationProgress.progress = 0
         viewLifecycleOwner.lifecycleScope.launch {
             try {
-                executeFileOpUseCase.execute(request).collect { state ->
-                    when (state) {
-                        is FileOpState.Started -> {
-                            updateStatus(getString(R.string.files_status_working), isError = false)
-                            operationProgress.isIndeterminate = true
-                        }
-                        is FileOpState.Progress -> {
-                            if (state.total > 0) {
-                                operationProgress.isIndeterminate = false
-                                val total = state.total.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-                                val current = state.current.coerceAtMost(total.toLong()).toInt()
-                                operationProgress.max = total
-                                operationProgress.progress = current
-                            } else {
-                                operationProgress.isIndeterminate = true
-                            }
-                        }
-                        is FileOpState.Success -> {
-                            updateStatus(getString(R.string.files_status_done), isError = false)
-                            val resultPath = state.resultPath
-                            if (resultPath is VfsPath.LocalFile) {
-                                val file = File(resultPath.filePath)
-                                selectedEntry = BrowserEntry(
-                                    localFile = file,
-                                    name = file.name,
-                                    isDirectory = file.isDirectory,
-                                    sizeBytes = if (file.isDirectory) 0L else file.length(),
-                                    modifiedEpochMs = file.lastModified(),
-                                    modifiedText = null
-                                )
-                            }
-                        }
-                        is FileOpState.Error -> {
-                            val message = state.error.message ?: state.error.javaClass.simpleName
-                            updateStatus(message, isError = true)
-                        }
+                FilesOperationRunner.run(
+                    useCase = executeFileOpUseCase,
+                    request = request,
+                    onStarted = {
+                        updateStatus(getString(R.string.files_status_working), isError = false)
+                        operationProgress.isIndeterminate = true
+                    },
+                    onProgress = { progress ->
+                        applyOperationProgress(progress)
+                    },
+                    onSuccessPath = { resultPath ->
+                        updateStatus(getString(R.string.files_status_done), isError = false)
+                        selectResultPath(resultPath)
+                    },
+                    onError = { message ->
+                        updateStatus(message, isError = true)
                     }
-                }
-            } catch (e: CancellationException) {
-                updateStatus("Operation canceled", isError = true)
+                )
             } catch (t: Throwable) {
-                val message = t.message ?: t.javaClass.simpleName
-                updateStatus(message, isError = true)
+                updateStatus(t.message ?: t.javaClass.simpleName, isError = true)
             } finally {
                 operationRunning = false
                 setOperationButtonsEnabled(true)
@@ -785,6 +781,31 @@ class FilesFragment : Fragment() {
                 persistCurrentDir()
             }
         }
+    }
+
+    private fun applyOperationProgress(progress: FilesOpProgress) {
+        if (progress.indeterminate) {
+            operationProgress.isIndeterminate = true
+            return
+        }
+        operationProgress.isIndeterminate = false
+        operationProgress.max = progress.max
+        operationProgress.progress = progress.current
+    }
+
+    private fun selectResultPath(resultPath: VfsPath?) {
+        if (resultPath !is VfsPath.LocalFile) {
+            return
+        }
+        val file = File(resultPath.filePath)
+        selectedEntry = BrowserEntry(
+            localFile = file,
+            name = file.name,
+            isDirectory = file.isDirectory,
+            sizeBytes = if (file.isDirectory) 0L else file.length(),
+            modifiedEpochMs = file.lastModified(),
+            modifiedText = null
+        )
     }
 
     private suspend fun ensureDefaultSession() {
@@ -845,86 +866,15 @@ class FilesFragment : Fragment() {
         loadEntries()
     }
 
-    private suspend fun openFromNetworkIfNeeded() {
-        val networkConfigId = initialNetworkConfigId ?: return
-        val config = networkConfigRepository.getById(networkConfigId) ?: return
-        val sessionName = "${config.protocol.name}: ${config.name}"
-        val initialPath = when (config.protocol) {
-            NetworkProtocol.FTP -> FilesNetworkGateway.normalizeFtpPath(config.defaultPath)
-            NetworkProtocol.SMB -> FilesNetworkGateway.normalizeSmbPath(config.defaultPath)
-        }
-        val sessionId = folderSessionRepository.add(sessionName, initialPath)
-        sessionSourceStore.setNetworkConfigId(sessionId, config.id)
-        currentSessionStore.set(sessionId)
-        initialNetworkConfigId = null
-    }
-
-    private suspend fun openFromPathIfNeeded() {
-        val path = initialStartPath ?: return
-        val directory = File(path)
-        val active = currentSessionStore.get() ?: return
-        val hasNetworkBinding = sessionSourceStore.getNetworkConfigId(active) != null
-        if (hasNetworkBinding && requestedNetworkEntry) {
-            folderSessionRepository.updateCurrentDir(active, path)
-        } else if (directory.exists() && directory.isDirectory) {
-            if (hasNetworkBinding) {
-                sessionSourceStore.setNetworkConfigId(active, null)
-            }
-            folderSessionRepository.updateCurrentDir(active, directory.absolutePath)
-        } else if (hasNetworkBinding) {
-            folderSessionRepository.updateCurrentDir(active, path)
-        } else {
-            updateStatus(getString(R.string.files_status_invalid_start_path), isError = true)
-        }
-        initialStartPath = null
-    }
-
-    private suspend fun openFromSafTreeIfNeeded() {
-        val treeUriText = initialSafTreeUri ?: return
-        val uri = Uri.parse(treeUriText)
-        val active = currentSessionStore.get() ?: return
-        val hasNetworkBinding = sessionSourceStore.getNetworkConfigId(active) != null
-        val resolvedPath = resolveSafTreeToLocalPath(uri)
-        if (resolvedPath == null) {
-            updateStatus(getString(R.string.files_status_invalid_start_path), isError = true)
-        } else {
-            val directory = File(resolvedPath)
-            if (directory.exists() && directory.isDirectory) {
-                if (hasNetworkBinding) {
-                    sessionSourceStore.setNetworkConfigId(active, null)
-                }
-                folderSessionRepository.updateCurrentDir(active, directory.absolutePath)
-            } else {
-                updateStatus(getString(R.string.files_status_invalid_start_path), isError = true)
-            }
-        }
-        initialSafTreeUri = null
-    }
-
-    private fun resolveSafTreeToLocalPath(uri: Uri): String? {
-        return FilesPathHelper.resolveSafTreeToLocalPath(uri)
-    }
-
     private fun buildCurrentDirText(dir: File): String {
-        return FilesPathHelper.buildCurrentDirText(
-            source = browseSource,
-            currentNetworkLabel = currentNetworkLabel,
-            localDir = dir,
-            ftpCurrentPath = ftpCurrentPath,
-            smbCurrentPath = smbCurrentPath
-        ) { label, path ->
+        return FilesPathHelper.buildCurrentDirText(browseSource, currentNetworkLabel, dir, ftpCurrentPath, smbCurrentPath) { label, path ->
             getString(R.string.files_current_dir_network_template, label, path)
         }
     }
 
     private fun persistCurrentDir() {
         val sessionId = currentSessionId ?: return
-        val dir = FilesPathHelper.pathForPersist(
-            source = browseSource,
-            currentDir = currentDir,
-            ftpCurrentPath = ftpCurrentPath,
-            smbCurrentPath = smbCurrentPath
-        ) ?: return
+        val dir = FilesPathHelper.pathForPersist(browseSource, currentDir, ftpCurrentPath, smbCurrentPath) ?: return
         viewLifecycleOwner.lifecycleScope.launch {
             folderSessionRepository.updateCurrentDir(sessionId, dir)
         }
