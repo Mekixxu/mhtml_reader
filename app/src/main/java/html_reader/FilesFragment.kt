@@ -27,13 +27,20 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
+import com.html_reader.files.BrowseSource
+import com.html_reader.files.BrowserEntry
+import com.html_reader.files.FilesNetworkGateway
+import com.html_reader.files.FilesTitleRefresher
+import com.html_reader.files.FilesUiBinder
+import com.html_reader.files.FtpRawEntry
+import com.html_reader.files.isSamePathAs
+import com.html_reader.files.pathKey
 import kotlinx.coroutines.CancellationException
 import core.common.DefaultDispatcherProvider
 import core.data.repo.FavoritesRepository
 import core.data.repo.NetworkConfigRepository
 import core.data.repo.TitleCacheRepository
 import core.database.entity.NetworkConfigEntity
-import core.database.entity.TitleCacheEntity
 import core.database.entity.enums.FileType
 import core.database.entity.enums.NetworkProtocol
 import core.database.entity.enums.SourceType
@@ -67,66 +74,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class FilesFragment : Fragment() {
-    private enum class BrowseSource {
-        LOCAL,
-        FTP,
-        SMB
-    }
-
-    private data class BrowserEntry(
-        val localFile: File? = null,
-        val ftpPath: String? = null,
-        val smbPath: String? = null,
-        val name: String,
-        val isDirectory: Boolean,
-        val sizeBytes: Long,
-        val modifiedEpochMs: Long?,
-        val modifiedText: String? = null,
-        val rawNameBytes: ByteArray? = null
-    ) {
-        override fun equals(other: Any?): Boolean {
-            if (this === other) return true
-            if (javaClass != other?.javaClass) return false
-
-            other as BrowserEntry
-
-            if (localFile != other.localFile) return false
-            if (ftpPath != other.ftpPath) return false
-            if (smbPath != other.smbPath) return false
-            if (name != other.name) return false
-            if (isDirectory != other.isDirectory) return false
-            if (sizeBytes != other.sizeBytes) return false
-            if (modifiedEpochMs != other.modifiedEpochMs) return false
-            if (modifiedText != other.modifiedText) return false
-            if (rawNameBytes != null) {
-                if (other.rawNameBytes == null) return false
-                if (!rawNameBytes.contentEquals(other.rawNameBytes)) return false
-            } else if (other.rawNameBytes != null) return false
-
-            return true
-        }
-
-        override fun hashCode(): Int {
-            var result = localFile?.hashCode() ?: 0
-            result = 31 * result + (ftpPath?.hashCode() ?: 0)
-            result = 31 * result + (smbPath?.hashCode() ?: 0)
-            result = 31 * result + name.hashCode()
-            result = 31 * result + isDirectory.hashCode()
-            result = 31 * result + sizeBytes.hashCode()
-            result = 31 * result + (modifiedEpochMs?.hashCode() ?: 0)
-            result = 31 * result + (modifiedText?.hashCode() ?: 0)
-            result = 31 * result + (rawNameBytes?.contentHashCode() ?: 0)
-            return result
-        }
-    }
-
-    private data class FtpRawEntry(
-        val rawNameBytes: ByteArray,
-        val isDirectory: Boolean,
-        val sizeBytes: Long,
-        val modifiedText: String?
-    )
-
     private lateinit var queryInput: EditText
     private lateinit var sortSpinner: Spinner
     private lateinit var fontSizeSpinner: Spinner
@@ -166,6 +113,7 @@ class FilesFragment : Fragment() {
     private var ftpLoadToken: Long = 0L
     private var ftpResolvedCharset: String? = null
     private var titleRefreshJob: Job? = null
+    private lateinit var filesTitleRefresher: FilesTitleRefresher
     private var currentNameTextSizeSp: Float = 16f
     private val supportedExtensions = setOf("mht", "mhtml", "pdf", "html", "htm")
     private val displayTitleByPath = mutableMapOf<String, String>()
@@ -237,15 +185,16 @@ class FilesFragment : Fragment() {
     ): View = inflater.inflate(R.layout.fragment_files, container, false)
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        queryInput = view.findViewById(R.id.files_query_input)
-        sortSpinner = view.findViewById(R.id.files_sort_spinner)
-        fontSizeSpinner = view.findViewById(R.id.files_font_size_spinner)
-        currentDirLabel = view.findViewById(R.id.files_current_dir)
-        operationStatusLabel = view.findViewById(R.id.files_operation_status)
-        operationProgress = view.findViewById(R.id.files_operation_progress)
-        actionUpButton = view.findViewById(R.id.files_action_up)
-        actionCreateButton = view.findViewById(R.id.files_action_create)
-        listView = view.findViewById(R.id.files_list)
+        val ui = FilesUiBinder.bind(view)
+        queryInput = ui.queryInput
+        sortSpinner = ui.sortSpinner
+        fontSizeSpinner = ui.fontSizeSpinner
+        currentDirLabel = ui.currentDirLabel
+        operationStatusLabel = ui.operationStatusLabel
+        operationProgress = ui.operationProgress
+        actionUpButton = ui.actionUpButton
+        actionCreateButton = ui.actionCreateButton
+        listView = ui.listView
 
         adapter = object : ArrayAdapter<BrowserEntry>(requireContext(), R.layout.item_files_entry, displayedEntries) {
             override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
@@ -272,37 +221,19 @@ class FilesFragment : Fragment() {
                     }
                 }.joinToString("  •  ")
 
-                val selectedPrefix = if (item.isSelected(selectedEntry)) "▶ " else ""
+                val selectedPrefix = if (item.isSamePathAs(selectedEntry)) "▶ " else ""
                 
                 text1.text = "$selectedPrefix$typeLabel $namePart"
                 text1.setTextSize(currentNameTextSizeSp)
                 text2.text = metaPart
-                Log.d(
-                    "FilesFragment",
-                    "display_entry source=${browseSource.name} filename=$namePart title=${titlePart ?: ""}"
-                )
                 return view
             }
         }
         listView.adapter = adapter
         listView.isFastScrollEnabled = true
 
-        val dispatcherProvider = DefaultDispatcherProvider()
-        val fileSystem = LocalFileSystem(requireContext().applicationContext, dispatcherProvider)
-        val nameConflictResolver = NameConflictResolver(fileSystem, dispatcherProvider)
-        executeFileOpUseCase = ExecuteFileOpUseCase(fileSystem, nameConflictResolver, dispatcherProvider)
-        folderSessionRepository = FilesRuntime.folderSessionRepository(requireContext())
-        favoritesRepository = FilesRuntime.favoritesRepository(requireContext())
-        networkConfigRepository = FilesRuntime.networkConfigRepository(requireContext())
-        titleCacheRepository = FilesRuntime.titleCacheRepository(requireContext())
-        currentSessionStore = FilesRuntime.currentSessionStore(requireContext())
-        sessionSourceStore = FilesRuntime.sessionSourceStore(requireContext())
-        htmlTitleExtractor = HtmlTitleExtractor(DefaultDispatcherProvider())
-        readerViewModel = ReaderRuntime.viewModel(requireContext())
-        initialNetworkConfigId = arguments?.getLong(ARG_NETWORK_CONFIG_ID)?.takeIf { it > 0L }
-        requestedNetworkEntry = initialNetworkConfigId != null
-        initialStartPath = arguments?.getString(ARG_START_PATH)?.trim()?.takeIf { it.isNotBlank() }
-        initialSafTreeUri = arguments?.getString(ARG_SAF_TREE_URI)?.trim()?.takeIf { it.isNotBlank() }
+        initDependencies()
+        initOpenArguments()
 
         sortSpinner.adapter = ArrayAdapter(
             requireContext(),
@@ -478,18 +409,46 @@ class FilesFragment : Fragment() {
         }
 
         operationStatusLabel.text = getString(R.string.files_status_idle)
+        restoreSessionAndLoad()
+        observeSessionSwitch()
+        ensureStoragePermissionIfNeeded()
+    }
+
+    private fun initDependencies() {
+        val dispatcherProvider = DefaultDispatcherProvider()
+        val fileSystem = LocalFileSystem(requireContext().applicationContext, dispatcherProvider)
+        val nameConflictResolver = NameConflictResolver(fileSystem, dispatcherProvider)
+        executeFileOpUseCase = ExecuteFileOpUseCase(fileSystem, nameConflictResolver, dispatcherProvider)
+        folderSessionRepository = FilesRuntime.folderSessionRepository(requireContext())
+        favoritesRepository = FilesRuntime.favoritesRepository(requireContext())
+        networkConfigRepository = FilesRuntime.networkConfigRepository(requireContext())
+        titleCacheRepository = FilesRuntime.titleCacheRepository(requireContext())
+        currentSessionStore = FilesRuntime.currentSessionStore(requireContext())
+        sessionSourceStore = FilesRuntime.sessionSourceStore(requireContext())
+        htmlTitleExtractor = HtmlTitleExtractor(DefaultDispatcherProvider())
+        filesTitleRefresher = FilesTitleRefresher(titleCacheRepository, htmlTitleExtractor)
+        readerViewModel = ReaderRuntime.viewModel(requireContext())
+    }
+
+    private fun initOpenArguments() {
+        initialNetworkConfigId = arguments?.getLong(ARG_NETWORK_CONFIG_ID)?.takeIf { it > 0L }
+        requestedNetworkEntry = initialNetworkConfigId != null
+        initialStartPath = arguments?.getString(ARG_START_PATH)?.trim()?.takeIf { it.isNotBlank() }
+        initialSafTreeUri = arguments?.getString(ARG_SAF_TREE_URI)?.trim()?.takeIf { it.isNotBlank() }
+    }
+
+    private fun restoreSessionAndLoad() {
         viewLifecycleOwner.lifecycleScope.launch {
             ensureDefaultSession()
             openFromNetworkIfNeeded()
             openFromPathIfNeeded()
             openFromSafTreeIfNeeded()
             val active = currentSessionStore.get()
-            if (active != null) {
-                switchToSession(active)
-            } else {
-                loadEntries()
-            }
+            if (active != null) switchToSession(active) else loadEntries()
         }
+    }
+
+    private fun observeSessionSwitch() {
         viewLifecycleOwner.lifecycleScope.launch {
             currentSessionStore.observe().collect { sessionId ->
                 if (sessionId != null && sessionId != currentSessionId) {
@@ -497,11 +456,11 @@ class FilesFragment : Fragment() {
                 }
             }
         }
+    }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            if (!checkStoragePermission()) {
-                requestStoragePermission()
-            }
+    private fun ensureStoragePermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !checkStoragePermission()) {
+            requestStoragePermission()
         }
     }
 
@@ -604,26 +563,30 @@ class FilesFragment : Fragment() {
         }
         val dir = currentDirFile()
         currentDirLabel.text = buildCurrentDirText(dir)
-        val listed = dir.listFiles()?.toList().orEmpty()
-        val displayable = listed
-            .filter { it.isDirectory || it.hasSupportedReaderExtension() }
-            .map {
-                BrowserEntry(
-                    localFile = it,
-                    name = it.name,
-                    isDirectory = it.isDirectory,
-                    sizeBytes = if (it.isDirectory) 0L else it.length(),
-                    modifiedEpochMs = it.lastModified(),
-                    modifiedText = null
-                )
+        viewLifecycleOwner.lifecycleScope.launch {
+            val displayable = withContext(Dispatchers.IO) {
+                val listed = dir.listFiles()?.toList().orEmpty()
+                listed
+                    .filter { it.isDirectory || it.hasSupportedReaderExtension() }
+                    .map {
+                        BrowserEntry(
+                            localFile = it,
+                            name = it.name,
+                            isDirectory = it.isDirectory,
+                            sizeBytes = if (it.isDirectory) 0L else it.length(),
+                            modifiedEpochMs = it.lastModified(),
+                            modifiedText = null
+                        )
+                    }
             }
-        allEntries.clear()
-        allEntries.addAll(displayable)
-        displayTitleByPath.clear()
-        setLocalActionButtonsEnabled(true)
-        actionCreateButton.text = getString(R.string.action_new_folder)
-        renderEntries()
-        refreshTitlesAsync()
+            allEntries.clear()
+            allEntries.addAll(displayable)
+            displayTitleByPath.clear()
+            setLocalActionButtonsEnabled(true)
+            actionCreateButton.text = getString(R.string.action_new_folder)
+            renderEntries()
+            refreshTitlesAsync()
+        }
     }
 
     private fun renderEntries() {
@@ -720,14 +683,6 @@ class FilesFragment : Fragment() {
         val ext = name.substringAfterLast('.', "").lowercase(Locale.getDefault())
         return ext in supportedExtensions
     }
-
-    private fun BrowserEntry.isSelected(selected: BrowserEntry?): Boolean {
-        val selectedPath = selected?.localFile?.absolutePath ?: selected?.ftpPath ?: selected?.smbPath
-        val currentPath = localFile?.absolutePath ?: ftpPath ?: smbPath
-        return selectedPath != null && selectedPath == currentPath
-    }
-
-    private fun BrowserEntry.pathKey(): String? = localFile?.absolutePath ?: ftpPath ?: smbPath
 
     private fun currentDirFile(): File = currentDir ?: requireContext().filesDir
 
@@ -1505,11 +1460,7 @@ class FilesFragment : Fragment() {
 
     private suspend fun downloadFtpToLocal(config: NetworkConfigEntity, remotePath: String, displayName: String): File = withContext(Dispatchers.IO) {
         val ftpCacheDir = requireContext().cacheDir.resolve("ftp_open")
-        if (!ftpCacheDir.exists()) {
-            ftpCacheDir.mkdirs()
-        }
-        val safeName = displayName.replace(Regex("[\\\\/:*?\"<>|]"), "_")
-        val target = File(ftpCacheDir, safeName)
+        val target = FilesNetworkGateway.createUniqueCacheFile(ftpCacheDir, displayName, "ftp:$remotePath")
         val url = URL(buildFtpUrl(config, remotePath, "i"))
         url.openStream().use { input ->
             FileOutputStream(target).use { output ->
@@ -1521,11 +1472,7 @@ class FilesFragment : Fragment() {
 
     private suspend fun downloadSmbToLocal(config: NetworkConfigEntity, remotePath: String, displayName: String): File = withContext(Dispatchers.IO) {
         val cacheDir = requireContext().cacheDir.resolve("smb_open")
-        if (!cacheDir.exists()) {
-            cacheDir.mkdirs()
-        }
-        val safeName = displayName.replace(Regex("[\\\\/:*?\"<>|]"), "_")
-        val target = File(cacheDir, safeName)
+        val target = FilesNetworkGateway.createUniqueCacheFile(cacheDir, displayName, "smb:$remotePath")
         val source = SmbFile(buildSmbFileUrl(config, remotePath), smbContext(config))
         source.inputStream.use { input ->
             FileOutputStream(target).use { output ->
@@ -1536,77 +1483,33 @@ class FilesFragment : Fragment() {
     }
 
     private fun normalizeFtpPath(path: String): String {
-        val trimmed = path.trim()
-        if (trimmed.isBlank()) {
-            return "/"
-        }
-        val normalized = if (trimmed.startsWith("/")) trimmed else "/$trimmed"
-        return normalized.replace(Regex("/+"), "/")
+        return FilesNetworkGateway.normalizeFtpPath(path)
     }
 
     private fun joinFtpPath(parent: String, child: String): String {
-        val p = normalizeFtpPath(parent).trimEnd('/')
-        val c = child.trimStart('/')
-        return normalizeFtpPath("$p/$c")
+        return FilesNetworkGateway.joinFtpPath(parent, child)
     }
 
     private fun ftpParentPath(path: String): String {
-        val normalized = normalizeFtpPath(path).trimEnd('/')
-        if (normalized.isBlank() || normalized == "/") {
-            return "/"
-        }
-        val idx = normalized.lastIndexOf('/')
-        if (idx <= 0) {
-            return "/"
-        }
-        return normalized.substring(0, idx)
+        return FilesNetworkGateway.ftpParentPath(path)
     }
 
     private fun normalizeSmbPath(path: String): String {
-        val trimmed = path.trim()
-        if (trimmed.isBlank()) {
-            return "/"
-        }
-        val normalized = if (trimmed.startsWith("/")) trimmed else "/$trimmed"
-        return normalized.replace(Regex("/+"), "/")
+        return FilesNetworkGateway.normalizeSmbPath(path)
     }
 
     private fun joinSmbPath(parent: String, child: String): String {
-        val p = normalizeSmbPath(parent).trimEnd('/')
-        val c = child.trimStart('/')
-        return normalizeSmbPath("$p/$c")
+        return FilesNetworkGateway.joinSmbPath(parent, child)
     }
 
     private fun smbParentPath(path: String): String {
-        val normalized = normalizeSmbPath(path).trimEnd('/')
-        if (normalized.isBlank() || normalized == "/") {
-            return "/"
-        }
-        val idx = normalized.lastIndexOf('/')
-        if (idx <= 0) {
-            return "/"
-        }
-        return normalized.substring(0, idx)
+        return FilesNetworkGateway.smbParentPath(path)
     }
 
     private fun buildFtpUrl(config: NetworkConfigEntity, path: String, type: String): String {
         val charset = ftpEffectiveCharset(config)
         Log.d("FilesFragment", "ftp_charset_url=$charset auto=${isFtpAutoEncoding(config)}")
-        val user = config.username.trim().ifBlank { "anonymous" }
-        val pass = config.password.ifBlank { "anonymous@" }
-        val encodedUser = encodeFtpSegment(user, charset)
-        val encodedPass = encodeFtpSegment(pass, charset)
-        val normalized = normalizeFtpPath(path)
-        val encodedPath = normalized
-            .split("/")
-            .joinToString("/") { segment ->
-                if (segment.isBlank()) "" else encodeFtpSegment(segment, charset)
-            }
-        
-        // If listing directory (type=d), ensure trailing slash to force directory listing behavior
-        val finalPath = if (type == "d" && !encodedPath.endsWith("/")) "$encodedPath/" else encodedPath
-        
-        return "ftp://$encodedUser:$encodedPass@${config.host}:${config.port}$finalPath;type=$type"
+        return FilesNetworkGateway.buildFtpUrl(config, path, type, charset)
     }
 
     private fun ftpEffectiveCharset(config: NetworkConfigEntity): String {
@@ -1614,9 +1517,7 @@ class FilesFragment : Fragment() {
     }
 
     private fun encodeFtpSegment(value: String, charset: String): String {
-        return runCatching { URLEncoder.encode(value, charset) }
-            .getOrDefault(URLEncoder.encode(value, "UTF-8"))
-            .replace("+", "%20")
+        return FilesNetworkGateway.encodeSegment(value, charset)
     }
 
     private fun isFtpAutoEncoding(config: NetworkConfigEntity?): Boolean {
@@ -1633,22 +1534,11 @@ class FilesFragment : Fragment() {
     }
 
     private fun buildSmbDirUrl(config: NetworkConfigEntity, path: String): String {
-        val encodedPath = normalizeSmbPath(path)
-            .split("/")
-            .joinToString("/") { segment ->
-                if (segment.isBlank()) "" else URLEncoder.encode(segment, "UTF-8").replace("+", "%20")
-            }
-        val url = "smb://${config.host}:${config.port}$encodedPath"
-        return if (url.endsWith("/")) url else "$url/"
+        return FilesNetworkGateway.buildSmbDirUrl(config, path)
     }
 
     private fun buildSmbFileUrl(config: NetworkConfigEntity, path: String): String {
-        val encodedPath = normalizeSmbPath(path)
-            .split("/")
-            .joinToString("/") { segment ->
-                if (segment.isBlank()) "" else URLEncoder.encode(segment, "UTF-8").replace("+", "%20")
-            }
-        return "smb://${config.host}:${config.port}$encodedPath"
+        return FilesNetworkGateway.buildSmbFileUrl(config, path)
     }
 
     private fun smbContext(config: NetworkConfigEntity): CIFSContext {
@@ -1786,10 +1676,8 @@ class FilesFragment : Fragment() {
                         if (segment.isBlank()) "" else encodeFtpSegment(segment, charset)
                     }
                 val user = config.username.trim().ifBlank { "anonymous" }
-                val pass = config.password.ifBlank { "anonymous@" }
                 val encodedUser = encodeFtpSegment(user, charset)
-                val encodedPass = encodeFtpSegment(pass, charset)
-                "ftp://$encodedUser:$encodedPass@${config.host}:${config.port}$encodedPath"
+                "ftp://$encodedUser@${config.host}:${config.port}$encodedPath"
             }
             BrowseSource.SMB -> {
                 val config = smbConfig ?: return
@@ -1898,81 +1786,18 @@ class FilesFragment : Fragment() {
         val snapshot = allEntries.toList()
         titleRefreshJob = viewLifecycleOwner.lifecycleScope.launch {
             val localFiles = snapshot.filter { !it.isDirectory }.mapNotNull { it.localFile }
-            for (file in localFiles) {
-                val path = file.absolutePath
-                val cached = titleCacheRepository.get(path)
-                if (cached != null && cached.lastModified == file.lastModified()) {
-                    val normalizedTitle = normalizeDisplayTitle(cached.title, file.name)
-                    if (!normalizedTitle.isNullOrBlank()) {
-                        displayTitleByPath[path] = normalizedTitle
-                    }
-                }
-            }
-            renderEntries()
-            for (file in localFiles) {
-                val ext = file.name.substringAfterLast('.', "").lowercase(Locale.getDefault())
-                if (ext != "mht" && ext != "mhtml") {
-                    continue
-                }
-                val path = file.absolutePath
-                val cached = titleCacheRepository.get(path)
-                val cachedTitleUsable = cached?.let { normalizeDisplayTitle(it.title, file.name) } != null
-                if (cached != null && cached.lastModified == file.lastModified() && cachedTitleUsable) {
-                    continue
-                }
-                val title = htmlTitleExtractor.extractTitle(
-                    source = VfsPath.LocalFile(path),
-                    cacheFile = file,
-                    fileType = FileType.MHTML,
-                    maxBytesToRead = 256L * 1024L
-                )?.trim()
-                val normalizedTitle = normalizeDisplayTitle(title, file.name)
-                if (!normalizedTitle.isNullOrBlank()) {
-                    titleCacheRepository.upsert(
-                        TitleCacheEntity(
-                            path = path,
-                            title = normalizedTitle,
-                            lastModified = file.lastModified(),
-                            updatedAt = System.currentTimeMillis()
-                        )
-                    )
-                    displayTitleByPath[path] = normalizedTitle
+            filesTitleRefresher.refreshLocalTitles(
+                files = localFiles,
+                onCachedTitle = { path, title ->
+                    displayTitleByPath[path] = title
+                },
+                onResolvedTitle = { path, title ->
+                    displayTitleByPath[path] = title
                     renderEntries()
                 }
-            }
+            )
+            renderEntries()
         }
-    }
-
-    private fun normalizeDisplayTitle(rawTitle: String?, fileName: String): String? {
-        val title = rawTitle?.trim().orEmpty()
-        if (title.isBlank()) {
-            return null
-        }
-        val gateReason = titleRejectReason(title, fileName)
-        val gateHit = gateReason != null
-        Log.d(
-            "FilesFragment",
-            "title_gate_hit=$gateHit source=${browseSource.name} file=$fileName reason=${gateReason ?: "none"} title=$title"
-        )
-        return if (!gateHit) title else null
-    }
-
-    private fun titleRejectReason(title: String, fileName: String): String? {
-        if (title.equals(fileName, ignoreCase = true)) {
-            return "same_as_filename"
-        }
-        if (title.any { it.code < 0x20 && it != '\n' && it != '\t' }) {
-            return "control_character"
-        }
-        val replacementCount = title.count { it == '\uFFFD' }
-        if (replacementCount >= 2 || replacementCount.toFloat() / title.length.toFloat() > 0.08f) {
-            return "replacement_ratio_high"
-        }
-        val suspiciousCount = title.count { it in listOf('Ã', 'â', '¤', '�') }
-        if (suspiciousCount >= 3 && suspiciousCount.toFloat() / title.length.toFloat() > 0.12f) {
-            return "suspicious_symbol_density_high"
-        }
-        return null
     }
 
     private fun promptRename(entry: BrowserEntry) {
