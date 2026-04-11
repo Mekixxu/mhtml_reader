@@ -34,11 +34,13 @@ import com.html_reader.files.FilesErrorFormatter
 import com.html_reader.files.FilesFavoritePathBuilder
 import com.html_reader.files.FilesLocalEntries
 import com.html_reader.files.FilesNetworkGateway
+import com.html_reader.files.FilesNavigateUpHelper
 import com.html_reader.files.FilesOperationRunner
 import com.html_reader.files.FilesPathHelper
 import com.html_reader.files.FilesOpProgress
 import com.html_reader.files.FilesSessionPlanner
 import com.html_reader.files.FilesSortHelper
+import com.html_reader.files.FilesStatusUiHelper
 import com.html_reader.files.NetworkErrorTexts
 import com.html_reader.files.FilesSmbGateway
 import com.html_reader.files.FilesStartupHandler
@@ -515,49 +517,20 @@ class FilesFragment : Fragment() {
     }
 
     fun navigateUp(): Boolean {
-        if (browseSource == BrowseSource.FTP) {
-            val parent = FilesNetworkGateway.ftpParentPath(ftpCurrentPath)
-            if (parent == ftpCurrentPath || (ftpCurrentPath == "/" && parent == "/")) {
-                return false
-            }
-            ftpCurrentPath = parent
-            selectedEntry = null
-            loadEntries()
-            persistCurrentDir()
-            return true
+        val plan = FilesNavigateUpHelper.plan(browseSource, currentDirFile(), ftpCurrentPath, smbCurrentPath)
+        if (!plan.handled) return false
+        if (plan.localAccessDenied) {
+            if (!checkStoragePermission()) requestStoragePermission()
+            else Toast.makeText(requireContext(), "Cannot access parent directory", Toast.LENGTH_SHORT).show()
+            return false
         }
-        if (browseSource == BrowseSource.SMB) {
-            val parent = FilesNetworkGateway.smbParentPath(smbCurrentPath)
-            if (parent == smbCurrentPath || (smbCurrentPath == "/" && parent == "/")) {
-                return false
-            }
-            smbCurrentPath = parent
-            selectedEntry = null
-            loadEntries()
-            persistCurrentDir()
-            return true
-        }
-        val current = currentDirFile()
-        val parent = current.parentFile
-        if (parent != null && parent.exists() && parent.isDirectory) {
-            // Check if we are at the root of the allowed scope?
-            // For now, standard file system up.
-            // If current is root (e.g. /), parent might be null.
-            if (parent.listFiles() == null) {
-                if (!checkStoragePermission()) {
-                    requestStoragePermission()
-                } else {
-                    Toast.makeText(requireContext(), "Cannot access parent directory", Toast.LENGTH_SHORT).show()
-                }
-                 return false
-            }
-            currentDir = parent
-            selectedEntry = null
-            loadEntries()
-            persistCurrentDir()
-            return true
-        }
-        return false
+        if (plan.nextFtpPath != null) ftpCurrentPath = plan.nextFtpPath
+        if (plan.nextSmbPath != null) smbCurrentPath = plan.nextSmbPath
+        if (plan.nextLocalDir != null) currentDir = plan.nextLocalDir
+        selectedEntry = null
+        loadEntries()
+        persistCurrentDir()
+        return true
     }
 
     private fun formatSize(bytes: Long): String {
@@ -843,22 +816,9 @@ class FilesFragment : Fragment() {
         operationStatusLabel.setTextColor(resources.getColor(colorRes, null))
 
         if (isError) {
-            operationStatusLabel.setOnClickListener {
-                AlertDialog.Builder(requireContext())
-                    .setTitle("Error Details")
-                    .setMessage(value)
-                    .setPositiveButton(android.R.string.ok, null)
-                    .setNeutralButton("Copy") { _, _ ->
-                        val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                        val clip = android.content.ClipData.newPlainText("Error Message", value)
-                        clipboard.setPrimaryClip(clip)
-                        Toast.makeText(requireContext(), "Copied to clipboard", Toast.LENGTH_SHORT).show()
-                    }
-                    .show()
-            }
+            FilesStatusUiHelper.bindErrorClick(requireContext(), operationStatusLabel, value)
         } else {
-            operationStatusLabel.setOnClickListener(null)
-            operationStatusLabel.isClickable = false
+            FilesStatusUiHelper.clearErrorClick(operationStatusLabel)
         }
     }
 
