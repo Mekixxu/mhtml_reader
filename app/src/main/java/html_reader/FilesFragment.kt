@@ -32,10 +32,13 @@ import com.html_reader.files.FilesFtpDiagnosticBuilder
 import com.html_reader.files.FilesEntryDetailsBuilder
 import com.html_reader.files.FilesErrorFormatter
 import com.html_reader.files.FilesFavoritePathBuilder
+import com.html_reader.files.FilesLocalEntries
 import com.html_reader.files.FilesNetworkGateway
 import com.html_reader.files.FilesOperationRunner
 import com.html_reader.files.FilesPathHelper
 import com.html_reader.files.FilesOpProgress
+import com.html_reader.files.FilesSessionPlanner
+import com.html_reader.files.FilesSortHelper
 import com.html_reader.files.NetworkErrorTexts
 import com.html_reader.files.FilesSmbGateway
 import com.html_reader.files.FilesStartupHandler
@@ -584,18 +587,7 @@ class FilesFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             val displayable = withContext(Dispatchers.IO) {
                 val listed = dir.listFiles()?.toList().orEmpty()
-                listed
-                    .filter { it.isDirectory || it.hasSupportedReaderExtension() }
-                    .map {
-                        BrowserEntry(
-                            localFile = it,
-                            name = it.name,
-                            isDirectory = it.isDirectory,
-                            sizeBytes = if (it.isDirectory) 0L else it.length(),
-                            modifiedEpochMs = it.lastModified(),
-                            modifiedText = null
-                        )
-                    }
+                FilesLocalEntries.mapDisplayableEntries(listed, supportedExtensions)
             }
             allEntries.clear()
             allEntries.addAll(displayable)
@@ -642,27 +634,7 @@ class FilesFragment : Fragment() {
     }
 
     private fun sortEntriesWithinGroup(entries: List<BrowserEntry>): List<BrowserEntry> {
-        val comparator = when (sortSpinner.selectedItemPosition) {
-            SORT_INDEX_NAME_ASC -> compareBy<BrowserEntry> { it.name.lowercase(Locale.getDefault()) }
-                .thenBy { it.modifiedEpochMs ?: Long.MIN_VALUE }
-                .thenBy { it.sizeBytes }
-            SORT_INDEX_NAME_DESC -> compareByDescending<BrowserEntry> { it.name.lowercase(Locale.getDefault()) }
-                .thenByDescending { it.modifiedEpochMs ?: Long.MIN_VALUE }
-                .thenByDescending { it.sizeBytes }
-            SORT_INDEX_MODIFIED_DESC -> compareByDescending<BrowserEntry> { it.modifiedEpochMs ?: Long.MIN_VALUE }
-                .thenBy { it.name.lowercase(Locale.getDefault()) }
-                .thenByDescending { it.sizeBytes }
-            SORT_INDEX_SIZE_DESC -> compareByDescending<BrowserEntry> { it.sizeBytes }
-                .thenBy { it.name.lowercase(Locale.getDefault()) }
-                .thenByDescending { it.modifiedEpochMs ?: Long.MIN_VALUE }
-            SORT_INDEX_SIZE_ASC -> compareBy<BrowserEntry> { it.sizeBytes }
-                .thenBy { it.name.lowercase(Locale.getDefault()) }
-                .thenByDescending { it.modifiedEpochMs ?: Long.MIN_VALUE }
-            else -> compareBy<BrowserEntry> { it.name.lowercase(Locale.getDefault()) }
-                .thenByDescending { it.modifiedEpochMs ?: Long.MIN_VALUE }
-                .thenByDescending { it.sizeBytes }
-        }
-        return entries.sortedWith(comparator)
+        return FilesSortHelper.sortEntriesWithinGroup(entries, sortSpinner.selectedItemPosition)
     }
 
     private fun applyNameTextSize(index: Int) {
@@ -692,14 +664,6 @@ class FilesFragment : Fragment() {
             .edit()
             .putInt(KEY_NAME_FONT_SIZE_INDEX, normalized)
             .apply()
-    }
-
-    private fun File.hasSupportedReaderExtension(): Boolean {
-        if (isDirectory) {
-            return true
-        }
-        val ext = name.substringAfterLast('.', "").lowercase(Locale.getDefault())
-        return ext in supportedExtensions
     }
 
     private fun currentDirFile(): File = currentDir ?: requireContext().filesDir
@@ -825,43 +789,25 @@ class FilesFragment : Fragment() {
         val session = folderSessionRepository.getById(sessionId) ?: return
         currentSessionId = sessionId
         currentSessionStore.set(sessionId)
-        
-        // Restore sort option
-        val validSortIndex = session.sortOption.coerceIn(SORT_INDEX_NAME_ASC, SORT_INDEX_SIZE_ASC)
-        if (sortSpinner.selectedItemPosition != validSortIndex) {
-            sortSpinner.setSelection(validSortIndex, false)
-        }
-
         val linkedNetworkConfig = sessionSourceStore.getNetworkConfigId(sessionId)
             ?.let { networkConfigRepository.getById(it) }
-        currentNetworkLabel = linkedNetworkConfig?.let { "${it.protocol.name}://${it.host}" }
-        ftpConfig = null
-        ftpResolvedCharset = null
-        smbConfig = null
-        browseSource = BrowseSource.LOCAL
-        if (linkedNetworkConfig?.protocol == NetworkProtocol.FTP) {
-            browseSource = BrowseSource.FTP
-            ftpConfig = linkedNetworkConfig
-            ftpResolvedCharset = configuredFtpCharsetName(linkedNetworkConfig)
-            ftpCurrentPath = FilesNetworkGateway.normalizeFtpPath(session.currentPath.ifBlank { linkedNetworkConfig.defaultPath })
-            selectedEntry = null
-            loadEntries()
-            return
+        val plan = FilesSessionPlanner.build(
+            session = session,
+            linkedNetworkConfig = linkedNetworkConfig,
+            defaultRootDir = defaultRootDir(),
+            configuredFtpCharsetName = { configuredFtpCharsetName(it) }
+        )
+        if (sortSpinner.selectedItemPosition != plan.sortIndex) {
+            sortSpinner.setSelection(plan.sortIndex, false)
         }
-        if (linkedNetworkConfig?.protocol == NetworkProtocol.SMB) {
-            browseSource = BrowseSource.SMB
-            smbConfig = linkedNetworkConfig
-            smbCurrentPath = FilesNetworkGateway.normalizeSmbPath(session.currentPath.ifBlank { linkedNetworkConfig.defaultPath })
-            selectedEntry = null
-            loadEntries()
-            return
-        }
-        val preferred = File(session.currentPath)
-        currentDir = if (preferred.exists() && preferred.isDirectory) {
-            preferred
-        } else {
-            File(session.rootPath).takeIf { it.exists() && it.isDirectory } ?: defaultRootDir()
-        }
+        currentNetworkLabel = plan.currentNetworkLabel
+        browseSource = plan.source
+        ftpConfig = plan.ftpConfig
+        ftpResolvedCharset = plan.ftpResolvedCharset
+        ftpCurrentPath = plan.ftpCurrentPath
+        smbConfig = plan.smbConfig
+        smbCurrentPath = plan.smbCurrentPath
+        currentDir = plan.localDir
         selectedEntry = null
         loadEntries()
     }
