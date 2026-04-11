@@ -30,8 +30,11 @@ import com.html_reader.files.BrowseSource
 import com.html_reader.files.BrowserEntry
 import com.html_reader.files.FilesFtpCodec
 import com.html_reader.files.FilesFtpDiagnosticBuilder
+import com.html_reader.files.FilesEntryDetailsBuilder
+import com.html_reader.files.FilesErrorFormatter
 import com.html_reader.files.FilesFavoritePathBuilder
 import com.html_reader.files.FilesNetworkGateway
+import com.html_reader.files.NetworkErrorTexts
 import com.html_reader.files.FilesSmbGateway
 import com.html_reader.files.FilesTitleRefresher
 import com.html_reader.files.FilesTransferGateway
@@ -60,7 +63,6 @@ import core.vfs.local.LocalFileSystem
 import core.vfs.model.VfsPath
 import java.io.File
 import java.net.URL
-import java.net.URLEncoder
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
@@ -1011,27 +1013,11 @@ class FilesFragment : Fragment() {
             ftpResolvedCharset = configuredFtpCharsetName(config)
         }
         ftpDecodeCache.clear()
-        updateStatus(getString(R.string.files_status_ftp_loading), isError = false)
-        currentDirLabel.text = buildCurrentDirText(defaultRootDir())
-        val token = ++ftpLoadToken
-        viewLifecycleOwner.lifecycleScope.launch {
-            val result = runCatching { fetchFtpEntries(config, ftpCurrentPath) }
-            if (!isAdded || token != ftpLoadToken) {
-                return@launch
-            }
-            result.onSuccess { entries ->
-                allEntries.clear()
-                allEntries.addAll(entries)
-                renderEntries()
-                updateStatus(getString(R.string.files_status_done), isError = false)
-            }.onFailure { error ->
-                allEntries.clear()
-                displayedEntries.clear()
-                adapter.clear()
-                adapter.notifyDataSetChanged()
-                updateStatus(formatNetworkError(error, NetworkProtocol.FTP), isError = true)
-            }
-        }
+        loadRemoteEntries(
+            config = config,
+            protocol = NetworkProtocol.FTP,
+            loadingText = getString(R.string.files_status_ftp_loading)
+        ) { fetchFtpEntries(it, ftpCurrentPath) }
     }
 
     private fun loadSmbEntries() {
@@ -1045,11 +1031,24 @@ class FilesFragment : Fragment() {
         actionCreateButton.text = getString(R.string.action_new_folder)
         titleRefreshJob?.cancel()
         displayTitleByPath.clear()
-        updateStatus(getString(R.string.files_status_smb_loading), isError = false)
+        loadRemoteEntries(
+            config = config,
+            protocol = NetworkProtocol.SMB,
+            loadingText = getString(R.string.files_status_smb_loading)
+        ) { FilesSmbGateway.fetchEntries(it, smbCurrentPath, supportedExtensions) }
+    }
+
+    private fun loadRemoteEntries(
+        config: NetworkConfigEntity,
+        protocol: NetworkProtocol,
+        loadingText: String,
+        fetcher: suspend (NetworkConfigEntity) -> List<BrowserEntry>
+    ) {
+        updateStatus(loadingText, isError = false)
         currentDirLabel.text = buildCurrentDirText(defaultRootDir())
         val token = ++ftpLoadToken
         viewLifecycleOwner.lifecycleScope.launch {
-            val result = runCatching { FilesSmbGateway.fetchEntries(config, smbCurrentPath, supportedExtensions) }
+            val result = runCatching { fetcher(config) }
             if (!isAdded || token != ftpLoadToken) {
                 return@launch
             }
@@ -1063,7 +1062,7 @@ class FilesFragment : Fragment() {
                 displayedEntries.clear()
                 adapter.clear()
                 adapter.notifyDataSetChanged()
-                updateStatus(formatNetworkError(error, NetworkProtocol.SMB), isError = true)
+                updateStatus(formatNetworkError(error, protocol), isError = true)
             }
         }
     }
@@ -1217,21 +1216,17 @@ class FilesFragment : Fragment() {
     }
 
     private fun formatNetworkError(error: Throwable, protocol: NetworkProtocol): String {
-        val msg = error.message.orEmpty()
-        if (protocol == NetworkProtocol.FTP && msg.contains("530")) {
-            return getString(R.string.files_status_ftp_auth_failed)
-        }
-        if (protocol == NetworkProtocol.SMB && (msg.contains("logon failure", ignoreCase = true) || msg.contains("access denied", ignoreCase = true))) {
-            return getString(R.string.files_status_smb_auth_failed)
-        }
-        if (msg.contains("timed out", ignoreCase = true) || msg.contains("connect", ignoreCase = true)) {
-            return if (protocol == NetworkProtocol.FTP) {
-                getString(R.string.files_status_ftp_connection_failed)
-            } else {
-                getString(R.string.files_status_smb_connection_failed)
-            }
-        }
-        return msg.ifBlank { getString(R.string.files_status_invalid_start_path) }
+        return FilesErrorFormatter.format(
+            error = error,
+            protocol = protocol,
+            texts = NetworkErrorTexts(
+                ftpAuthFailed = getString(R.string.files_status_ftp_auth_failed),
+                smbAuthFailed = getString(R.string.files_status_smb_auth_failed),
+                ftpConnectionFailed = getString(R.string.files_status_ftp_connection_failed),
+                smbConnectionFailed = getString(R.string.files_status_smb_connection_failed),
+                defaultMessage = getString(R.string.files_status_invalid_start_path)
+            )
+        )
     }
 
     private fun uploadDocumentToFtp(uri: Uri) {
@@ -1333,17 +1328,7 @@ class FilesFragment : Fragment() {
     }
 
     private fun showEntryDetails(entry: BrowserEntry) {
-        val sourceLabel = when (browseSource) {
-            BrowseSource.LOCAL -> "LOCAL"
-            BrowseSource.FTP -> "FTP"
-            BrowseSource.SMB -> "SMB"
-        }
-        val path = entry.localFile?.absolutePath ?: entry.ftpPath ?: entry.smbPath ?: "-"
-        val size = if (entry.isDirectory) "-" else entry.sizeBytes.toString()
-        val modified = entry.modifiedText
-            ?: entry.modifiedEpochMs?.let { DateFormat.getDateTimeInstance().format(Date(it)) }
-            ?: "-"
-        val message = "Name: ${entry.name}\nType: ${if (entry.isDirectory) "DIR" else "FILE"}\nPath: $path\nSize: $size\nModified: $modified\nSource: $sourceLabel"
+        val message = FilesEntryDetailsBuilder.buildMessage(browseSource, entry)
         AlertDialog.Builder(requireContext())
             .setTitle(getString(R.string.files_action_details))
             .setMessage(message)
