@@ -95,7 +95,13 @@ class FoldersOverviewFragment : Fragment(R.layout.fragment_folders_overview) {
         adapter.addAll(
             sessions.map {
                 val selected = if (it.id == selectedId) "▶ " else ""
-                "$selected${it.name}  •  ${File(it.currentPath).absolutePath}"
+                val displayName = it.name
+                    .replace(Regex("(?i)^FTP:\\s*ftp://"), "FTP: ")
+                    .replace(Regex("(?i)^SMB:\\s*smb://"), "SMB: ")
+                val displayPath = File(it.currentPath).absolutePath
+                    .replace(Regex("(?i)^ftp://"), "")
+                    .replace(Regex("(?i)^smb://"), "")
+                "$selected$displayName  •  $displayPath"
             }
         )
         adapter.notifyDataSetChanged()

@@ -19,6 +19,7 @@ import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
+import com.html_reader.files.NetworkDisplayHelper
 import core.database.entity.FavoriteEntity
 import core.database.entity.HistoryEntity
 import core.database.entity.NetworkConfigEntity
@@ -288,7 +289,9 @@ class MoreFragment : Fragment() {
                 } else {
                     it.username
                 }
-                "$selected${it.protocol.name}  ${it.name}  •  ${it.host}:${it.port}  •  $authLabel  •  ${it.encoding}  •  ${it.defaultPath}"
+                val cleanName = NetworkDisplayHelper.trimProtocolPrefix(it.name, it.protocol)
+                val cleanPath = NetworkDisplayHelper.trimProtocolPrefix(it.defaultPath, it.protocol)
+                "$selected${it.protocol.name}  $cleanName  •  ${it.host}:${it.port}  •  $authLabel  •  ${it.encoding}  •  $cleanPath"
             }
         )
         adapter.notifyDataSetChanged()

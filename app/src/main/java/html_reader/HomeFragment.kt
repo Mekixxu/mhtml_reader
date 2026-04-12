@@ -16,6 +16,7 @@ import android.widget.Spinner
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
+import com.html_reader.files.NetworkDisplayHelper
 import core.data.repo.NetworkConfigRepository
 import core.database.entity.NetworkConfigEntity
 import core.database.entity.enums.NetworkProtocol
@@ -114,7 +115,10 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
             networkConfigRepository.observeAll().collect { configs ->
                 networkConfigs.clear()
                 networkConfigs.addAll(configs)
-                val display = configs.map { "${it.protocol.name}: ${it.name} (${it.host})" }.toMutableList()
+                val display = configs.map {
+                    val cleanName = NetworkDisplayHelper.trimProtocolPrefix(it.name, it.protocol)
+                    "${it.protocol.name}: $cleanName (${it.host})"
+                }.toMutableList()
                 display.add(getString(R.string.home_network_add_hint))
                 netAdapter.clear()
                 netAdapter.addAll(display)
