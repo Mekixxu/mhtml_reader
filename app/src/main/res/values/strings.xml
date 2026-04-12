@@ -139,8 +139,10 @@
     <string name="favorites_input_file_name">Item name</string>
     <string name="favorites_input_file_path">Path or URL</string>
     <string name="favorites_added">Favorite added</string>
+    <string name="favorites_added_network_credential_note">Favorite added. Network password is not saved; opening depends on network config.</string>
     <string name="favorites_updated">Favorite updated</string>
     <string name="favorites_removed">Favorite removed</string>
+    <string name="favorites_network_credential_required">No matching network config and no credentials in favorite. Please configure network account first.</string>
     <string name="favorites_invalid">INVALID</string>
     <string name="more_network_ready">Network configs ready</string>
     <string name="more_network_add">Add</string>

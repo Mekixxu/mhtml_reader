@@ -12,6 +12,18 @@ data class NetworkErrorTexts(
 
 object FilesErrorFormatter {
     fun format(error: Throwable, protocol: NetworkProtocol, texts: NetworkErrorTexts): String {
+        if (error is FilesTransferException.AuthFailed) {
+            return if (protocol == NetworkProtocol.FTP) texts.ftpAuthFailed else texts.smbAuthFailed
+        }
+        if (error is FilesTransferException.ConnectionFailed) {
+            return if (protocol == NetworkProtocol.FTP) texts.ftpConnectionFailed else texts.smbConnectionFailed
+        }
+        if (error is FilesTransferException.InputUnavailable) {
+            return "Selected document is not readable"
+        }
+        if (error is FilesTransferException.PermissionDenied) {
+            return "Permission denied while accessing remote target"
+        }
         val msg = error.message.orEmpty()
         if (protocol == NetworkProtocol.FTP && msg.contains("530")) {
             return texts.ftpAuthFailed

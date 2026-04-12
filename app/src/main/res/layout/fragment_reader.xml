@@ -61,7 +61,7 @@
             android:scaleType="fitCenter"
             android:visibility="gone" />
 
-        <WebView
+        <core.reader.web.MeasuringWebView
             android:id="@+id/reader_web_preview"
             android:layout_width="match_parent"
             android:layout_height="match_parent"

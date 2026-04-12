@@ -3,6 +3,7 @@ package com.html_reader.files
 import android.content.ContentResolver
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.util.Log
 import core.database.entity.NetworkConfigEntity
 import jcifs.smb.SmbFile
 import kotlinx.coroutines.Dispatchers
@@ -10,8 +11,12 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.net.URL
+import kotlin.system.measureTimeMillis
 
 object FilesTransferGateway {
+    private const val TAG = "FilesTransferGateway"
+    private const val BUFFER_SIZE = 64 * 1024
+
     suspend fun downloadFtpToLocal(
         cacheDir: File,
         config: NetworkConfigEntity,
@@ -19,15 +24,20 @@ object FilesTransferGateway {
         displayName: String,
         charset: String
     ): File = withContext(Dispatchers.IO) {
-        val targetDir = cacheDir.resolve("ftp_open")
-        val target = FilesNetworkGateway.createUniqueCacheFile(targetDir, displayName, "ftp:$remotePath")
-        val url = URL(FilesNetworkGateway.buildFtpUrl(config, remotePath, "i", charset))
-        url.openStream().use { input ->
-            FileOutputStream(target).use { output ->
-                input.copyTo(output, 64 * 1024)
+        runCatching {
+            val targetDir = cacheDir.resolve("ftp_open")
+            val target = FilesNetworkGateway.createUniqueCacheFile(targetDir, displayName, "ftp:$remotePath")
+            val url = URL(FilesNetworkGateway.buildFtpUrl(config, remotePath, "i", charset))
+            val elapsed = measureTimeMillis {
+                url.openStream().use { input ->
+                    FileOutputStream(target).use { output ->
+                        input.copyTo(output, BUFFER_SIZE)
+                    }
+                }
             }
-        }
-        target
+            Log.d(TAG, "download_ftp_done host=${config.host} path=$remotePath elapsedMs=$elapsed")
+            target
+        }.getOrElse { throw mapTransferError(it) }
     }
 
     suspend fun downloadSmbToLocal(
@@ -36,15 +46,20 @@ object FilesTransferGateway {
         remotePath: String,
         displayName: String
     ): File = withContext(Dispatchers.IO) {
-        val targetDir = cacheDir.resolve("smb_open")
-        val target = FilesNetworkGateway.createUniqueCacheFile(targetDir, displayName, "smb:$remotePath")
-        val source = SmbFile(FilesNetworkGateway.buildSmbFileUrl(config, remotePath), FilesSmbGateway.smbContext(config))
-        source.inputStream.use { input ->
-            FileOutputStream(target).use { output ->
-                input.copyTo(output, 64 * 1024)
+        runCatching {
+            val targetDir = cacheDir.resolve("smb_open")
+            val target = FilesNetworkGateway.createUniqueCacheFile(targetDir, displayName, "smb:$remotePath")
+            val source = SmbFile(FilesNetworkGateway.buildSmbFileUrl(config, remotePath), FilesSmbGateway.smbContext(config))
+            val elapsed = measureTimeMillis {
+                source.inputStream.use { input ->
+                    FileOutputStream(target).use { output ->
+                        input.copyTo(output, BUFFER_SIZE)
+                    }
+                }
             }
-        }
-        target
+            Log.d(TAG, "download_smb_done host=${config.host} path=$remotePath elapsedMs=$elapsed")
+            target
+        }.getOrElse { throw mapTransferError(it) }
     }
 
     suspend fun uploadToFtp(
@@ -54,18 +69,23 @@ object FilesTransferGateway {
         currentPath: String,
         charset: String
     ) = withContext(Dispatchers.IO) {
-        val fileName = resolveUploadFileName(contentResolver, uri)
-        val targetPath = FilesNetworkGateway.joinFtpPath(currentPath, fileName)
-        val targetUrl = URL(FilesNetworkGateway.buildFtpUrl(config, targetPath, "i", charset))
-        val connection = targetUrl.openConnection().apply { doOutput = true }
-        contentResolver.openInputStream(uri).use { input ->
-            if (input == null) {
-                error("open input stream failed")
+        runCatching {
+            val fileName = resolveUploadFileName(contentResolver, uri)
+            val targetPath = FilesNetworkGateway.joinFtpPath(currentPath, fileName)
+            val targetUrl = URL(FilesNetworkGateway.buildFtpUrl(config, targetPath, "i", charset))
+            val connection = targetUrl.openConnection().apply { doOutput = true }
+            val elapsed = measureTimeMillis {
+                contentResolver.openInputStream(uri).use { input ->
+                    if (input == null) {
+                        throw FilesTransferException.InputUnavailable()
+                    }
+                    connection.getOutputStream().use { output ->
+                        input.copyTo(output, BUFFER_SIZE)
+                    }
+                }
             }
-            connection.getOutputStream().use { output ->
-                input.copyTo(output, 64 * 1024)
-            }
-        }
+            Log.d(TAG, "upload_ftp_done host=${config.host} path=$targetPath elapsedMs=$elapsed")
+        }.getOrElse { throw mapTransferError(it) }
     }
 
     suspend fun uploadToSmb(
@@ -74,17 +94,39 @@ object FilesTransferGateway {
         config: NetworkConfigEntity,
         currentPath: String
     ) = withContext(Dispatchers.IO) {
-        val fileName = resolveUploadFileName(contentResolver, uri)
-        val targetPath = FilesNetworkGateway.joinSmbPath(currentPath, fileName)
-        val target = SmbFile(FilesNetworkGateway.buildSmbFileUrl(config, targetPath), FilesSmbGateway.smbContext(config))
-        contentResolver.openInputStream(uri).use { input ->
-            if (input == null) {
-                error("open input stream failed")
+        runCatching {
+            val fileName = resolveUploadFileName(contentResolver, uri)
+            val targetPath = FilesNetworkGateway.joinSmbPath(currentPath, fileName)
+            val target = SmbFile(FilesNetworkGateway.buildSmbFileUrl(config, targetPath), FilesSmbGateway.smbContext(config))
+            val elapsed = measureTimeMillis {
+                contentResolver.openInputStream(uri).use { input ->
+                    if (input == null) {
+                        throw FilesTransferException.InputUnavailable()
+                    }
+                    target.outputStream.use { output ->
+                        input.copyTo(output, BUFFER_SIZE)
+                    }
+                }
             }
-            target.outputStream.use { output ->
-                input.copyTo(output, 64 * 1024)
-            }
+            Log.d(TAG, "upload_smb_done host=${config.host} path=$targetPath elapsedMs=$elapsed")
+        }.getOrElse { throw mapTransferError(it) }
+    }
+
+    private fun mapTransferError(error: Throwable): Throwable {
+        if (error is FilesTransferException) {
+            return error
         }
+        val message = error.message.orEmpty()
+        if (message.contains("530") || message.contains("auth", ignoreCase = true) || message.contains("logon", ignoreCase = true)) {
+            return FilesTransferException.AuthFailed(error)
+        }
+        if (message.contains("access denied", ignoreCase = true) || message.contains("permission", ignoreCase = true)) {
+            return FilesTransferException.PermissionDenied(error)
+        }
+        if (message.contains("timed out", ignoreCase = true) || message.contains("connect", ignoreCase = true) || message.contains("refused", ignoreCase = true)) {
+            return FilesTransferException.ConnectionFailed(error)
+        }
+        return FilesTransferException.Unknown(error)
     }
 
     fun resolveUploadFileName(contentResolver: ContentResolver, uri: Uri): String {

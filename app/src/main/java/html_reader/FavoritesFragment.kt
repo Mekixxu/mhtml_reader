@@ -1,7 +1,6 @@
 package com.html_reader
 
 import android.app.AlertDialog
-import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -15,13 +14,13 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
+import com.html_reader.files.FilesNetworkOpenResolver
+import com.html_reader.files.NetworkOpenIssue
 import core.database.entity.FavoriteEntity
 import core.database.entity.NetworkConfigEntity
 import core.database.entity.enums.FavoriteType
-import core.database.entity.enums.NetworkProtocol
 import core.database.entity.enums.SourceType
 import java.io.File
-import java.net.URLDecoder
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
@@ -341,46 +340,29 @@ class FavoritesFragment : Fragment() {
     }
 
     private fun openNetworkFavorite(item: FavoriteEntity, effectiveType: FavoriteType) {
-        val uri = runCatching { Uri.parse(item.path) }.getOrNull() ?: run {
-            showShort(getString(R.string.favorites_unreachable))
-            return
-        }
-        val sourceType = item.sourceType
-        val protocol = when (sourceType) {
-            SourceType.FTP -> NetworkProtocol.FTP
-            SourceType.SMB -> NetworkProtocol.SMB
-            else -> null
-        } ?: run {
-            showShort(getString(R.string.favorites_unreachable))
-            return
-        }
-        val host = uri.host.orEmpty()
-        if (host.isBlank()) {
-            showShort(getString(R.string.favorites_unreachable))
-            return
-        }
-        val port = if (uri.port > 0) uri.port else if (protocol == NetworkProtocol.FTP) 21 else 445
         viewLifecycleOwner.lifecycleScope.launch {
             val repository = FilesRuntime.networkConfigRepository(requireContext())
-            val all = repository.getAll()
-            val config = all.firstOrNull { it.protocol == protocol && it.host.equals(host, ignoreCase = true) && it.port == port }
-                ?: createAdHocNetworkConfig(uri, protocol, host, port).let { temp ->
-                    val id = repository.add(temp)
-                    repository.getById(id)
-                }
-            if (config == null) {
+            val resolved = FilesNetworkOpenResolver.resolve(
+                path = item.path,
+                sourceType = item.sourceType,
+                favoriteType = effectiveType,
+                networkConfigs = repository.getAll()
+            )
+            if (resolved.issue == NetworkOpenIssue.MISSING_CREDENTIAL) {
+                showShort(getString(R.string.favorites_network_credential_required))
+                return@launch
+            }
+            if (resolved.issue != null) {
                 showShort(getString(R.string.favorites_unreachable))
                 return@launch
             }
-            val rawPath = URLDecoder.decode(uri.encodedPath.orEmpty().ifBlank { "/" }, "UTF-8")
-            val normalized = if (rawPath.startsWith("/")) rawPath else "/$rawPath"
-            val openPath = if (effectiveType == FavoriteType.FILE) {
-                val index = normalized.lastIndexOf('/')
-                if (index <= 0) "/" else normalized.substring(0, index)
-            } else {
-                normalized
+            val configId = resolved.configId ?: resolved.adHocConfig?.let { repository.add(it) }
+            val openPath = resolved.openPath
+            if (configId == null || openPath.isNullOrBlank()) {
+                showShort(getString(R.string.favorites_unreachable))
+                return@launch
             }
-            (activity as? MainActivity)?.showDirectoryModeWithNetworkPath(config.id, openPath)
+            (activity as? MainActivity)?.showDirectoryModeWithNetworkPath(configId, openPath)
         }
     }
 
@@ -403,28 +385,6 @@ class FavoritesFragment : Fragment() {
         return item.type
     }
 
-    private fun createAdHocNetworkConfig(
-        uri: Uri,
-        protocol: NetworkProtocol,
-        host: String,
-        port: Int
-    ): NetworkConfigEntity {
-        val userInfo = uri.userInfo.orEmpty()
-        val username = userInfo.substringBefore(':', "").let { URLDecoder.decode(it, "UTF-8") }
-        val password = userInfo.substringAfter(':', "").let { URLDecoder.decode(it, "UTF-8") }
-        val defaultPath = URLDecoder.decode(uri.encodedPath.orEmpty().ifBlank { "/" }, "UTF-8")
-        return NetworkConfigEntity(
-            id = 0L,
-            name = "Fav ${protocol.name} ${host}:${port}",
-            protocol = protocol,
-            host = host,
-            port = port,
-            username = username,
-            password = password,
-            defaultPath = if (defaultPath.startsWith("/")) defaultPath else "/$defaultPath"
-        )
-    }
-
     private fun isFavoriteReachable(item: FavoriteEntity): Boolean {
         return when (item.sourceType) {
             SourceType.LOCAL -> File(item.path).exists()
@@ -434,17 +394,12 @@ class FavoritesFragment : Fragment() {
     }
 
     private fun hasMatchingNetworkConfig(item: FavoriteEntity): Boolean {
-        val uri = runCatching { Uri.parse(item.path) }.getOrNull() ?: return false
-        val protocol = when (item.sourceType) {
-            SourceType.FTP -> NetworkProtocol.FTP
-            SourceType.SMB -> NetworkProtocol.SMB
-            else -> return false
-        }
-        val host = uri.host.orEmpty()
-        if (host.isBlank()) {
-            return false
-        }
-        val port = if (uri.port > 0) uri.port else if (protocol == NetworkProtocol.FTP) 21 else 445
-        return networkConfigs.any { it.protocol == protocol && it.host.equals(host, ignoreCase = true) && it.port == port }
+        val resolved = FilesNetworkOpenResolver.resolve(
+            path = item.path,
+            sourceType = item.sourceType,
+            favoriteType = resolveFavoriteType(item),
+            networkConfigs = networkConfigs
+        )
+        return resolved.issue == null
     }
 }

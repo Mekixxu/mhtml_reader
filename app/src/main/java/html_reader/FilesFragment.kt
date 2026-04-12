@@ -36,8 +36,9 @@ import com.html_reader.files.FilesLocalEntries
 import com.html_reader.files.FilesNetworkGateway
 import com.html_reader.files.FilesNavigateUpHelper
 import com.html_reader.files.FilesOperationRunner
+import com.html_reader.files.FilesOperationUiBinder
 import com.html_reader.files.FilesPathHelper
-import com.html_reader.files.FilesOpProgress
+import com.html_reader.files.FilesPermissionHelper
 import com.html_reader.files.FilesSessionPlanner
 import com.html_reader.files.FilesSortHelper
 import com.html_reader.files.FilesStatusUiHelper
@@ -58,6 +59,7 @@ import core.data.repo.TitleCacheRepository
 import core.database.entity.NetworkConfigEntity
 import core.database.entity.enums.FileType
 import core.database.entity.enums.NetworkProtocol
+import core.database.entity.enums.SourceType
 import core.fileops.model.ConflictStrategy
 import core.fileops.model.FileOpRequest
 import core.fileops.model.FileOpState
@@ -496,16 +498,11 @@ class FilesFragment : Fragment() {
 
     private fun requestStoragePermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            AlertDialog.Builder(requireContext())
-                .setTitle("Permission Required")
-                .setMessage("This app needs access to all files to function properly. Please grant the permission.")
-                .setPositiveButton(android.R.string.ok) { _, _ ->
-                    val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
-                    intent.data = Uri.parse("package:${requireContext().packageName}")
-                    startActivity(intent)
-                }
-                .setNegativeButton(android.R.string.cancel, null)
-                .show()
+            FilesPermissionHelper.showAllFilesPermissionDialog(requireContext()) {
+                val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                intent.data = Uri.parse("package:${requireContext().packageName}")
+                startActivity(intent)
+            }
         }
     }
 
@@ -684,10 +681,7 @@ class FilesFragment : Fragment() {
             return
         }
         operationRunning = true
-        setOperationButtonsEnabled(false)
-        operationProgress.visibility = View.VISIBLE
-        operationProgress.isIndeterminate = true
-        operationProgress.progress = 0
+        FilesOperationUiBinder.onBeforeRun(operationProgress, ::setOperationButtonsEnabled)
         viewLifecycleOwner.lifecycleScope.launch {
             try {
                 FilesOperationRunner.run(
@@ -698,7 +692,7 @@ class FilesFragment : Fragment() {
                         operationProgress.isIndeterminate = true
                     },
                     onProgress = { progress ->
-                        applyOperationProgress(progress)
+                        FilesOperationUiBinder.onProgress(operationProgress, progress)
                     },
                     onSuccessPath = { resultPath ->
                         updateStatus(getString(R.string.files_status_done), isError = false)
@@ -712,22 +706,11 @@ class FilesFragment : Fragment() {
                 updateStatus(t.message ?: t.javaClass.simpleName, isError = true)
             } finally {
                 operationRunning = false
-                setOperationButtonsEnabled(true)
-                operationProgress.visibility = View.GONE
+                FilesOperationUiBinder.onAfterRun(operationProgress, ::setOperationButtonsEnabled)
                 loadEntries()
                 persistCurrentDir()
             }
         }
-    }
-
-    private fun applyOperationProgress(progress: FilesOpProgress) {
-        if (progress.indeterminate) {
-            operationProgress.isIndeterminate = true
-            return
-        }
-        operationProgress.isIndeterminate = false
-        operationProgress.max = progress.max
-        operationProgress.progress = progress.current
     }
 
     private fun selectResultPath(resultPath: VfsPath?) {
@@ -1153,7 +1136,12 @@ class FilesFragment : Fragment() {
                     sourceType = sourceType
                 )
             }
-            Toast.makeText(requireContext(), getString(R.string.favorites_added), Toast.LENGTH_SHORT).show()
+            val messageRes = if (sourceType == SourceType.FTP || sourceType == SourceType.SMB) {
+                R.string.favorites_added_network_credential_note
+            } else {
+                R.string.favorites_added
+            }
+            Toast.makeText(requireContext(), getString(messageRes), Toast.LENGTH_SHORT).show()
         }
     }
 
