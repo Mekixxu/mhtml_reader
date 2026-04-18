@@ -37,6 +37,15 @@ class FavoritesRepository(
     }
 
     suspend fun addFile(parentId: Long?, name: String, path: String, sourceType: SourceType): Long = withContext(dispatcherProvider.io) {
+        val existing = dao.findByPath(
+            parentId = parentId,
+            path = path,
+            sourceType = sourceType,
+            type = FavoriteType.FILE
+        )
+        if (existing != null) {
+            return@withContext existing.id
+        }
         dao.insert(
             FavoriteEntity(
                 parentId = parentId,
@@ -50,6 +59,15 @@ class FavoritesRepository(
     }
 
     suspend fun addDirectory(parentId: Long?, name: String, path: String, sourceType: SourceType): Long = withContext(dispatcherProvider.io) {
+        val existing = dao.findByPath(
+            parentId = parentId,
+            path = path,
+            sourceType = sourceType,
+            type = FavoriteType.FOLDER
+        )
+        if (existing != null) {
+            return@withContext existing.id
+        }
         dao.insert(
             FavoriteEntity(
                 parentId = parentId,

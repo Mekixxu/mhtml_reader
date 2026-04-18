@@ -1,14 +1,18 @@
 package com.html_reader
 
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.Fragment
 import androidx.activity.OnBackPressedCallback
 import com.google.android.material.bottomnavigation.BottomNavigationView
+import java.io.File
+import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
     private lateinit var bottomNav: BottomNavigationView
@@ -202,6 +206,18 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun showReaderModeWithPath(path: String) {
+        val readerViewModel = ReaderRuntime.viewModel(this)
+        val normalized = normalizePathKey(path)
+        val existing = readerViewModel.tabs.value.firstOrNull { normalizePathKey(it.sourcePathRaw) == normalized }
+        if (existing != null) {
+            lifecycleScope.launch {
+                readerViewModel.switchTo(existing.tabId)
+            }
+            lastReaderTag = "reader_mode"
+            switchFragment("reader_mode", { ReaderFragment() }, forceReplace = false)
+            Toast.makeText(this, "This file is already opened", Toast.LENGTH_SHORT).show()
+            return
+        }
         lastReaderTag = "reader_mode"
         switchFragment("reader_mode", { ReaderFragment.newInstance(path) }, forceReplace = true)
     }
@@ -265,5 +281,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun getCurrentVisibleFragment(): Fragment? {
         return supportFragmentManager.fragments.lastOrNull { it.isVisible && !it.isHidden }
+    }
+
+    private fun normalizePathKey(path: String): String {
+        return runCatching { File(path).canonicalPath }.getOrDefault(File(path).absolutePath)
     }
 }

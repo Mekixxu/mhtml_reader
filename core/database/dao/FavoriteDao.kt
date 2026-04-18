@@ -7,6 +7,8 @@ import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
 import core.database.entity.FavoriteEntity
+import core.database.entity.enums.FavoriteType
+import core.database.entity.enums.SourceType
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -57,6 +59,18 @@ interface FavoriteDao {
     @Query("SELECT * FROM favorites")
     suspend fun getAll(): List<FavoriteEntity>
 
+    @Query(
+        """
+        SELECT * FROM favorites
+        WHERE type = :type
+          AND sourceType = :sourceType
+          AND path = :path
+          AND ((:parentId IS NULL AND parentId IS NULL) OR parentId = :parentId)
+        LIMIT 1
+        """
+    )
+    suspend fun findByPath(parentId: Long?, path: String, sourceType: SourceType, type: FavoriteType): FavoriteEntity?
+
     @Query("DELETE FROM favorites")
     suspend fun clearAll()
 
@@ -94,4 +108,3 @@ interface FavoriteDao {
         }
     }
 }
-
