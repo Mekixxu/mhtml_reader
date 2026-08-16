@@ -28,7 +28,11 @@ android {
                 "../core/cache",
                 "../core/domain",
                 "../core/title",
-                "../core/backup"
+                "../core/backup",
+                "../core/di",
+                "../core/network",
+                "../core/settings",
+                "../core/maintenance"
             )
         )
     }
@@ -41,6 +45,7 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation("com.google.dagger:hilt-android:2.52")
     implementation("javax.inject:javax.inject:1")
 }

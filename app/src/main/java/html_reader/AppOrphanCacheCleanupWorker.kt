@@ -11,7 +11,7 @@ class AppOrphanCacheCleanupWorker(
     params: WorkerParameters
 ) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
-        val daysUnused = inputData.getInt("daysUnused", 3)
+        val daysUnused = inputData.getInt("daysUnused", AppMaintenancePolicy.ORPHAN_DAYS_UNUSED)
         return runCatching {
             val cacheRoot = File(applicationContext.cacheDir, "app_cache")
             val activeKeys = ReaderRuntime.tabCacheRegistry(applicationContext).activeCacheKeys()

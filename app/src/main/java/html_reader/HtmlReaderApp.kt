@@ -5,62 +5,50 @@ import androidx.work.Data
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
-import core.cache.OrphanCacheCleaner
 import dagger.hilt.android.HiltAndroidApp
-import java.io.File
 import java.util.concurrent.TimeUnit
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
 
 @HiltAndroidApp
 class HtmlReaderApp : Application() {
-    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
         super.onCreate()
         scheduleMaintenanceWorkers()
-        cleanupOrphanCache()
     }
 
+    /**
+     * 唯一生效的维护调度入口。
+     *
+     * 参数统一从 AppMaintenancePolicy 读取；启动时不再额外执行一次全量清理，
+     * 避免与每日 Worker 形成双轨重复。core/work 目录中的 Hilt Worker 已编译
+     * 但未接入运行时，后续迁移 Hilt 时应删除这里的注册逻辑。
+     */
     private fun scheduleMaintenanceWorkers() {
-        appScope.launch {
-            val workManager = WorkManager.getInstance(this@HtmlReaderApp)
+        val workManager = WorkManager.getInstance(this)
 
-            val historyInput = Data.Builder()
-                .putInt("maxItems", 500)
-                .putInt("maxDays", 365)
-                .build()
-            val historyRequest = PeriodicWorkRequestBuilder<AppHistoryRetentionWorker>(1, TimeUnit.DAYS)
-                .setInputData(historyInput)
-                .build()
-            workManager.enqueueUniquePeriodicWork(
-                "history_retention_daily",
-                ExistingPeriodicWorkPolicy.UPDATE,
-                historyRequest
-            )
+        val historyInput = Data.Builder()
+            .putInt("maxItems", AppMaintenancePolicy.HISTORY_MAX_ITEMS)
+            .putInt("maxDays", AppMaintenancePolicy.HISTORY_MAX_DAYS)
+            .build()
+        val historyRequest = PeriodicWorkRequestBuilder<AppHistoryRetentionWorker>(1, TimeUnit.DAYS)
+            .setInputData(historyInput)
+            .build()
+        workManager.enqueueUniquePeriodicWork(
+            AppMaintenancePolicy.HISTORY_RETENTION_WORK_NAME,
+            ExistingPeriodicWorkPolicy.UPDATE,
+            historyRequest
+        )
 
-            val orphanInput = Data.Builder()
-                .putInt("daysUnused", 3)
-                .build()
-            val orphanRequest = PeriodicWorkRequestBuilder<AppOrphanCacheCleanupWorker>(1, TimeUnit.DAYS)
-                .setInputData(orphanInput)
-                .build()
-            workManager.enqueueUniquePeriodicWork(
-                "orphan_cache_cleanup_daily",
-                ExistingPeriodicWorkPolicy.UPDATE,
-                orphanRequest
-            )
-        }
-    }
-
-    private fun cleanupOrphanCache() {
-        appScope.launch {
-            val cacheRoot = File(cacheDir, "app_cache")
-            val activeKeys = ReaderRuntime.tabCacheRegistry(applicationContext).activeCacheKeys()
-            OrphanCacheCleaner(cacheRoot = cacheRoot, daysUnused = 3).clean(activeKeys)
-            TransferCacheCleaner.clean(cacheDir = cacheDir, daysUnused = 3)
-        }
+        val orphanInput = Data.Builder()
+            .putInt("daysUnused", AppMaintenancePolicy.ORPHAN_DAYS_UNUSED)
+            .build()
+        val orphanRequest = PeriodicWorkRequestBuilder<AppOrphanCacheCleanupWorker>(1, TimeUnit.DAYS)
+            .setInputData(orphanInput)
+            .build()
+        workManager.enqueueUniquePeriodicWork(
+            AppMaintenancePolicy.ORPHAN_CACHE_WORK_NAME,
+            ExistingPeriodicWorkPolicy.UPDATE,
+            orphanRequest
+        )
     }
 }

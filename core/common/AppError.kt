@@ -9,5 +9,6 @@ sealed class AppError(msg: String? = null, cause: Throwable? = null) : Throwable
     object OutOfSpace : AppError("Out of storage space")
     object InvalidUri : AppError("Invalid URI")
     object UnsupportedOperation : AppError("Unsupported Operation")
+    object Conflict : AppError("Conflict")
     data class IoError(val detail: String? = null, val t: Throwable? = null) : AppError(detail, t)
 }

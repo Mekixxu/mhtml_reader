@@ -26,6 +26,7 @@ android {
             listOf(
                 "../core/fileops",
                 "../core/files",
+                "../core/favorites",
                 "../core/session/repo",
                 "../core/session/di"
             )
@@ -38,6 +39,7 @@ dependencies {
     implementation(project(":core-storage"))
     implementation(project(":core-data"))
     implementation(project(":core-domain"))
+    implementation(project(":feature-reader"))
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("com.google.dagger:hilt-android:2.52")

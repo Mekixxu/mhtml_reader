@@ -1,8 +1,9 @@
 package core.maintenance
 
 import core.settings.repo.SettingsRepository
-import core.cache.OrphanCacheCleaner
 import core.cache.CacheEvictor
+import core.cache.OrphanCacheCleaner
+import core.cache.TabCacheRegistry
 import core.data.repo.HistoryRepository
 import core.data.repo.TitleCacheRepository
 import core.common.DispatcherProvider
@@ -22,14 +23,15 @@ class DefaultMaintenanceManager(
     private val cacheEvictor: CacheEvictor,
     private val historyRepo: HistoryRepository,
     private val titleCacheRepo: TitleCacheRepository,
+    private val tabCacheRegistry: TabCacheRegistry,
     private val dispatcherProvider: DispatcherProvider
 ) : MaintenanceManager {
 
     override suspend fun runStartupMaintenance() = withContext(dispatcherProvider.io) {
         val settings = settingsRepo.observe().first()
-        orphanCleaner.clean()
+        orphanCleaner.clean(tabCacheRegistry.activeCacheKeys())
         cacheEvictor.evictOldFiles(7L * 24 * 3600 * 1000) // 7 days retention
-        cacheEvictor.evictIfNeeded() // Use configured maxBytes (15GB)
+        cacheEvictor.evictIfNeeded() // Use configured maxBytes
         historyRepo.enforceRetention(settings.historyMaxItems, settings.historyMaxDays)
         val cutoff = System.currentTimeMillis() - settings.titleCacheMaxDays * 86400_000L
         titleCacheRepo.deleteOlderThan(cutoff)

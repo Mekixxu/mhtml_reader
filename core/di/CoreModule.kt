@@ -1,7 +1,10 @@
 package core.di
 
 import android.content.Context
+import core.cache.CacheEvictor
 import core.cache.CacheOpenManager
+import core.cache.OrphanCacheCleaner
+import core.cache.TabCacheRegistry
 import core.common.DefaultDispatcherProvider
 import core.common.DispatcherProvider
 import core.vfs.local.LocalFileSystem
@@ -9,6 +12,7 @@ import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
+import java.io.File
 import javax.inject.Singleton
 
 /**
@@ -31,12 +35,39 @@ object CoreModule {
 
     @Provides
     @Singleton
+    fun provideCacheRoot(context: Context): File = File(context.cacheDir, "app_cache")
+
+    @Provides
+    @Singleton
+    fun provideCacheEvictor(cacheRoot: File): CacheEvictor = CacheEvictor(
+        cacheRoot = cacheRoot,
+        maxBytes = core.settings.model.AppSettings.DEFAULT_CACHE_MAX_BYTES
+    )
+
+    @Provides
+    @Singleton
+    fun provideTabCacheRegistry(cacheRoot: File): TabCacheRegistry = TabCacheRegistry(cacheRoot)
+
+    @Provides
+    @Singleton
+    fun provideOrphanCacheCleaner(cacheRoot: File): OrphanCacheCleaner = OrphanCacheCleaner(
+        cacheRoot = cacheRoot,
+        daysUnused = 3
+    )
+
+    @Provides
+    @Singleton
     fun provideCacheOpenManager(
         context: Context,
+        cacheRoot: File,
         localFileSystem: LocalFileSystem,
-        dispatcherProvider: DispatcherProvider
-    ): CacheOpenManager {
-        val cacheDir = context.cacheDir.resolve("app_cache")
-        return CacheOpenManager(context, cacheDir, localFileSystem, dispatcherProvider)
-    }
+        dispatcherProvider: DispatcherProvider,
+        cacheEvictor: CacheEvictor
+    ): CacheOpenManager = CacheOpenManager(
+        context = context,
+        cacheRoot = cacheRoot,
+        fileSystem = localFileSystem,
+        dispatcherProvider = dispatcherProvider,
+        cacheEvictor = cacheEvictor
+    )
 }

@@ -14,8 +14,8 @@ android {
         applicationId = "com.html_reader"
         minSdk = 30
         targetSdk = 36
-        versionCode = 16
-        versionName = "1.0.15"
+        versionCode = 17
+        versionName = "1.0.16"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -49,7 +49,12 @@ android {
     }
 
     sourceSets {
-        getByName("main").java.srcDirs("src/main/java")
+        getByName("main").java.setSrcDirs(
+            listOf(
+                "src/main/java",
+                "../core/work"
+            )
+        )
     }
 }
 
@@ -83,6 +88,10 @@ dependencies {
     kapt("androidx.hilt:hilt-compiler:1.2.0")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("androidx.room:room-testing:2.6.1")
+    testImplementation("androidx.test:core-ktx:1.6.1")
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
 }

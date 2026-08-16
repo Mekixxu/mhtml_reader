@@ -9,8 +9,8 @@ class AppHistoryRetentionWorker(
     params: WorkerParameters
 ) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
-        val maxItems = inputData.getInt("maxItems", 500)
-        val maxDays = inputData.getInt("maxDays", 365)
+        val maxItems = inputData.getInt("maxItems", AppMaintenancePolicy.HISTORY_MAX_ITEMS)
+        val maxDays = inputData.getInt("maxDays", AppMaintenancePolicy.HISTORY_MAX_DAYS)
         return runCatching {
             ReaderRuntime.historyRepository(applicationContext).enforceRetention(maxItems, maxDays)
             Result.success()

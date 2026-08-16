@@ -29,7 +29,7 @@
   - `compileSdk = 36`
   - `targetSdk = 36`
   - `minSdk = 30`
-- 版本号：`versionName = 1.0.15` / `versionCode = 16`（见 `app/build.gradle.kts`）
+- 版本号：`versionName = 1.0.16` / `versionCode = 17`（见 `app/build.gradle.kts`）
 - 核心依赖（关键版本）：
   - AndroidX（AppCompat `1.7.0`、Lifecycle `2.8.4`、WorkManager `2.9.1`、WebKit `1.11.0`、Room `2.6.1`）
   - Hilt `2.52`
@@ -50,18 +50,18 @@
 
 | 模块 | srcDirs 映射（`build.gradle.kts`） |
 |---|---|
-| `app` | `src/main/java` |
+| `app` | `src/main/java`、`core/work` |
 | `core-base` | `core/common`、`core/vfs/model` |
 | `core-storage` | `src/main/java`、`core/vfs/impl`、`core/vfs/local` |
-| `core-data` | `core/database`、`core/data/repo`、`core/session/dao`、`core/session/entity` |
-| `core-domain` | `core/cache`、`core/domain`、`core/title`、`core/backup` |
-| `feature-files` | `core/fileops`、`core/files`、`core/session/repo`、`core/session/di` |
+| `core-data` | `core/database`、`core/data/repo`、`core/security`、`core/session/dao`、`core/session/entity` |
+| `core-domain` | `core/cache`、`core/domain`、`core/title`、`core/backup`、`core/di`、`core/network`、`core/settings`、`core/maintenance` |
+| `feature-files` | `core/fileops`、`core/files`、`core/favorites`、`core/session/repo`、`core/session/di` |
 | `feature-reader` | `core/reader` |
 
-**孤儿目录（暂不参与编译）**：`core/favorites`、`core/settings`、`core/network`、`core/work`、`core/maintenance`、`core/di`。
-⚠️ 在这些目录下新增/修改代码不会生效；其中的 Hilt Module、Worker、维护调度均为“已设计未接线”状态。若需启用，必须先加入某模块的 srcDirs（或物理迁移），并同步更新本文档。
+**当前无孤儿目录**：原先 `core/favorites`、`core/settings`、`core/network`、`core/work`、`core/maintenance`、`core/di` 均已通过上表接线参与编译。
+⚠️ `core/work`、`core/di`、`core/settings`、`core/maintenance` 及 `core/*/di` 下的 Hilt 装配当前已可编译，但运行时仍走 `HtmlReaderApp` + `App*Worker` 唯一维护路径；启用 Hilt 路径前必须同步改造 `HtmlReaderApp`/`CoreRuntime`，不得双轨调度。
 
-**同包重复告警**：`core/vfs/IFileSystem.kt`、`core/FileSystemResolver.kt` 与 `core-storage/src/main/java/core/vfs/` 下的同名实现重复，前者未编译、后者生效。改动 VFS 抽象时以 `core-storage` 侧为准。
+**同包重复告警**：根目录 `core/vfs/IFileSystem.kt`、`core/vfs/FileSystemResolver.kt` 已移入 `reviews/deprecated/`；生效的 VFS 抽象仅保留 `core-storage/src/main/java/core/vfs/` 一份。
 
 ---
 
@@ -179,20 +179,21 @@
 - `core/vfs/impl`、`core/vfs/local` `[C → core-storage]`：虚拟文件系统抽象与本地实现
 - `core/database` `[C → core-data]`：Room 数据库、DAO、实体、迁移（`Migration1To2`、`MIGRATION_2_3`、`MIGRATION_3_4` 均已注册）
 - `core/data/repo` `[C → core-data]`：仓储实现（收藏/历史/网络配置/标题缓存）
+- `core/security` `[C → core-data]`：`CredentialCipher` Android Keystore 凭据加解密
 - `core/session/*` `[C → core-data / feature-files]`：目录会话实体、DAO、仓储与用例
 - `core/cache` `[C → core-domain]`：缓存打开、淘汰与清理
 - `core/domain` `[C → core-domain]`：领域模型与用例（目录列表/标题/历史保留）
 - `core/title` `[C → core-domain]`：标题提取能力（HTML/PDF）
 - `core/backup` `[C → core-domain]`：JSON 导入导出
+- `core/di` `[C → core-domain]`：核心 DI 装配（已接线，运行时尚未完全启用）
+- `core/network` `[C → core-domain]`：网络配置用例与连接测试
+- `core/settings` `[C → core-domain]`：应用设置与 DataStore
+- `core/maintenance` `[C → core-domain]`：维护管理器（Hilt 路径已编译）
 - `core/fileops` `[C → feature-files]`：复制/移动/删除/重命名/建目录
 - `core/files` `[C → feature-files]`：目录会话用例
+- `core/favorites` `[C → feature-files]`：收藏树模型与用例
 - `core/reader` `[C → feature-reader]`：阅读器模型、标签、PDF/Web 适配、ViewModel
-- `core/favorites` `[O]`：收藏树模型与用例（未编译）
-- `core/settings` `[O]`：应用设置与 DataStore（未编译）
-- `core/network` `[O]`：网络配置用例与连接测试（未编译）
-- `core/work` `[O]`：后台任务调度与 Worker（未编译；实际生效的 Worker 位于 `app` 包内）
-- `core/maintenance` `[O]`：维护管理器（未编译）
-- `core/di` `[O]`：核心 DI 装配（未编译）
+- `core/work` `[C → app]`：Hilt Worker 与调度器（已编译；当前运行时仍以 `app` 包内 `App*Worker` 为唯一生效路径）
 
 ### 4.5 Web 阅读相关（高频）
 

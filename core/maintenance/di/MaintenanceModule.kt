@@ -5,6 +5,7 @@ import core.maintenance.MaintenanceManager
 import core.settings.repo.SettingsRepository
 import core.cache.OrphanCacheCleaner
 import core.cache.CacheEvictor
+import core.cache.TabCacheRegistry
 import core.data.repo.HistoryRepository
 import core.data.repo.TitleCacheRepository
 import core.common.DispatcherProvider
@@ -24,6 +25,7 @@ object MaintenanceModule {
         cacheEvictor: CacheEvictor,
         historyRepo: HistoryRepository,
         titleCacheRepo: TitleCacheRepository,
+        tabCacheRegistry: TabCacheRegistry,
         dispatcherProvider: DispatcherProvider
     ): MaintenanceManager = DefaultMaintenanceManager(
         settingsRepo,
@@ -31,6 +33,7 @@ object MaintenanceModule {
         cacheEvictor,
         historyRepo,
         titleCacheRepo,
+        tabCacheRegistry,
         dispatcherProvider
     )
 }
