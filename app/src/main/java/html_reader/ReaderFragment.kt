@@ -79,11 +79,15 @@ class ReaderFragment : Fragment() {
 
     companion object {
         private const val ARG_INITIAL_PATH = "arg_initial_path"
+        private const val ARG_INITIAL_VERSION_STAMP = "arg_initial_version_stamp"
         private const val STATE_SELECTED_TAB_ID = "reader_state_selected_tab_id"
 
-        fun newInstance(initialPath: String): ReaderFragment {
+        fun newInstance(initialPath: String, initialVersionStamp: String? = null): ReaderFragment {
             return ReaderFragment().apply {
-                arguments = bundleOf(ARG_INITIAL_PATH to initialPath)
+                arguments = bundleOf(
+                    ARG_INITIAL_PATH to initialPath,
+                    ARG_INITIAL_VERSION_STAMP to initialVersionStamp
+                )
             }
         }
     }
@@ -121,6 +125,7 @@ class ReaderFragment : Fragment() {
         
         selectedTabId = savedInstanceState?.getString(STATE_SELECTED_TAB_ID)
         val initialPath = arguments?.getString(ARG_INITIAL_PATH)
+        val initialVersionStampArg = arguments?.getString(ARG_INITIAL_VERSION_STAMP)
 
         pdfPrevButton.setOnClickListener {
             if (currentPdfPageIndex <= 0) {
@@ -179,7 +184,8 @@ class ReaderFragment : Fragment() {
                  val request = OpenRequest(
                     source = VfsPath.LocalFile(file.absolutePath),
                     fileName = file.name,
-                    fileType = inferType(file.name)
+                    fileType = inferType(file.name),
+                    versionStamp = initialVersionStampArg ?: buildLocalVersionStamp(file)
                  )
                  // Run on next frame to ensure UI is ready
                  view.post {
@@ -468,6 +474,13 @@ class ReaderFragment : Fragment() {
     private fun isSupportedLocalFile(fileName: String): Boolean {
         val ext = fileName.substringAfterLast('.', "").lowercase()
         return ext == "pdf" || ext == "mhtml" || ext == "mht"
+    }
+
+    private fun buildLocalVersionStamp(file: File): String? {
+        if (!file.exists() || !file.isFile) {
+            return null
+        }
+        return "${file.lastModified().coerceAtLeast(0L)}:${file.length().coerceAtLeast(0L)}"
     }
 
     private fun showShort(message: String) {

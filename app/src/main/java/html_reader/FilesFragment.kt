@@ -1251,6 +1251,7 @@ class FilesFragment : Fragment() {
             source = VfsPath.LocalFile(file.absolutePath),
             fileName = displayName,
             fileType = inferType(file.name),
+            versionStamp = buildLocalVersionStamp(file),
             background = true
         )
 
@@ -1283,4 +1284,11 @@ class FilesFragment : Fragment() {
     }
 
     private fun File.toVfsPath(): VfsPath.LocalFile = VfsPath.LocalFile(absolutePath)
+
+    private fun buildLocalVersionStamp(file: File): String? {
+        if (!file.exists() || !file.isFile) {
+            return null
+        }
+        return "${file.lastModified().coerceAtLeast(0L)}:${file.length().coerceAtLeast(0L)}"
+    }
 }

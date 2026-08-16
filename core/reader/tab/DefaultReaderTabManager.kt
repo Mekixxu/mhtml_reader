@@ -41,8 +41,10 @@ class DefaultReaderTabManager(
     private val tabStates = LinkedHashMap<String, ReaderTab>()
 
     override fun openNewTab(request: OpenRequest): Flow<OpenState> = flow {
-        // 0) 检查是否已存在相同 source path 的 tab，若有则直接复用
-        val existingTab = tabStates.values.firstOrNull { it.sourcePathRaw == request.source.raw }
+        // 0) 检查是否已存在同一路径且同版本的 tab，若有则直接复用
+        val existingTab = tabStates.values.firstOrNull {
+            it.sourcePathRaw == request.source.raw && it.versionStamp == request.versionStamp
+        }
         if (existingTab != null) {
             if (!request.background) {
                 _currentTabId.value = existingTab.tabId // Auto-switch to existing
@@ -69,6 +71,7 @@ class DefaultReaderTabManager(
             src = request.source,
             totalBytes = totalBytes,
             contentType = contentType,
+            versionStamp = request.versionStamp,
             extName = extName
         ).collect { result ->
             result.fold(
@@ -85,7 +88,12 @@ class DefaultReaderTabManager(
             return@flow
         }
 
-        val cacheKey = cacheOpenManager.generateCacheKey(request.source, contentType, totalBytes)
+        val cacheKey = cacheOpenManager.generateCacheKey(
+            src = request.source,
+            contentType = contentType,
+            size = totalBytes,
+            versionStamp = request.versionStamp
+        )
         val cacheFile = cacheOpenManager.resolveCacheFile(
             contentType = contentType,
             cacheKey = cacheKey,
@@ -110,6 +118,7 @@ class DefaultReaderTabManager(
         val tab = ReaderTab(
             tabId = tabId,
             sourcePathRaw = historyKey,
+            versionStamp = request.versionStamp,
             fileType = request.fileType,
             cacheKey = cacheKey,
             cacheFilePath = cacheFilePath,
@@ -179,4 +188,3 @@ class DefaultReaderTabManager(
         ContentType.UNKNOWN -> "tmp"
     }
 }
-

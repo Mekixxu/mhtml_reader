@@ -8,6 +8,7 @@ import core.database.entity.enums.FileType
 data class ReaderTab(
     val tabId: String,
     val sourcePathRaw: String,
+    val versionStamp: String?,
     val fileType: FileType,
     val cacheKey: String?,
     val cacheFilePath: String?,

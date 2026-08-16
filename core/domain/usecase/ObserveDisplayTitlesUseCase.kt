@@ -94,12 +94,19 @@ class ObserveDisplayTitlesUseCase(
                                 // 2.2 打开到缓存（包1统一链路）
                                 val contentType = guessContentType(e.name)
                                 val totalBytes = e.sizeBytes.coerceAtLeast(0L)
+                                val versionStamp = buildVersionStamp(e.lastModifiedEpochMs, totalBytes)
                                 cacheOpenManager.openToCache(
                                     src = e.path,
                                     totalBytes = totalBytes,
-                                    contentType = contentType
+                                    contentType = contentType,
+                                    versionStamp = versionStamp
                                 ).collectLatest { }
-                                val cacheKey = cacheOpenManager.generateCacheKey(e.path, contentType, totalBytes)
+                                val cacheKey = cacheOpenManager.generateCacheKey(
+                                    src = e.path,
+                                    contentType = contentType,
+                                    size = totalBytes,
+                                    versionStamp = versionStamp
+                                )
                                 val cacheFile = cacheOpenManager.resolveCacheFile(
                                     contentType = contentType,
                                     cacheKey = cacheKey,
@@ -163,6 +170,12 @@ class ObserveDisplayTitlesUseCase(
         ContentType.HTML -> "html"
         ContentType.WEB -> "web"
         ContentType.UNKNOWN -> "tmp"
+    }
+
+    private fun buildVersionStamp(lastModified: Long, sizeBytes: Long): String {
+        val stableModified = lastModified.coerceAtLeast(0L)
+        val stableSize = sizeBytes.coerceAtLeast(0L)
+        return "$stableModified:$stableSize"
     }
 }
 

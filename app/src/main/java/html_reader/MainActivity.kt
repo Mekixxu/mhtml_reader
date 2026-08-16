@@ -208,7 +208,10 @@ class MainActivity : AppCompatActivity() {
     fun showReaderModeWithPath(path: String) {
         val readerViewModel = ReaderRuntime.viewModel(this)
         val normalized = normalizePathKey(path)
-        val existing = readerViewModel.tabs.value.firstOrNull { normalizePathKey(it.sourcePathRaw) == normalized }
+        val versionStamp = buildLocalVersionStamp(path)
+        val existing = readerViewModel.tabs.value.firstOrNull {
+            normalizePathKey(it.sourcePathRaw) == normalized && it.versionStamp == versionStamp
+        }
         if (existing != null) {
             lifecycleScope.launch {
                 readerViewModel.switchTo(existing.tabId)
@@ -219,7 +222,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         lastReaderTag = "reader_mode"
-        switchFragment("reader_mode", { ReaderFragment.newInstance(path) }, forceReplace = true)
+        switchFragment("reader_mode", { ReaderFragment.newInstance(path, versionStamp) }, forceReplace = true)
     }
 
     fun showMorePage() {
@@ -285,5 +288,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun normalizePathKey(path: String): String {
         return runCatching { File(path).canonicalPath }.getOrDefault(File(path).absolutePath)
+    }
+
+    private fun buildLocalVersionStamp(path: String): String? {
+        val file = File(path)
+        if (!file.exists() || !file.isFile) {
+            return null
+        }
+        return "${file.lastModified().coerceAtLeast(0L)}:${file.length().coerceAtLeast(0L)}"
     }
 }

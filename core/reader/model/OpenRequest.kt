@@ -10,6 +10,7 @@ data class OpenRequest(
     val source: VfsPath,
     val fileName: String,
     val fileType: FileType,
+    val versionStamp: String? = null,
     val openMode: OpenMode = OpenMode.NEW_TAB,
     val referrerTabId: String? = null,
     val background: Boolean = false

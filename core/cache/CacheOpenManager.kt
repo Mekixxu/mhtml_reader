@@ -34,10 +34,16 @@ class CacheOpenManager(
         src: VfsPath,
         totalBytes: Long,
         contentType: ContentType,
+        versionStamp: String? = null,
         extName: String? = null
     ): Flow<Result<CopyProgress>> = flow {
         // 生成cacheKey
-        val cacheKey = generateCacheKey(src, contentType, totalBytes)
+        val cacheKey = generateCacheKey(
+            src = src,
+            contentType = contentType,
+            size = totalBytes,
+            versionStamp = versionStamp
+        )
         val typeDir = cacheRoot.resolve(contentType.name.lowercase())
         typeDir.mkdirs()
         val cacheDir = typeDir.resolve(cacheKey)
@@ -97,9 +103,15 @@ class CacheOpenManager(
         emit(Result.success(CopyProgress(totalBytes, totalBytes)))
     }.flowOn(dispatcherProvider.io)
 
-    fun generateCacheKey(src: VfsPath, contentType: ContentType, size: Long): String {
+    fun generateCacheKey(
+        src: VfsPath,
+        contentType: ContentType,
+        size: Long,
+        versionStamp: String? = null
+    ): String {
         val id = src.raw
-        val key = "${contentType.name}:${id}:${size}"
+        val versionPart = versionStamp ?: "size:$size"
+        val key = "${contentType.name}:${id}:${versionPart}"
         return HashUtils.sha256(key)
     }
 
