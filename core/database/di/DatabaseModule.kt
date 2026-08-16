@@ -18,8 +18,8 @@ import javax.inject.Singleton
 
 /**
  * 注意：
- * - fallbackToDestructiveMigration() 只能在 Debug/Dev 使用
- * - Release 必须提供 Migration（哪怕是空的占位，也要显式声明策略）
+ * - fallbackToDestructiveMigration() 仅在 DEBUG 构建启用
+ * - Release 必须提供完整 Migration（1->2、2->3、3->4 均已注册）
  */
 @Module
 @InstallIn(SingletonComponent::class)

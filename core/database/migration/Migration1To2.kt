@@ -4,7 +4,8 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 /**
- * Room数据库迁移1->2，新增folder_sessions表。实际内容仅占位，需补上生产DDL。
+ * Room 数据库迁移 1->2：新增 folder_sessions 表（v2 初始表结构）。
+ * 后续 v3->v4 的列变更由 AppDatabase.MIGRATION_3_4 补齐。
  */
 val Migration1To2 = object : Migration(1, 2) {
     override fun migrate(db: SupportSQLiteDatabase) {

@@ -107,9 +107,9 @@ class DefaultReaderTabManager(
             return@flow
         }
 
-        // 2) 恢复进度（需精确按 path 查）
+        // 2) 恢复进度（精确按 path 查询）
         val position = withContext(dispatcherProvider.io) {
-            val hist = historyRepo.getByPath(historyKey) // 需要你在 repo 增加该方法（见后面补丁）
+            val hist = historyRepo.getByPath(historyKey)
             ReadingPosition(
                 progress = hist?.progress ?: 0f,
                 pageIndex = hist?.pageIndex ?: -1

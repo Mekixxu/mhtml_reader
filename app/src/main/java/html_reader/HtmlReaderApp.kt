@@ -60,6 +60,7 @@ class HtmlReaderApp : Application() {
             val cacheRoot = File(cacheDir, "app_cache")
             val activeKeys = ReaderRuntime.tabCacheRegistry(applicationContext).activeCacheKeys()
             OrphanCacheCleaner(cacheRoot = cacheRoot, daysUnused = 3).clean(activeKeys)
+            TransferCacheCleaner.clean(cacheDir = cacheDir, daysUnused = 3)
         }
     }
 }

@@ -15,7 +15,6 @@ object WebViewConfigurator {
 
     fun configure(
         webView: WebView,
-        darkMode: Boolean = false,
         profile: RenderProfile = RenderProfile.DEFAULT
     ) {
         val settings = webView.settings
@@ -46,10 +45,6 @@ object WebViewConfigurator {
                 settings.loadWithOverviewMode = true
                 settings.userAgentString = defaultUserAgent
             }
-        }
-
-        if (darkMode) {
-            Unit
         }
     }
 }

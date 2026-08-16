@@ -29,7 +29,7 @@
   - `compileSdk = 36`
   - `targetSdk = 36`
   - `minSdk = 30`
-- 版本号：`versionName = 1.0.8` / `versionCode = 9`（见 `app/build.gradle.kts`）
+- 版本号：`versionName = 1.0.9` / `versionCode = 10`（见 `app/build.gradle.kts`）
 - 核心依赖（关键版本）：
   - AndroidX（AppCompat `1.7.0`、Lifecycle `2.8.4`、WorkManager `2.9.1`、WebKit `1.11.0`、Room `2.6.1`）
   - Hilt `2.52`

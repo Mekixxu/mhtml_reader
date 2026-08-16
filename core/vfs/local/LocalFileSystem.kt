@@ -87,9 +87,6 @@ class LocalFileSystem(
             }
         }
 
-    // 其它接口如前略 (见包1)
-    // ...
-
     override suspend fun list(dir: VfsPath, offset: Int, limit: Int): Result<List<VfsEntry>> =
         withContext(dispatcherProvider.io) {
             try {

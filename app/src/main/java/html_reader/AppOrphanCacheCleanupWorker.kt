@@ -16,6 +16,7 @@ class AppOrphanCacheCleanupWorker(
             val cacheRoot = File(applicationContext.cacheDir, "app_cache")
             val activeKeys = ReaderRuntime.tabCacheRegistry(applicationContext).activeCacheKeys()
             OrphanCacheCleaner(cacheRoot, daysUnused).clean(activeKeys)
+            TransferCacheCleaner.clean(cacheDir = applicationContext.cacheDir, daysUnused = daysUnused)
             Result.success()
         }.getOrElse {
             Result.retry()
