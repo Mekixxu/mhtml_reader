@@ -21,8 +21,11 @@ class WebViewProgressTracker(
     private var job: Job? = null
     private val debounceMs = 500L
 
+    @Suppress("DEPRECATION")
     fun startTracking() {
         webView.setOnScrollChangeListener { _, _, scrollY, _, _ ->
+            // WebView.scale 在 API 30+ 已废弃，但当前 WebView 尚无等价的
+            // 内容缩放读取替代 API；保留并在上方抑制 deprecation。
             val contentHeightPx = webView.contentHeight * webView.scale
             val viewportPx = webView.height.toFloat()
 

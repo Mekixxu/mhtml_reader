@@ -63,7 +63,8 @@
     <string name="reader_status_copying">Copying to cache…</string>
     <string name="reader_status_copying_percent">Copying to cache… %1$d%%</string>
     <string name="reader_status_ready">Ready: %1$s</string>
-    <string name="reader_status_error">Error: %1$s</string>
+    <string name="reader_status_error">Unable to open document</string>
+    <string name="reader_pdf_open_error">Unable to open PDF document</string>
     <string name="reader_active_none">Active tab: none</string>
     <string name="reader_active_template">Active tab: %1$s</string>
     <string name="reader_select_file_first">Please input a file path first</string>
@@ -193,4 +194,5 @@
     <string name="common_copy">Copy</string>
     <string name="common_copied_to_clipboard">Copied to clipboard</string>
     <string name="common_unknown_error">Unknown error</string>
+    <string name="reader_file_already_open">This file is already opened</string>
 </resources>

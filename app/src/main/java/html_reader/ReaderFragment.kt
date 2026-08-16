@@ -32,6 +32,7 @@ import core.database.entity.enums.FileType
 import core.reader.model.OpenRequest
 import core.reader.model.OpenState
 import core.reader.model.ReaderTab
+import core.reader.usecase.InferFileTypeUseCase
 import core.reader.pdf.PdfReaderController
 import core.reader.pdf.impl.AndroidPdfReaderController
 import core.reader.web.BlockingResourceWebViewClient
@@ -241,13 +242,13 @@ class ReaderFragment : Fragment() {
                         }
                         is OpenState.Error -> {
                             val message = state.error.message ?: state.error.javaClass.simpleName
-                            setErrorState(getString(R.string.reader_status_error, message), message)
+                            reportOpenError(message)
                         }
                     }
                 }
             } catch (e: Exception) {
                  val msg = e.message ?: getString(R.string.common_unknown_error)
-                 setErrorState(getString(R.string.reader_status_error, msg), msg)
+                 reportOpenError(msg)
             } finally {
                 opening = false
                 if (statusLabel.text == getString(R.string.reader_status_loading) || statusLabel.text.startsWith("Copying")) {
@@ -258,17 +259,30 @@ class ReaderFragment : Fragment() {
         }
     }
 
-    private fun setErrorState(displayMsg: String, fullDetails: String) {
+    private fun reportOpenError(fullDetails: String) {
+        Log.w("ReaderFragment", "reader_open_error details=$fullDetails")
+        setErrorState(getString(R.string.reader_status_error))
+    }
+
+    private fun reportPdfOpenError(fullDetails: String) {
+        Log.w("ReaderFragment", "reader_pdf_open_error details=$fullDetails")
+        setErrorState(getString(R.string.reader_pdf_open_error))
+    }
+
+    /**
+     * 只展示用户可理解的摘要，完整错误仅落日志，避免路径/异常栈暴露到对话框。
+     */
+    private fun setErrorState(displayMsg: String) {
         statusLabel.text = displayMsg
         statusLabel.visibility = View.VISIBLE
         statusLabel.setOnClickListener {
             AlertDialog.Builder(requireContext())
                 .setTitle(R.string.common_error_details_title)
-                .setMessage(fullDetails)
+                .setMessage(displayMsg)
                 .setPositiveButton(android.R.string.ok, null)
                 .setNeutralButton(R.string.common_copy) { _, _ ->
                     val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    val clip = ClipData.newPlainText("Error Message", fullDetails)
+                    val clip = ClipData.newPlainText("Error Message", displayMsg)
                     clipboard.setPrimaryClip(clip)
                     Toast.makeText(requireContext(), getString(R.string.common_copied_to_clipboard), Toast.LENGTH_SHORT).show()
                 }
@@ -327,7 +341,7 @@ class ReaderFragment : Fragment() {
                 updatePdfPageControlState()
             } catch (e: Exception) {
                 val msg = e.message ?: e.javaClass.simpleName
-                setErrorState(getString(R.string.reader_status_error, msg), msg)
+                reportPdfOpenError(msg)
                 pdfPreviewImage.setImageDrawable(null)
                 pdfPageCount = 0
                 currentPdfPageIndex = 0
@@ -354,7 +368,8 @@ class ReaderFragment : Fragment() {
         if (!file.exists() || !file.isFile) {
             webPreview.loadUrl("about:blank")
             val msg = getString(R.string.reader_file_not_found)
-            setErrorState(getString(R.string.reader_status_error, msg), msg)
+            Log.w("ReaderFragment", "reader_web_file_missing cachePath=$cachePath")
+            setErrorState(msg)
             return
         }
 
@@ -473,14 +488,7 @@ class ReaderFragment : Fragment() {
         pdfPageInfoLabel.text = getString(R.string.reader_pdf_page_template, shownPage, total)
     }
 
-    private fun inferType(fileName: String): FileType {
-        val ext = fileName.substringAfterLast('.', "").lowercase()
-        return when (ext) {
-            "pdf" -> FileType.PDF
-            "mhtml", "mht" -> FileType.MHTML
-            else -> FileType.MHTML
-        }
-    }
+    private fun inferType(fileName: String): FileType = InferFileTypeUseCase.infer(fileName)
 
     private fun isSupportedLocalFile(fileName: String): Boolean {
         val ext = fileName.substringAfterLast('.', "").lowercase()

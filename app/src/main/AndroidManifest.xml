@@ -4,6 +4,11 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
 
+    <!--
+        usesCleartextTraffic 保留为 true：FTP 访问目标是用户动态输入的主机，
+        无法用静态 networkSecurityConfig 枚举；FTP 协议依赖明文控制通道。
+        largeHeap 保留：大 PDF/WebView 渲染峰值内存较高，移除前需真机复测。
+    -->
     <application
         android:name=".HtmlReaderApp"
         android:allowBackup="false"

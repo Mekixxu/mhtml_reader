@@ -218,7 +218,7 @@ class MainActivity : AppCompatActivity() {
             }
             lastReaderTag = "reader_mode"
             switchFragment("reader_mode", { ReaderFragment() }, forceReplace = false)
-            Toast.makeText(this, "This file is already opened", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, R.string.reader_file_already_open, Toast.LENGTH_SHORT).show()
             return
         }
         lastReaderTag = "reader_mode"
@@ -237,31 +237,24 @@ class MainActivity : AppCompatActivity() {
         switchFragment(tag, { fragment }, forceReplace = false)
     }
 
+    /**
+     * 统一使用 replace 单容器切换页面：只保留当前可见 Fragment 处于 RESUMED，
+     * 避免 hide/show 让隐藏页常驻并继续收集 Flow。
+     * 各页面自身状态已通过 ReaderRuntime/FilesRuntime/Preferences 持久化，
+     * 重建后按 tag 恢复；forceReplace 用于同一 tag 需要重新加载参数的场景。
+     */
     private fun switchFragment(tag: String, create: () -> Fragment, forceReplace: Boolean = false) {
         val fm = supportFragmentManager
-        val transaction = fm.beginTransaction()
-
-        // 1. Hide all visible fragments
-        fm.fragments.forEach {
-            if (it.isVisible) transaction.hide(it)
+        val current = getCurrentVisibleFragment()
+        if (!forceReplace && current?.tag == tag) {
+            syncBottomNavSelection(tag)
+            return
         }
 
-        // 2. Find or create target
-        var target = fm.findFragmentByTag(tag)
-
-        if (target != null && forceReplace) {
-            transaction.remove(target)
-            target = null
-        }
-
-        if (target == null) {
-            target = create()
-            transaction.add(R.id.main_content, target, tag)
-        } else {
-            transaction.show(target)
-        }
-
-        transaction.commit()
+        val target = if (forceReplace) create() else (fm.findFragmentByTag(tag) ?: create())
+        fm.beginTransaction()
+            .replace(R.id.main_content, target, tag)
+            .commit()
         syncBottomNavSelection(tag)
     }
 
