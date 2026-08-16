@@ -21,7 +21,6 @@ class BlockingResourceWebViewClient(
 
             val allowed =
                 url.startsWith("file://") ||
-                url.startsWith("content://") ||
                 url.startsWith("data:") ||
                 url.startsWith("about:blank") ||
                 url.startsWith("cid:")
