@@ -10,6 +10,7 @@ import core.common.HashUtils
 import core.vfs.IFileSystem
 import core.vfs.model.VfsPath
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
@@ -79,13 +80,12 @@ class CacheOpenManager(
             var copied = 0L
             var read: Int
             while (true) {
+                ensureActive()
                 read = `in`.read(buf)
                 if (read == -1) break
                 out.write(buf, 0, read)
                 copied += read
                 emit(Result.success(CopyProgress(copied, totalBytes)))
-                // 协程取消支持
-                if (!Thread.currentThread().isInterrupted) continue else throw CancellationException()
             }
             out.flush()
         } catch (ce: CancellationException) {

@@ -3,6 +3,7 @@ package com.html_reader
 import android.app.AlertDialog
 import android.net.Uri
 import android.os.Bundle
+import android.text.InputType
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -144,7 +145,9 @@ class MoreFragment : Fragment() {
         val hostInput = EditText(requireContext())
         val portInput = EditText(requireContext())
         val userInput = EditText(requireContext())
-        val passwordInput = EditText(requireContext())
+        val passwordInput = EditText(requireContext()).apply {
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
         val pathInput = EditText(requireContext())
         val anonymousCheck = CheckBox(requireContext())
         val encodingSpinner = Spinner(requireContext())

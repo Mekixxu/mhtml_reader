@@ -1,10 +1,12 @@
 package com.html_reader
 
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import androidx.room.Room
 import core.common.DefaultDispatcherProvider
 import core.common.DispatcherProvider
 import core.database.AppDatabase
+import core.database.migration.Migration1To2
 
 object CoreRuntime {
     @Volatile
@@ -22,10 +24,17 @@ object CoreRuntime {
             if (holder != null) return
             val appContext = context.applicationContext
             val dispatchers = DefaultDispatcherProvider()
-            val db = Room.databaseBuilder(appContext, AppDatabase::class.java, "app_database")
-                .addMigrations(AppDatabase.MIGRATION_2_3)
-                .fallbackToDestructiveMigration()
-                .build()
+            val dbBuilder = Room.databaseBuilder(appContext, AppDatabase::class.java, "app_database")
+                .addMigrations(
+                    Migration1To2,
+                    AppDatabase.MIGRATION_2_3,
+                    AppDatabase.MIGRATION_3_4
+                )
+            val isDebug = (appContext.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+            if (isDebug) {
+                dbBuilder.fallbackToDestructiveMigration()
+            }
+            val db = dbBuilder.build()
             holder = Holder(db, dispatchers)
         }
     }

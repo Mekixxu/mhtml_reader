@@ -8,6 +8,7 @@ import core.common.DispatcherProvider
 import core.vfs.IFileSystem
 import core.vfs.model.VfsEntry
 import core.vfs.model.VfsPath
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -31,7 +32,9 @@ class LocalFileSystem(
                     }
                     else -> Result.failure(AppError.UnsupportedOperation)
                 }
-            } catch (e: Throwable) {
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (e: Exception) {
                 Result.failure(AppError.IoError(e.message, e))
             }
         }
@@ -50,7 +53,9 @@ class LocalFileSystem(
                     }
                     else -> Result.failure(AppError.UnsupportedOperation)
                 }
-            } catch (e: Throwable) {
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (e: Exception) {
                 Result.failure(AppError.IoError(e.message, e))
             }
         }
@@ -75,7 +80,9 @@ class LocalFileSystem(
                     }
                     else -> Result.failure(AppError.UnsupportedOperation)
                 }
-            } catch (e: Throwable) {
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (e: Exception) {
                 Result.failure(AppError.IoError(e.message, e))
             }
         }
@@ -117,7 +124,9 @@ class LocalFileSystem(
                     }
                     else -> Result.failure(AppError.UnsupportedOperation)
                 }
-            } catch (e: Throwable) {
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (e: Exception) {
                 Result.failure(AppError.IoError(e.message, e))
             }
         }
@@ -134,7 +143,9 @@ class LocalFileSystem(
                     }
                     else -> Result.failure(AppError.UnsupportedOperation)
                 }
-            } catch (e: Throwable) {
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (e: Exception) {
                 Result.failure(AppError.IoError(e.message, e))
             }
         }
@@ -161,7 +172,9 @@ class LocalFileSystem(
                     }
                     else -> Result.failure(AppError.UnsupportedOperation)
                 }
-            } catch (e: Throwable) {
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (e: Exception) {
                 Result.failure(AppError.IoError(e.message, e))
             }
         }
@@ -184,7 +197,9 @@ class LocalFileSystem(
                     }
                     else -> Result.failure(AppError.UnsupportedOperation)
                 }
-            } catch (e: Throwable) {
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (e: Exception) {
                 Result.failure(AppError.IoError(e.message, e))
             }
         }
@@ -212,7 +227,9 @@ class LocalFileSystem(
                     }
                     else -> Result.failure(AppError.UnsupportedOperation)
                 }
-            } catch (e: Throwable) {
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (e: Exception) {
                 Result.failure(AppError.IoError(e.message, e))
             }
         }
@@ -243,7 +260,9 @@ class LocalFileSystem(
                     }
                     else -> Result.failure(AppError.UnsupportedOperation)
                 }
-            } catch (e: Throwable) {
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (e: Exception) {
                 Result.failure(AppError.IoError(e.message, e))
             }
         }
@@ -273,7 +292,9 @@ class LocalFileSystem(
                     }
                     else -> Result.failure(AppError.UnsupportedOperation)
                 }
-            } catch (e: Throwable) {
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (e: Exception) {
                 Result.failure(AppError.IoError(e.message, e))
             }
         }
@@ -289,7 +310,9 @@ class LocalFileSystem(
                     }
                     else -> Result.failure(AppError.UnsupportedOperation)
                 }
-            } catch (e: Throwable) {
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (e: Exception) {
                 Result.failure(AppError.IoError(e.message, e))
             }
         }

@@ -216,7 +216,8 @@ class JsonBackupManager(
         host = host,
         port = port,
         username = username,
-        password = password,
+        // 安全：导出元数据时不再写入明文密码；导入侧会把缺失密码写为空。
+        password = "",
         defaultPath = defaultPath
     )
 

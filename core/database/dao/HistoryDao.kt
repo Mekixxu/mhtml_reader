@@ -24,7 +24,12 @@ interface HistoryDao {
     suspend fun deleteOlderThan(epochMs: Long)
     @Query("""
         DELETE FROM history WHERE path IN (
-            SELECT path FROM history ORDER BY lastAccess ASC LIMIT (SELECT COUNT(*) FROM history) - :keep
+            SELECT path FROM history ORDER BY lastAccess ASC LIMIT
+            CASE
+                WHEN (SELECT COUNT(*) FROM history) > :keep
+                THEN (SELECT COUNT(*) FROM history) - :keep
+                ELSE 0
+            END
         )
     """)
     suspend fun deleteOldest(keep: Int)

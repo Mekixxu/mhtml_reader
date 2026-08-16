@@ -38,5 +38,17 @@ abstract class AppDatabase : RoomDatabase() {
                 database.execSQL("ALTER TABLE network_configs ADD COLUMN encoding TEXT NOT NULL DEFAULT 'Auto'")
             }
         }
+
+        /**
+         * v3 -> v4：folder_sessions 增加 sourceType/networkConfigId/sortOption 三列。
+         * 必须与 MIGRATION_1_2 的 v2 表结构配合使用（1->2 建旧表，2->3 加 encoding，3->4 补列）。
+         */
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE folder_sessions ADD COLUMN sourceType TEXT NOT NULL DEFAULT 'LOCAL'")
+                database.execSQL("ALTER TABLE folder_sessions ADD COLUMN networkConfigId TEXT")
+                database.execSQL("ALTER TABLE folder_sessions ADD COLUMN sortOption INTEGER NOT NULL DEFAULT 2")
+            }
+        }
     }
 }

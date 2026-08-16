@@ -16,6 +16,8 @@ object ReaderRuntime {
 
     fun historyRepository(context: Context): HistoryRepository = ensure(context).historyRepository
 
+    fun tabCacheRegistry(context: Context): TabCacheRegistry = ensure(context).tabCacheRegistry
+
     private fun ensure(context: Context): Holder {
         val existing = holder
         if (existing != null) {
@@ -55,7 +57,8 @@ object ReaderRuntime {
                 )
                 Holder(
                     readerViewModel = ReaderViewModel(tabManager),
-                    historyRepository = historyRepository
+                    historyRepository = historyRepository,
+                    tabCacheRegistry = tabCacheRegistry
                 ).also { holder = it }
             }
         }
@@ -63,6 +66,7 @@ object ReaderRuntime {
 
     private data class Holder(
         val readerViewModel: ReaderViewModel,
-        val historyRepository: HistoryRepository
+        val historyRepository: HistoryRepository,
+        val tabCacheRegistry: TabCacheRegistry
     )
 }

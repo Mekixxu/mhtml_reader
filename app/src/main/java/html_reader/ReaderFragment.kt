@@ -45,7 +45,10 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Locale
 import android.util.Base64
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -62,6 +65,7 @@ class ReaderFragment : Fragment() {
     private lateinit var pdfReaderController: PdfReaderController
     private lateinit var historyRepository: HistoryRepository
     private var webProgressTracker: WebViewProgressTracker? = null
+    private var pdfCloseJob: Job? = null
 
     private val tabs = mutableListOf<ReaderTab>()
     private var selectedTabId: String? = null
@@ -646,8 +650,11 @@ class ReaderFragment : Fragment() {
     }
 
     override fun onDestroyView() {
-        viewLifecycleOwner.lifecycleScope.launch {
-            pdfReaderController.close()
+        // viewLifecycleOwner.lifecycleScope 在 onDestroyView 时已进入销毁流程，
+        // 不能再向其提交任务，否则 pdfReaderController.close() 不会执行。
+        pdfCloseJob?.cancel()
+        pdfCloseJob = CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            runCatching { pdfReaderController.close() }
         }
         webProgressTracker?.stopTracking()
         webProgressTracker = null

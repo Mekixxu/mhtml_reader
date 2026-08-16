@@ -123,9 +123,10 @@ class FilesFragment : Fragment() {
     private var ftpLoadToken: Long = 0L
     private var ftpResolvedCharset: String? = null
     private var titleRefreshJob: Job? = null
+    private var remoteLoadJob: Job? = null
     private lateinit var filesTitleRefresher: FilesTitleRefresher
     private var currentNameTextSizeSp: Float = 16f
-    private val supportedExtensions = setOf("mht", "mhtml", "pdf", "html", "htm")
+    private val supportedExtensions = setOf("mht", "mhtml", "pdf")
     private val displayTitleByPath = mutableMapOf<String, String>()
     private val ftpDecodeCache = mutableMapOf<String, String>()
     private val ftpUploadLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -541,6 +542,7 @@ class FilesFragment : Fragment() {
     }
 
     private fun loadEntries() {
+        remoteLoadJob?.cancel()
         if (browseSource == BrowseSource.FTP) {
             loadFtpEntries()
             return
@@ -851,20 +853,26 @@ class FilesFragment : Fragment() {
         loadingText: String,
         fetcher: suspend (NetworkConfigEntity) -> List<BrowserEntry>
     ) {
+        remoteLoadJob?.cancel()
         updateStatus(loadingText, isError = false)
         currentDirLabel.text = buildCurrentDirText(defaultRootDir())
         val token = ++ftpLoadToken
-        viewLifecycleOwner.lifecycleScope.launch {
-            val result = runCatching { fetcher(config) }
-            if (!isAdded || token != ftpLoadToken) {
-                return@launch
-            }
-            result.onSuccess { entries ->
+        remoteLoadJob = viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                val entries = fetcher(config)
+                if (!isAdded || token != ftpLoadToken) {
+                    return@launch
+                }
                 allEntries.clear()
                 allEntries.addAll(entries)
                 renderEntries()
                 updateStatus(getString(R.string.files_status_done), isError = false)
-            }.onFailure { error ->
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (error: Throwable) {
+                if (!isAdded || token != ftpLoadToken) {
+                    return@launch
+                }
                 allEntries.clear()
                 displayedEntries.clear()
                 adapter.clear()

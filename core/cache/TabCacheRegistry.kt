@@ -18,6 +18,12 @@ class TabCacheRegistry(
         tabToCacheKey[tabId] = Pair(contentType, cacheKey)
     }
 
+    /**
+     * 当前所有活跃 tab 的 cacheKey 集合，供 OrphanCacheCleaner 排除误删。
+     */
+    fun activeCacheKeys(): Set<String> =
+        tabToCacheKey.values.map { it.second }.toSet()
+
     suspend fun onTabClosed(tabId: String) {
         val pair = tabToCacheKey.remove(tabId) ?: return
         val (contentType, cacheKey) = pair

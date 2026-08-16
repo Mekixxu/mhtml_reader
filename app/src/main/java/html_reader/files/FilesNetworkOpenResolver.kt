@@ -35,7 +35,9 @@ object FilesNetworkOpenResolver {
         val host = uri.host.orEmpty()
         if (host.isBlank()) return ResolvedNetworkOpen(issue = NetworkOpenIssue.INVALID_PATH)
         val port = if (uri.port > 0) uri.port else if (protocol == NetworkProtocol.FTP) 21 else 445
-        val rawPath = URLDecoder.decode(uri.encodedPath.orEmpty().ifBlank { "/" }, "UTF-8")
+        val rawPath = runCatching {
+            URLDecoder.decode(uri.encodedPath.orEmpty().ifBlank { "/" }, "UTF-8")
+        }.getOrDefault("/")
         val normalized = if (rawPath.startsWith("/")) rawPath else "/$rawPath"
         val openPath = if (favoriteType == FavoriteType.FILE) {
             val index = normalized.lastIndexOf('/')

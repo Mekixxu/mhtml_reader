@@ -46,7 +46,7 @@ class ExecuteFileOpUseCase(
                 }
             }
         } catch (e: CancellationException) {
-            emit(FileOpState.Error(core.common.AppError.IoError("操作被取消", e)))
+            throw e
         } catch (e: Exception) {
             emit(FileOpState.Error(core.common.AppError.IoError(e.message, e)))
         }

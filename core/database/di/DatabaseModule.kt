@@ -1,8 +1,10 @@
 package core.database.di
 
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import androidx.room.Room
 import core.database.AppDatabase
+import core.database.migration.Migration1To2
 import core.database.dao.FavoriteDao
 import core.database.dao.HistoryDao
 import core.database.dao.NetworkConfigDao
@@ -32,23 +34,15 @@ object DatabaseModule {
             context.applicationContext,
             AppDatabase::class.java,
             "app_database"
+        ).addMigrations(
+            Migration1To2,
+            AppDatabase.MIGRATION_2_3,
+            AppDatabase.MIGRATION_3_4
         )
 
-        // 这里用最通用的方式：通过 BuildConfig.DEBUG 控制。
-        // 若你的 core 模块拿不到 BuildConfig.DEBUG，请改为注入一个 AppConfig/BuildTypeProvider。
-        val isDebug = try {
-            // 通过反射避免模块拿不到 BuildConfig 的编译问题（可按项目情况替换）
-            val clazz = Class.forName(context.packageName + ".BuildConfig")
-            clazz.getField("DEBUG").getBoolean(null)
-        } catch (_: Throwable) {
-            false
-        }
-
+        val isDebug = (context.applicationContext.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
         if (isDebug) {
             builder.fallbackToDestructiveMigration()
-        } else {
-            // Release：不启用 destructive，等待你们后续补 Migration
-            // builder.addMigrations(MIGRATION_1_2, ...)
         }
 
         return builder.build()
