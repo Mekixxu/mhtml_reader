@@ -46,6 +46,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Locale
 import android.util.Base64
+import java.io.ByteArrayOutputStream
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -86,6 +87,7 @@ class ReaderFragment : Fragment() {
         private const val ARG_INITIAL_PATH = "arg_initial_path"
         private const val ARG_INITIAL_VERSION_STAMP = "arg_initial_version_stamp"
         private const val STATE_SELECTED_TAB_ID = "reader_state_selected_tab_id"
+        private const val MAX_IMAGE_BYTES = 20 * 1024 * 1024
 
         fun newInstance(initialPath: String, initialVersionStamp: String? = null): ReaderFragment {
             return ReaderFragment().apply {
@@ -556,8 +558,12 @@ class ReaderFragment : Fragment() {
             doInput = true
         }
         connection.connect()
+        val contentLength = connection.contentLengthLong
+        if (contentLength > MAX_IMAGE_BYTES) {
+            throw IllegalStateException(getString(R.string.reader_save_image_failed_reason, "Image too large"))
+        }
         connection.inputStream.use { stream ->
-            val bytes = stream.readBytes()
+            val bytes = stream.readWithSizeLimit(MAX_IMAGE_BYTES)
             if (bytes.isEmpty()) {
                 throw IllegalStateException(getString(R.string.reader_save_image_empty_data))
             }
@@ -578,9 +584,17 @@ class ReaderFragment : Fragment() {
         val mimeType = normalizeMimeType(mimeTypeToken)
         val isBase64 = metadata.split(';').any { it.equals("base64", ignoreCase = true) }
         val bytes = if (isBase64) {
+            val estimatedSize = payload.length.toLong() * 3 / 4
+            if (estimatedSize > MAX_IMAGE_BYTES) {
+                throw IllegalStateException(getString(R.string.reader_save_image_failed_reason, "Image too large"))
+            }
             Base64.decode(payload, Base64.DEFAULT)
         } else {
-            Uri.decode(payload).toByteArray(Charsets.UTF_8)
+            val decoded = Uri.decode(payload)
+            if (decoded.length > MAX_IMAGE_BYTES) {
+                throw IllegalStateException(getString(R.string.reader_save_image_failed_reason, "Image too large"))
+            }
+            decoded.toByteArray(Charsets.UTF_8)
         }
         if (bytes.isEmpty()) {
             throw IllegalStateException(getString(R.string.reader_save_image_empty_data))
@@ -588,6 +602,22 @@ class ReaderFragment : Fragment() {
         val extension = extensionFromMimeType(mimeType)
         val fileName = "image_${System.currentTimeMillis()}.$extension"
         return ImagePayload(bytes = bytes, mimeType = mimeType, fileName = fileName)
+    }
+
+    private fun java.io.InputStream.readWithSizeLimit(maxBytes: Int): ByteArray {
+        val out = ByteArrayOutputStream()
+        val buffer = ByteArray(64 * 1024)
+        var total = 0
+        while (true) {
+            val read = read(buffer)
+            if (read == -1) break
+            total += read
+            if (total > maxBytes) {
+                throw IllegalStateException(getString(R.string.reader_save_image_failed_reason, "Image too large"))
+            }
+            out.write(buffer, 0, read)
+        }
+        return out.toByteArray()
     }
 
     private fun saveImagePayload(context: Context, payload: ImagePayload) {
