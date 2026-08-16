@@ -47,6 +47,12 @@ object FilesNetworkGateway {
         return if (idx <= 0) "/" else normalized.substring(0, idx)
     }
 
+    /**
+     * 构建 FTP URL。java.net.URL 的 FTP 协议不支持显式凭据传入，
+     * 当前实现必须把用户名/密码编码进 URL。
+     * 安全边界：调用方禁止打印或持久化该 URL；密码只从已解密的
+     * NetworkConfigRepository 实体中读取。
+     */
     fun buildFtpUrl(config: NetworkConfigEntity, path: String, type: String, charset: String): String {
         val user = config.username.trim().ifBlank { "anonymous" }
         val pass = config.password.ifBlank { "anonymous@" }

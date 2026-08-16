@@ -4,8 +4,9 @@ import androidx.room.*
 import core.database.entity.enums.NetworkProtocol
 
 /**
- * 网络配置项
- * 密码明文存储 >> 仅限v1.0，生产必须加密! 导入导出强烈警告!
+ * 网络配置项。
+ * DAO 列仍为 TEXT，但仓库层已使用 CredentialCipher 加密后落库；
+ * 旧版本明文密码在读取时按旧格式兼容。
  */
 @Entity(
     tableName = "network_configs",

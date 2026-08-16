@@ -4,6 +4,7 @@ import android.content.Context
 import core.data.repo.FavoritesRepository
 import core.data.repo.NetworkConfigRepository
 import core.data.repo.TitleCacheRepository
+import core.security.CredentialCipher
 import core.session.repo.FolderSessionRepository
 
 object FilesRuntime {
@@ -43,7 +44,11 @@ object FilesRuntime {
                     folderSessionRepository = FolderSessionRepository(db.folderSessionDao(), dispatcherProvider),
                     currentSessionStore = AppCurrentSessionStore(),
                     favoritesRepository = FavoritesRepository(db.favoriteDao(), dispatcherProvider),
-                    networkConfigRepository = NetworkConfigRepository(db.networkConfigDao(), dispatcherProvider),
+                    networkConfigRepository = NetworkConfigRepository(
+                        db.networkConfigDao(),
+                        dispatcherProvider,
+                        CredentialCipher()
+                    ),
                     titleCacheRepository = TitleCacheRepository(db.titleCacheDao(), dispatcherProvider),
                     sessionSourceStore = AppSessionSourceStore(appContext),
                     authorizedDirStore = AppAuthorizedDirStore(appContext, dispatcherProvider)

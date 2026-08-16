@@ -1,22 +1,38 @@
 package core.data.repo
 
+import core.common.DispatcherProvider
 import core.database.dao.NetworkConfigDao
 import core.database.entity.NetworkConfigEntity
-import core.common.DispatcherProvider
+import core.security.CredentialCipher
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
 /**
- * 网络配置Repo，add/update/delete返回id，observeAll全量流。
+ * 网络配置Repo。密码在写入口统一加密、在读取路径统一解密；
+ * DAO 层仍保持 TEXT 列不变，旧明文数据无 enc:v1: 前缀可继续读取。
  */
 class NetworkConfigRepository(
     private val dao: NetworkConfigDao,
-    private val dispatcherProvider: DispatcherProvider
+    private val dispatcherProvider: DispatcherProvider,
+    private val credentialCipher: CredentialCipher
 ) {
-    fun observeAll(): Flow<List<NetworkConfigEntity>> = dao.observeAll()
-    suspend fun add(entity: NetworkConfigEntity): Long = withContext(dispatcherProvider.io) { dao.insert(entity) }
-    suspend fun update(entity: NetworkConfigEntity) = withContext(dispatcherProvider.io) { dao.update(entity) }
+    fun observeAll(): Flow<List<NetworkConfigEntity>> =
+        dao.observeAll()
+            .map { entities -> entities.map { it.withDecryptedPassword() } }
+            .flowOn(dispatcherProvider.io)
+
+    suspend fun add(entity: NetworkConfigEntity): Long = withContext(dispatcherProvider.io) {
+        dao.insert(entity.withEncryptedPassword())
+    }
+
+    suspend fun update(entity: NetworkConfigEntity) = withContext(dispatcherProvider.io) {
+        dao.update(entity.withEncryptedPassword())
+    }
+
     suspend fun delete(id: Long) = withContext(dispatcherProvider.io) { dao.delete(id) }
+
     suspend fun getAll(): List<NetworkConfigEntity> = withContext(dispatcherProvider.io) {
         val all = ArrayList<NetworkConfigEntity>(64)
         var offset = 0
@@ -24,11 +40,21 @@ class NetworkConfigRepository(
         while (true) {
             val page = dao.getAll(limit = pageSize, offset = offset)
             if (page.isEmpty()) break
-            all.addAll(page)
+            all.addAll(page.map { it.withDecryptedPassword() })
             offset += page.size
         }
         all
     }
-    suspend fun getById(id: Long): NetworkConfigEntity? = withContext(dispatcherProvider.io) { dao.getById(id) }
+
+    suspend fun getById(id: Long): NetworkConfigEntity? = withContext(dispatcherProvider.io) {
+        dao.getById(id)?.withDecryptedPassword()
+    }
+
     suspend fun clearAll() = withContext(dispatcherProvider.io) { dao.clearAll() }
+
+    private fun NetworkConfigEntity.withEncryptedPassword(): NetworkConfigEntity =
+        copy(password = credentialCipher.encrypt(password))
+
+    private fun NetworkConfigEntity.withDecryptedPassword(): NetworkConfigEntity =
+        copy(password = runCatching { credentialCipher.decrypt(password) }.getOrElse { "" })
 }

@@ -27,6 +27,7 @@ android {
             listOf(
                 "../core/database",
                 "../core/data/repo",
+                "../core/security",
                 "../core/session/dao",
                 "../core/session/entity"
             )
