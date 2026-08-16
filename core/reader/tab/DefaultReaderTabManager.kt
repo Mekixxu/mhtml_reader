@@ -42,8 +42,10 @@ class DefaultReaderTabManager(
 
     override fun openNewTab(request: OpenRequest): Flow<OpenState> = flow {
         // 0) 检查是否已存在同一路径且同版本的 tab，若有则直接复用
-        val existingTab = tabStates.values.firstOrNull {
-            it.sourcePathRaw == request.source.raw && it.versionStamp == request.versionStamp
+        val existingTab = synchronized(tabStates) {
+            tabStates.values.firstOrNull {
+                it.sourcePathRaw == request.source.raw && it.versionStamp == request.versionStamp
+            }
         }
         if (existingTab != null) {
             if (!request.background) {
@@ -127,15 +129,31 @@ class DefaultReaderTabManager(
             lastKnownPageIndex = position.pageIndex
         )
 
-        tabStates[tabId] = tab
-        _tabs.value = tabStates.values.toList()
+        val duplicatedTab = synchronized(tabStates) {
+            val duplicate = tabStates.values.firstOrNull {
+                it.sourcePathRaw == historyKey && it.versionStamp == request.versionStamp
+            }
+            if (duplicate == null) {
+                tabStates[tabId] = tab
+                _tabs.value = tabStates.values.toList()
+            }
+            duplicate
+        }
+
+        if (duplicatedTab != null) {
+            if (!request.background) {
+                _currentTabId.value = duplicatedTab.tabId
+            }
+            emit(OpenState.Ready(duplicatedTab))
+            return@flow
+        }
 
         // Auto-switch to new tab
         if (!request.background) {
             _currentTabId.value = tabId
         }
 
-        // bind：以 cacheKey 为准；若你包1 TabCacheRegistry 是 bind(tabId, cacheKey)
+        // bind：以 cacheKey 为准，清理时按 cacheKey 删除缓存目录
         tabCacheRegistry.bind(tabId, contentType.name.lowercase(), cacheKey)
 
         emit(OpenState.Ready(tab))
@@ -148,9 +166,12 @@ class DefaultReaderTabManager(
         withContext(dispatcherProvider.io) {
             tabCacheRegistry.onTabClosed(tabId)
         }
-        tabStates.remove(tabId)
-        val remaining = tabStates.values.toList()
-        _tabs.value = remaining
+        val remaining = synchronized(tabStates) {
+            tabStates.remove(tabId)
+            tabStates.values.toList().also { snapshot ->
+                _tabs.value = snapshot
+            }
+        }
         
         if (_currentTabId.value == tabId) {
             _currentTabId.value = remaining.lastOrNull()?.tabId
@@ -158,13 +179,14 @@ class DefaultReaderTabManager(
     }
 
     override suspend fun closeAll() {
-        val ids = tabStates.keys.toList()
+        val ids = synchronized(tabStates) { tabStates.keys.toList() }
         ids.forEach { closeTab(it) }
         _currentTabId.value = null
     }
 
     override suspend fun switchTo(tabId: String) {
-        if (tabStates.containsKey(tabId)) {
+        val exists = synchronized(tabStates) { tabStates.containsKey(tabId) }
+        if (exists) {
             _currentTabId.value = tabId
         }
     }
