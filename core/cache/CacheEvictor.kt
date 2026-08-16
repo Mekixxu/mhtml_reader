@@ -24,20 +24,19 @@ class CacheEvictor(
     }
 
     suspend fun makeRoomFor(requiredBytes: Long) = withContext(Dispatchers.IO) {
-        var total: Long = cacheRoot.listFiles()?.sumOf { it.sizeAndChildren() } ?: 0L
-        val limit = maxBytes - requiredBytes
-        if (total <= limit) return@withContext
-
         val items = cacheRoot.listFiles()
             ?.filter { it.isDirectory }
             ?.flatMap { dir -> dir.listFiles()?.filter { it.isDirectory }?.map { it } ?: emptyList() }
-            ?.map { it to (it.lastModified()) }
-            ?.sortedBy { it.second } ?: return@withContext
+            ?.map { dir -> dir to dir.sizeAndChildren() }
+            ?: return@withContext
 
-        for ((dir, _) in items) {
-            val sz = dir.sizeAndChildren()
+        var total = items.sumOf { it.second }
+        val limit = maxBytes - requiredBytes
+        if (total <= limit) return@withContext
+
+        for ((dir, size) in items.sortedBy { it.first.lastModified() }) {
             dir.deleteRecursively()
-            total -= sz
+            total -= size
             if (total <= limit) break
         }
     }
