@@ -184,7 +184,7 @@
     <string name="files_action_diagnose_encoding">Diagnose Encoding</string>
     <string name="files_msg_cannot_access_parent">Cannot access parent directory</string>
     <string name="files_msg_no_raw_bytes">No raw bytes available for this file (not FTP?)</string>
-    <string name="files_dialog_delete_message">Are you sure you want to delete '%1$s'?</string>
+    <string name="files_dialog_delete_message">Are you sure you want to delete \'%1$s\'?</string>
     <string name="files_msg_opening_background">Opening %1$s in background…</string>
     <string name="files_msg_opened_background_tab">%1$s opened in background tab</string>
     <string name="files_msg_open_background_error">Error opening %1$s: %2$s</string>

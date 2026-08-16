@@ -112,6 +112,7 @@
 - JDK 17
 - Android SDK Platform 36 + Build-Tools 36.1.0
 - Gradle 使用 Wrapper（`gradle-8.10-bin.zip`）
+- JDK：项目以 **JDK 17** 为构建基线（`sourceCompatibility/targetCompatibility/jvmTarget=17`）。机器上同时装有 JDK 17 与 JDK 21，构建时请显式指定 `JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64`（AGP 8.5.2 不支持在 JDK 21 下编译资源，`mergeDebugResources` 会报 `ParsedResource` 提取失败）。
 
 ### 3.2 常用命令（Windows / 项目根目录）
 
@@ -121,6 +122,13 @@
 .\gradlew.bat test
 .\gradlew.bat connectedAndroidTest
 ```
+
+### 3.2.1 测试基础设施（2026-08-16 补齐）
+
+- `core-base/src/test/java`：纯 JVM 单元测试（`HashUtilsTest` / `OutcomeTest` / `AppErrorTest`），不依赖模拟器。
+- `app/src/test/java`：纯 JVM 单元测试（`FilesSortHelperTest`），不依赖模拟器。
+- `app/src/androidTest/java`：设备端冒烟测试（`AppSmokeTest`），验证 app 冷启动不崩，需连接模拟器/真机。
+- 本地运行：`./gradlew :core-base:testDebugUnitTest`、`:app:testDebugUnitTest`、`:app:connectedDebugAndroidTest`。
 
 ### 3.3 构建与运行注意事项
 

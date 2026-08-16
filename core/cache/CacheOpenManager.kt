@@ -14,6 +14,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlin.coroutines.coroutineContext
 import java.io.File
 import java.io.OutputStream
 
@@ -80,7 +81,7 @@ class CacheOpenManager(
             var copied = 0L
             var read: Int
             while (true) {
-                ensureActive()
+                coroutineContext.ensureActive()
                 read = `in`.read(buf)
                 if (read == -1) break
                 out.write(buf, 0, read)
