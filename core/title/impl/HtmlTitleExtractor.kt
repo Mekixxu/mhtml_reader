@@ -165,7 +165,8 @@ class HtmlTitleExtractor(
                         i++
                     }
                 } else {
-                    bytes.write(c.code)
+                    val encoded = c.toString().toByteArray(charset)
+                    bytes.write(encoded, 0, encoded.size)
                     i++
                 }
             }

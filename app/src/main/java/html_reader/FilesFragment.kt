@@ -77,6 +77,7 @@ import java.net.URL
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collect
@@ -127,8 +128,8 @@ class FilesFragment : Fragment() {
     private lateinit var filesTitleRefresher: FilesTitleRefresher
     private var currentNameTextSizeSp: Float = 16f
     private val supportedExtensions = setOf("mht", "mhtml", "pdf")
-    private val displayTitleByPath = mutableMapOf<String, String>()
-    private val ftpDecodeCache = mutableMapOf<String, String>()
+    private val displayTitleByPath = ConcurrentHashMap<String, String>()
+    private val ftpDecodeCache: MutableMap<String, String> = ConcurrentHashMap<String, String>()
     private val ftpUploadLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             uploadDocumentToFtp(uri)
