@@ -348,7 +348,7 @@ class FilesFragment : Fragment() {
             val options = mutableListOf<String>()
             
             if (isFile) {
-                options.add("Open in new tab")
+                options.add(getString(R.string.files_action_open_new_tab))
             }
             options.add(getString(R.string.files_action_add_favorite))
             options.add(getString(R.string.files_action_details))
@@ -363,14 +363,14 @@ class FilesFragment : Fragment() {
             }
 
             if (browseSource == BrowseSource.FTP) {
-                options.add("Diagnose Encoding")
+                options.add(getString(R.string.files_action_diagnose_encoding))
             }
 
             AlertDialog.Builder(requireContext())
                 .setItems(options.toTypedArray()) { _, which ->
                     val selectedOption = options[which]
                     when (selectedOption) {
-                        "Open in new tab" -> {
+                        getString(R.string.files_action_open_new_tab) -> {
                             if (browseSource == BrowseSource.FTP) {
                                 openFtpFile(item, isBackground = true)
                             } else if (browseSource == BrowseSource.SMB) {
@@ -386,7 +386,7 @@ class FilesFragment : Fragment() {
                         getString(R.string.files_action_details) -> showEntryDetails(item)
                         getString(R.string.action_rename) -> promptRename(item)
                         getString(R.string.action_delete) -> promptDelete(item)
-                        "Diagnose Encoding" -> showDiagnosticDialog(item)
+                        getString(R.string.files_action_diagnose_encoding) -> showDiagnosticDialog(item)
                     }
                 }
                 .show()
@@ -520,7 +520,7 @@ class FilesFragment : Fragment() {
         if (!plan.handled) return false
         if (plan.localAccessDenied) {
             if (!checkStoragePermission()) requestStoragePermission()
-            else Toast.makeText(requireContext(), "Cannot access parent directory", Toast.LENGTH_SHORT).show()
+            else Toast.makeText(requireContext(), getString(R.string.files_msg_cannot_access_parent), Toast.LENGTH_SHORT).show()
             return false
         }
         if (plan.nextFtpPath != null) ftpCurrentPath = plan.nextFtpPath
@@ -1166,7 +1166,7 @@ class FilesFragment : Fragment() {
     private fun showDiagnosticDialog(entry: BrowserEntry) {
         val rawBytes = entry.rawNameBytes
         if (rawBytes == null) {
-            Toast.makeText(requireContext(), "No raw bytes available for this file (not FTP?)", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), getString(R.string.files_msg_no_raw_bytes), Toast.LENGTH_SHORT).show()
             return
         }
         val currentEncoding = ftpConfig?.encoding ?: "Auto"
@@ -1180,7 +1180,7 @@ class FilesFragment : Fragment() {
                 val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                 val clip = android.content.ClipData.newPlainText("Diagnostic Info", message)
                 clipboard.setPrimaryClip(clip)
-                Toast.makeText(requireContext(), "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                Toast.makeText(requireContext(), getString(R.string.common_copied_to_clipboard), Toast.LENGTH_SHORT).show()
             }
             .show()
     }
@@ -1208,8 +1208,8 @@ class FilesFragment : Fragment() {
 
     private fun promptRename(entry: BrowserEntry) {
         promptText(
-            title = "Rename",
-            hint = "New name",
+            title = getString(R.string.action_rename),
+            hint = getString(R.string.files_input_hint_new_name),
             initialValue = entry.name
         ) { newName ->
             if (browseSource == BrowseSource.SMB) {
@@ -1232,9 +1232,9 @@ class FilesFragment : Fragment() {
 
     private fun promptDelete(entry: BrowserEntry) {
         AlertDialog.Builder(requireContext())
-            .setTitle("Delete")
-            .setMessage("Are you sure you want to delete '${entry.name}'?")
-            .setPositiveButton("Delete") { _, _ ->
+            .setTitle(R.string.action_delete)
+            .setMessage(getString(R.string.files_dialog_delete_message, entry.name))
+            .setPositiveButton(R.string.action_delete) { _, _ ->
                 if (browseSource == BrowseSource.SMB) {
                     deleteSmbEntry(entry)
                 } else if (browseSource == BrowseSource.LOCAL) {
@@ -1263,16 +1263,16 @@ class FilesFragment : Fragment() {
             background = true
         )
 
-        Toast.makeText(requireContext(), "Opening $displayName in background...", Toast.LENGTH_SHORT).show()
+        Toast.makeText(requireContext(), getString(R.string.files_msg_opening_background, displayName), Toast.LENGTH_SHORT).show()
 
         viewLifecycleOwner.lifecycleScope.launch {
             readerViewModel.open(request).collect { state ->
                 when (state) {
                     is OpenState.Ready -> {
-                        Toast.makeText(requireContext(), "$displayName opened in background tab", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(requireContext(), getString(R.string.files_msg_opened_background_tab, displayName), Toast.LENGTH_SHORT).show()
                     }
                     is OpenState.Error -> {
-                        Toast.makeText(requireContext(), "Error opening $displayName: ${state.error.message ?: "Unknown error"}", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(requireContext(), getString(R.string.files_msg_open_background_error, displayName, state.error.message ?: getString(R.string.common_unknown_error)), Toast.LENGTH_SHORT).show()
                     }
                     else -> {
                         // Ignore other states

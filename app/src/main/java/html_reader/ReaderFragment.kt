@@ -244,7 +244,7 @@ class ReaderFragment : Fragment() {
                     }
                 }
             } catch (e: Exception) {
-                 val msg = e.message ?: "Unknown error"
+                 val msg = e.message ?: getString(R.string.common_unknown_error)
                  setErrorState(getString(R.string.reader_status_error, msg), msg)
             } finally {
                 opening = false
@@ -261,14 +261,14 @@ class ReaderFragment : Fragment() {
         statusLabel.visibility = View.VISIBLE
         statusLabel.setOnClickListener {
             AlertDialog.Builder(requireContext())
-                .setTitle("Error Details")
+                .setTitle(R.string.common_error_details_title)
                 .setMessage(fullDetails)
                 .setPositiveButton(android.R.string.ok, null)
-                .setNeutralButton("Copy") { _, _ ->
+                .setNeutralButton(R.string.common_copy) { _, _ ->
                     val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     val clip = ClipData.newPlainText("Error Message", fullDetails)
                     clipboard.setPrimaryClip(clip)
-                    Toast.makeText(requireContext(), "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(requireContext(), getString(R.string.common_copied_to_clipboard), Toast.LENGTH_SHORT).show()
                 }
                 .show()
         }

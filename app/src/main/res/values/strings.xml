@@ -180,4 +180,17 @@
     <string name="more_placeholder">More menu is under construction</string>
     <string name="icon_dir">📁</string>
     <string name="icon_file">📄</string>
+    <string name="files_action_open_new_tab">Open in new tab</string>
+    <string name="files_action_diagnose_encoding">Diagnose Encoding</string>
+    <string name="files_msg_cannot_access_parent">Cannot access parent directory</string>
+    <string name="files_msg_no_raw_bytes">No raw bytes available for this file (not FTP?)</string>
+    <string name="files_dialog_delete_message">Are you sure you want to delete '%1$s'?</string>
+    <string name="files_msg_opening_background">Opening %1$s in background…</string>
+    <string name="files_msg_opened_background_tab">%1$s opened in background tab</string>
+    <string name="files_msg_open_background_error">Error opening %1$s: %2$s</string>
+    <string name="files_entry_details_template">Name: %1$s\nType: %2$s\nPath: %3$s\nSize: %4$s\nModified: %5$s\nSource: %6$s</string>
+    <string name="common_error_details_title">Error Details</string>
+    <string name="common_copy">Copy</string>
+    <string name="common_copied_to_clipboard">Copied to clipboard</string>
+    <string name="common_unknown_error">Unknown error</string>
 </resources>
