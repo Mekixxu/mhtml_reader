@@ -200,6 +200,11 @@
 - `core/reader/web/BlockingResourceWebViewClient.kt`：外链/资源拦截策略
 - `core/reader/web/WebViewProgressTracker.kt`：阅读进度跟踪
 
+### 4.6 Review 索引
+
+- `reviews/claude_sonnet4_2026-08-16.md`：2026-08-16 全项目代码审查报告（21 条问题清单）。
+- `reviews/review_plan_2026-08-16.md`：升级执行计划（剩余任务 T1-T9、优先级、验收标准、构建命令），供后续开发按序实施。
+
 ---
 
 ## 5. 文档维护规则
