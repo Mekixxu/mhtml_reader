@@ -37,7 +37,7 @@ object ReaderRuntime {
                 val cacheRoot = appContext.cacheDir.resolve("app_cache")
                 val cacheEvictor = core.cache.CacheEvictor(
                     cacheRoot = cacheRoot,
-                    maxBytes = 15L * 1024 * 1024 * 1024 // 15GB
+                    maxBytes = 2L * 1024 * 1024 * 1024 // 2GB，与 AppSettings.DEFAULT_CACHE_MAX_BYTES 对齐
                 )
                 val cacheOpenManager = CacheOpenManager(
                     context = appContext,

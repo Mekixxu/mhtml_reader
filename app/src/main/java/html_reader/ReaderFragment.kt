@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.MediaStore
 import android.util.Log
+import android.graphics.drawable.BitmapDrawable
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -453,8 +454,12 @@ class ReaderFragment : Fragment() {
         } else {
             resources.displayMetrics.widthPixels - 24
         }
+        val previousBitmap = (pdfPreviewImage.drawable as? BitmapDrawable)?.bitmap
         val bitmap = pdfReaderController.renderPage(currentPdfPageIndex, width)
         pdfPreviewImage.setImageBitmap(bitmap)
+        if (previousBitmap != null && previousBitmap !== bitmap && !previousBitmap.isRecycled) {
+            previousBitmap.recycle()
+        }
     }
 
     private fun updatePdfPageControlState() {

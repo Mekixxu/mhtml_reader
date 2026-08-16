@@ -1199,7 +1199,6 @@ class FilesFragment : Fragment() {
                 },
                 onResolvedTitle = { path, title ->
                     displayTitleByPath[path] = title
-                    renderEntries()
                 }
             )
             renderEntries()

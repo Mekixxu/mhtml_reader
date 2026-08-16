@@ -25,7 +25,7 @@ object WebViewConfigurator {
         settings.builtInZoomControls = true
         settings.displayZoomControls = false
         settings.allowFileAccess = true
-        settings.allowContentAccess = true
+        settings.allowContentAccess = false
         settings.domStorageEnabled = false
         settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
         settings.useWideViewPort = false

@@ -29,7 +29,7 @@
   - `compileSdk = 36`
   - `targetSdk = 36`
   - `minSdk = 30`
-- 版本号：`versionName = 1.0.3` / `versionCode = 4`（见 `app/build.gradle.kts`）
+- 版本号：`versionName = 1.0.4` / `versionCode = 5`（见 `app/build.gradle.kts`）
 - 核心依赖（关键版本）：
   - AndroidX（AppCompat `1.7.0`、Lifecycle `2.8.4`、WorkManager `2.9.1`、WebKit `1.11.0`、Room `2.6.1`）
   - Hilt `2.52`
@@ -91,7 +91,7 @@
    - 阅读体验（缩放/布局）
    - 进度记录一致性
 6. 数据安全约束：
-   - 数据库实体/DAO 变更必须同步编写并注册对应 `Migration`（当前版本号 `4`），禁止依赖 `fallbackToDestructiveMigration()` 兜底（升级会清空用户数据）。
+   - 数据库实体/DAO 变更必须同步编写并注册对应 `Migration`（当前版本号 `4`，已注册 `1→2`、`2→3`、`3→4` 迁移），禁止依赖 `fallbackToDestructiveMigration()` 兜底（升级会清空用户数据）。
    - 网络凭据（SMB/FTP 密码）禁止明文写入日志、URL 字符串或备份导出文件。
 
 ### 2.3 提交与重构要求
@@ -126,7 +126,7 @@
 
 1. 本项目已在 `gradle.properties` 中配置部分 kapt 稳定性参数，避免随意回退。  
 2. Manifest 涉及存储与网络权限，调试文件系统能力前先确认设备授权状态。  
-3. 若改动数据库实体/DAO，需同步评估迁移策略：必须在 `AppDatabase.companion` 中注册对应版本迁移（当前仅 `MIGRATION_2_3`，v3→v4 迁移缺失），禁止把 `fallbackToDestructiveMigration()` 当作默认兜底（升级将清空用户数据）。  
+3. 若改动数据库实体/DAO，需同步评估迁移策略：必须在 `AppDatabase.companion` 中注册对应版本迁移（当前已注册 `Migration1To2`、`MIGRATION_2_3`、`MIGRATION_3_4`；`fallbackToDestructiveMigration()` 仅在 DEBUG 构建启用），禁止把 `fallbackToDestructiveMigration()` 当作默认兜底（升级将清空用户数据）。
 
 ---
 
@@ -169,7 +169,7 @@
 - `core/common` `[C → core-base]`：DispatcherProvider、AppError、HashUtils 等公共基础
 - `core/vfs/model` `[C → core-base]`：VfsPath、VfsEntry 模型
 - `core/vfs/impl`、`core/vfs/local` `[C → core-storage]`：虚拟文件系统抽象与本地实现
-- `core/database` `[C → core-data]`：Room 数据库、DAO、实体、迁移（含未注册的 `Migration1To2`）
+- `core/database` `[C → core-data]`：Room 数据库、DAO、实体、迁移（`Migration1To2`、`MIGRATION_2_3`、`MIGRATION_3_4` 均已注册）
 - `core/data/repo` `[C → core-data]`：仓储实现（收藏/历史/网络配置/标题缓存）
 - `core/session/*` `[C → core-data / feature-files]`：目录会话实体、DAO、仓储与用例
 - `core/cache` `[C → core-domain]`：缓存打开、淘汰与清理
