@@ -156,7 +156,12 @@
 
 - `app/src/main/java/html_reader/MainActivity.kt`：主导航与页面切换
 - `app/src/main/java/html_reader/HomeFragment.kt`：首页入口
-- `app/src/main/java/html_reader/FilesFragment.kt`：文件浏览/操作页
+- `app/src/main/java/html_reader/FilesFragment.kt`：文件浏览/操作页（薄壳，仅 UI 绑定与事件转发）
+  - `app/src/main/java/html_reader/FilesFragmentEntryDialogs.kt`：文件条目长按菜单、收藏/详情/诊断/重命名/删除对话框
+  - `app/src/main/java/html_reader/FilesFragmentLocalBrowse.kt`：本地目录加载、过滤排序、标题刷新
+  - `app/src/main/java/html_reader/FilesFragmentSession.kt`：目录会话恢复与切换
+  - `app/src/main/java/html_reader/FilesFragmentPermission.kt`：存储权限请求
+  - `app/src/main/java/html_reader/files/FilesRemoteController.kt`：FTP/SMB 浏览、上传下载与远程文件操作
 - `app/src/main/java/html_reader/ReaderFragment.kt`：阅读页（WebView + PDF）
 - `app/src/main/java/html_reader/FavoritesFragment.kt`：收藏页
 - `app/src/main/java/html_reader/RecentsFragment.kt`：历史页
@@ -169,6 +174,8 @@
 - `app/src/main/java/html_reader/CoreRuntime.kt`：数据库与基础调度初始化
 - `app/src/main/java/html_reader/FilesRuntime.kt`：文件域依赖装配
 - `app/src/main/java/html_reader/ReaderRuntime.kt`：阅读域依赖装配
+- `app/src/main/java/html_reader/HtmlReaderApp.kt`：Application，维护 Worker 唯一调度入口
+- `app/src/main/java/html_reader/AppMaintenancePolicy.kt`：维护参数唯一来源
 
 ### 4.4 Core 能力目录索引（按编译归属标注）
 

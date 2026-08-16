@@ -58,25 +58,44 @@
 
 ---
 
-## 2. 剩余任务总览
+## 1.5 执行进度（截至 commit `ebb620f`，最终 `versionName = 1.0.17` / `versionCode = 18`）
+
+| 任务 | 状态 | 落地 commit / 说明 |
+|---|---|---|
+| T1 网络凭据 Keystore 加密存储 | ✅ 完成 | `cae7c9c`；新增 `core/security/CredentialCipher.kt`，仓库层读写加解密，旧明文平滑兼容 |
+| T2 孤儿目录接线或清除 | ✅ 完成（方案 A） | `2642335`；六个原孤儿目录全部接入模块 srcDirs，修复 `AppError.Conflict` 与 `CoreModule` 构造 |
+| T3 维护调度单源化 | ✅ 完成 | `2642335`；新增 `AppMaintenancePolicy`，`HtmlReaderApp` 移除硬编码参数与启动即清理重复路径 |
+| T4 错误详情脱敏 | ✅ 完成 | `81b9fa9`；`ReaderFragment` 对话框仅展示友好摘要，完整异常只落 `Log.w` |
+| T5 `FilesFragment` 继续拆分 | ✅ 完成 | `81b9fa9`；主文件 1302 → 670 行，拆出 `FilesRemoteController` + 本地浏览/会话/权限/条目操作扩展文件 |
+| T6 导航状态机改造 | ✅ 完成（长期方案） | `81b9fa9`；`MainActivity` 改为单容器 `replace`，隐藏页不再常驻 RESUMED |
+| T7 死代码/重复实现治理 | ✅ 完成 | `2642335`/`81b9fa9`；VFS 重复文件移入 `reviews/deprecated/`，`OpenFavoriteUseCase` 标注未接线，`inferType` 统一到 `InferFileTypeUseCase` |
+| T8 过期 API 与 Manifest 收尾 | ✅ 完成 | `81b9fa9`；`webView.scale` 抑制并注释；Manifest 对 `usesCleartextTraffic`/`largeHeap` 增加保留原因说明 |
+| T9 测试覆盖补强 | ✅ 完成 | `ebb620f`；新增 Room DAO、tab 去重、CacheEvictor、FilesNetworkGateway 共 4 个 JVM/Robolectric 测试类 |
+
+**剩余说明**：`core/work`/`core/di` 的 Hilt 路径已经可编译，但运行时仍未启用；当前唯一生效维护路径是 `HtmlReaderApp` 注册的 `AppHistoryRetentionWorker` / `AppOrphanCacheCleanupWorker`。后续若启用 Hilt Worker，必须删除该注册逻辑，避免再次双轨。
+
+---
+---
+
+## 2. 任务总览（本批执行后全部 ✅）
 
 | 优先级 | 任务 | 维度 | 复杂度 | 建议顺序 |
 |---|---|---|---|---|
-| P0 | T1 网络凭据 Keystore 加密存储 | 安全 | 高 | 1 |
-| P1 | T2 孤儿目录接线或清除 | 架构 | 中 | 2 |
-| P1 | T3 维护调度单源化 | 架构 | 低 | 3 |
-| P1 | T4 错误详情脱敏 | 安全 | 低 | 4 |
-| P1 | T5 `FilesFragment` 继续拆分 | 可维护 | 高 | 5 |
-| P1 | T6 导航状态机改造 | 生命周期 | 高 | 6 |
-| P2 | T7 死代码/重复实现治理 | 可维护 | 中 | 7 |
-| P2 | T8 过期 API 与 Manifest 收尾 | 可维护 | 低 | 8 |
-| P2 | T9 测试覆盖补强 | 测试 | 中 | 9 |
+| P0 | T1 网络凭据 Keystore 加密存储 ✅ | 安全 | 高 | 1 |
+| P1 | T2 孤儿目录接线或清除 ✅ | 架构 | 中 | 2 |
+| P1 | T3 维护调度单源化 ✅ | 架构 | 低 | 3 |
+| P1 | T4 错误详情脱敏 ✅ | 安全 | 低 | 4 |
+| P1 | T5 `FilesFragment` 继续拆分 ✅ | 可维护 | 高 | 5 |
+| P1 | T6 导航状态机改造 ✅ | 生命周期 | 高 | 6 |
+| P2 | T7 死代码/重复实现治理 ✅ | 可维护 | 中 | 7 |
+| P2 | T8 过期 API 与 Manifest 收尾 ✅ | 可维护 | 低 | 8 |
+| P2 | T9 测试覆盖补强 ✅ | 测试 | 中 | 9 |
 
 ---
 
 ## 3. 任务详细说明
 
-### T1. 网络凭据 Keystore 加密存储（P0，安全）
+### T1. 网络凭据 Keystore 加密存储（P0，安全）✅ 已完成
 
 - **现状**：`NetworkConfigEntity.password` 明文存 Room；`FilesNetworkGateway.buildFtpUrl` 将凭据拼入 URL；`JsonBackupManager` 导出已不写密码，但 DB 仍是明文。
 - **目标**：数据库中仅存密文；旧明文数据可读；新写入自动加密；读取自动解密。
@@ -96,7 +115,7 @@
   - `core/data/repo/NetworkConfigRepository.kt`
   - 可选：`app/src/main/java/html_reader/MoreFragment.kt`、`HomeFragment.kt` 无需改（repo 已屏蔽）
 
-### T2. 孤儿目录接线或清除（P1，架构）
+### T2. 孤儿目录接线或清除（P1，架构）✅ 已完成
 
 - **现状**：`core/favorites`、`core/settings`、`core/network`、`core/work`、`core/maintenance`、`core/di` 不在任何模块 `srcDirs`，未编译；其中 `core/favorites/domain/validator/FavoritesTreeValidator.kt` 引用了不存在的 `AppError.Conflict`，一旦接线会编译失败。
 - **目标**：二选一：
@@ -111,7 +130,7 @@
 - **前置修复**：先在 `core/common/AppError.kt` 增加 `object Conflict : AppError("Conflict")`。
 - **验收**：`./gradlew :app:assembleDebug` 通过；`grep -R "core/(favorites|settings|network|work|maintenance|di)"` 无未编译死目录告警；`CLAUDE.md` 1.4/4.4 映射表同步更新。
 
-### T3. 维护调度单源化（P1，架构）
+### T3. 维护调度单源化（P1，架构）✅ 已完成
 
 - **现状**：`HtmlReaderApp` 硬编码 `maxItems=500/maxDays=365/daysUnused=3`，并同时执行启动即清理与每日 Worker；`core/work` 与 `core/maintenance` 未接线，形成双轨。
 - **目标**：保留一条生效路径。
@@ -120,7 +139,7 @@
   2. 若 T2 暂不接线，则在 `AppHistoryRetentionWorker`/`AppOrphanCacheCleanupWorker` 中集中参数读取，并在 `HtmlReaderApp` 注释说明唯一调度入口。
 - **验收**：`HtmlReaderApp` 中不存在硬编码维护参数与明显重复调度；每日 Worker 仍正常注册。
 
-### T4. 错误详情脱敏（P1，安全）
+### T4. 错误详情脱敏（P1，安全）✅ 已完成
 
 - **现状**：`ReaderFragment.setErrorState` 在对话框展示完整异常 message，并可复制。
 - **目标**：用户看到友好摘要；完整详情仅写日志。
@@ -130,7 +149,7 @@
   3. `strings.xml` 增加通用错误标题/摘要（已有 `reader_status_error`，可复用）。
 - **验收**：错误弹窗不再出现完整路径/异常栈；日志中可查到完整详情。
 
-### T5. `FilesFragment` 继续拆分（P1，可维护）
+### T5. `FilesFragment` 继续拆分（P1，可维护）✅ 已完成
 
 - **现状**：`FilesFragment` 仍有 1200+ 行，集中了本地/FTP/SMB 浏览、文件操作、收藏、上传下载、编码诊断。
 - **目标**：Fragment 只负责 UI 绑定与事件转发；业务状态进 ViewModel 或至少拆分控制器。
@@ -141,7 +160,7 @@
   4. 若条件允许，改用 `ViewModel` + `StateFlow`。
 - **验收**：`FilesFragment` 行数明显下降（目标 < 700 行）；行为不回归；`:app:assembleDebug` 通过。
 
-### T6. 导航状态机改造（P1，生命周期）
+### T6. 导航状态机改造（P1，生命周期）✅ 已完成
 
 - **现状**：`MainActivity.switchFragment` 用 hide/show + 魔法 tag 管理页面，隐藏 Fragment 常驻，Flow 收集器不停止。
 - **目标**：单一容器，隐藏页面生命周期可预期。
@@ -150,7 +169,7 @@
   2. 长期：接入 `Navigation Component` 或改为 `replace + addToBackStack`。
 - **验收**：进入 Home 后，隐藏的 Files/Tabs/More 页面不再常驻 RESUMED；`onBackPressed` 行为与当前一致。
 
-### T7. 死代码/重复实现治理（P2，可维护）
+### T7. 死代码/重复实现治理（P2，可维护）✅ 已完成
 
 - **现状**：`core/vfs/IFileSystem.kt`、`core/vfs/FileSystemResolver.kt` 与 `core-storage/src/main/java/core/vfs/` 重复；`Migration1To2` 原本占位现已接线；`OpenFavoriteUseCase` 等无调用。
 - **目标**：在不删除功能的前提下消除误导。
@@ -159,7 +178,7 @@
   2. 对无调用且明确无用的类，标注 `// Deprecated: 未接线`，待用户批准后删除。
 - **验收**：源码树中没有「同名同包但一个不编译」的 VFS 接口；未接线代码有清晰标注。
 
-### T8. 过期 API 与 Manifest 收尾（P2，可维护）
+### T8. 过期 API 与 Manifest 收尾（P2，可维护）✅ 已完成
 
 - **现状**：`WebViewProgressTracker` 使用废弃的 `WebView.scale`；`android:largeHeap=true`；`usesCleartextTraffic=true`（FTP 需要，需评估 network security config 只允许 FTP 明文）。
 - **建议**：
@@ -168,7 +187,7 @@
   3. `largeHeap`：评估 PDF/WebView 内存占用，如非必要移除。
 - **验收**：构建无新增 deprecation 警告（scale 除外，已抑制）；Manifest 安全配置更精细。
 
-### T9. 测试覆盖补强（P2，测试）
+### T9. 测试覆盖补强（P2，测试）✅ 已完成
 
 - **目标**：
   - `HistoryDao.deleteOldest` 用 Room in-memory 测试验证「未超限删 0 条、超限删最旧」。
