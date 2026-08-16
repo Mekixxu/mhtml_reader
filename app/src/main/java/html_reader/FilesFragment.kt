@@ -1155,7 +1155,7 @@ class FilesFragment : Fragment() {
     }
 
     private fun showEntryDetails(entry: BrowserEntry) {
-        val message = FilesEntryDetailsBuilder.buildMessage(browseSource, entry)
+        val message = FilesEntryDetailsBuilder.buildMessage(requireContext(), browseSource, entry)
         AlertDialog.Builder(requireContext())
             .setTitle(getString(R.string.files_action_details))
             .setMessage(message)
