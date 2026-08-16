@@ -21,7 +21,7 @@
 ### 1.2 技术栈与关键版本（以当前代码为准）
 
 - 平台：Android
-- 语言：Kotlin（`kotlin.code.style=official`）
+- 语言：Kotlin `1.9.24`（`kotlin.code.style=official`）
 - UI：View + XML（非 Compose）
 - 构建：AGP `8.5.2` + Gradle `8.10`
 - JDK 目标：Java `17`（`sourceCompatibility/targetCompatibility/jvmTarget=17`）
@@ -29,18 +29,39 @@
   - `compileSdk = 36`
   - `targetSdk = 36`
   - `minSdk = 30`
-- 核心依赖：
-  - AndroidX（AppCompat、Lifecycle、WorkManager、WebKit）
-  - Room
-  - Hilt
-  - Coroutines
-  - jcifs-ng（SMB）
+- 版本号：`versionName = 1.0.3` / `versionCode = 4`（见 `app/build.gradle.kts`）
+- 核心依赖（关键版本）：
+  - AndroidX（AppCompat `1.7.0`、Lifecycle `2.8.4`、WorkManager `2.9.1`、WebKit `1.11.0`、Room `2.6.1`）
+  - Hilt `2.52`
+  - Coroutines `1.8.1`
+  - kotlinx-serialization `1.6.3`
+  - jcifs-ng `2.1.10`（SMB）
 
 ### 1.3 架构概览
 
-- 工程形态：Android 多模块（`app` + `core-*` + `feature-*`）。
+- 工程形态：Android 多模块（`app` + `core-*` + `feature-*`），模块注册见 `settings.gradle.kts`。
+- 源码组织：**软拆分** —— 业务源码统一位于 `core/` 目录树，各模块通过 `sourceSets.main.java.setSrcDirs(...)` 将 `core/` 下子目录“虚拟映射”进模块参与编译（详见 1.4）。修改任何 `core/` 代码前，务必先确认目标目录归属哪个模块、是否参与编译。
 - 运行方式：`app` 为 UI 壳与导航入口，主要业务实现位于 `core/` 目录。
-- 当前依赖装配：存在 Runtime 装配对象（如 `CoreRuntime`、`FilesRuntime`、`ReaderRuntime`）进行依赖组织。
+- 当前依赖装配：存在 Runtime 装配对象（如 `CoreRuntime`、`FilesRuntime`、`ReaderRuntime`）进行依赖组织；`core/di`、`core/*/di` 下的 Hilt `@Module` 多数未参与编译接线，改动 DI 前先确认生效路径。
+
+### 1.4 源码组织与模块映射（软拆分机制，强制阅读）
+
+> 项目没有把 `core/` 源码物理复制进各模块，而是通过 `sourceSets.main.java.setSrcDirs(...)` 在构建期“虚拟并入”。**某目录是否参与编译，取决于是否被列在某个模块的 srcDirs 中。**
+
+| 模块 | srcDirs 映射（`build.gradle.kts`） |
+|---|---|
+| `app` | `src/main/java` |
+| `core-base` | `core/common`、`core/vfs/model` |
+| `core-storage` | `src/main/java`、`core/vfs/impl`、`core/vfs/local` |
+| `core-data` | `core/database`、`core/data/repo`、`core/session/dao`、`core/session/entity` |
+| `core-domain` | `core/cache`、`core/domain`、`core/title`、`core/backup` |
+| `feature-files` | `core/fileops`、`core/files`、`core/session/repo`、`core/session/di` |
+| `feature-reader` | `core/reader` |
+
+**孤儿目录（暂不参与编译）**：`core/favorites`、`core/settings`、`core/network`、`core/work`、`core/maintenance`、`core/di`。
+⚠️ 在这些目录下新增/修改代码不会生效；其中的 Hilt Module、Worker、维护调度均为“已设计未接线”状态。若需启用，必须先加入某模块的 srcDirs（或物理迁移），并同步更新本文档。
+
+**同包重复告警**：`core/vfs/IFileSystem.kt`、`core/FileSystemResolver.kt` 与 `core-storage/src/main/java/core/vfs/` 下的同名实现重复，前者未编译、后者生效。改动 VFS 抽象时以 `core-storage` 侧为准。
 
 ---
 
@@ -69,6 +90,9 @@
    - 安全边界（外链、脚本、资源访问）
    - 阅读体验（缩放/布局）
    - 进度记录一致性
+6. 数据安全约束：
+   - 数据库实体/DAO 变更必须同步编写并注册对应 `Migration`（当前版本号 `4`），禁止依赖 `fallbackToDestructiveMigration()` 兜底（升级会清空用户数据）。
+   - 网络凭据（SMB/FTP 密码）禁止明文写入日志、URL 字符串或备份导出文件。
 
 ### 2.3 提交与重构要求
 
@@ -102,7 +126,7 @@
 
 1. 本项目已在 `gradle.properties` 中配置部分 kapt 稳定性参数，避免随意回退。  
 2. Manifest 涉及存储与网络权限，调试文件系统能力前先确认设备授权状态。  
-3. 若改动数据库实体/DAO，需同步评估迁移策略（当前可见 `MIGRATION_2_3` 与 destructive fallback）。  
+3. 若改动数据库实体/DAO，需同步评估迁移策略：必须在 `AppDatabase.companion` 中注册对应版本迁移（当前仅 `MIGRATION_2_3`，v3→v4 迁移缺失），禁止把 `fallbackToDestructiveMigration()` 当作默认兜底（升级将清空用户数据）。  
 
 ---
 
@@ -138,20 +162,29 @@
 - `app/src/main/java/html_reader/FilesRuntime.kt`：文件域依赖装配
 - `app/src/main/java/html_reader/ReaderRuntime.kt`：阅读域依赖装配
 
-### 4.4 Core 能力目录索引
+### 4.4 Core 能力目录索引（按编译归属标注）
 
-- `core/database/`：Room 数据库、DAO、实体、迁移
-- `core/data/repo/`：仓储实现（收藏/历史/网络配置/标题缓存）
-- `core/files/`：目录会话与目录观察
-- `core/fileops/`：复制/移动/删除/重命名/建目录
-- `core/reader/`：阅读器模型、标签、PDF/Web 适配、ViewModel
-- `core/vfs/`：虚拟文件系统抽象与本地实现
-- `core/network/`：网络配置与连接测试用例
-- `core/cache/`：缓存打开、淘汰与清理
-- `core/work/`：后台任务调度与 Worker
-- `core/settings/`：应用设置与 DataStore
-- `core/favorites/`：收藏树模型与用例
-- `core/title/`：标题提取能力（HTML/PDF）
+> `[C → 模块]` = 参与该模块编译；`[O]` = 孤儿目录（暂不编译，见 1.4）。修改前先确认归属。
+
+- `core/common` `[C → core-base]`：DispatcherProvider、AppError、HashUtils 等公共基础
+- `core/vfs/model` `[C → core-base]`：VfsPath、VfsEntry 模型
+- `core/vfs/impl`、`core/vfs/local` `[C → core-storage]`：虚拟文件系统抽象与本地实现
+- `core/database` `[C → core-data]`：Room 数据库、DAO、实体、迁移（含未注册的 `Migration1To2`）
+- `core/data/repo` `[C → core-data]`：仓储实现（收藏/历史/网络配置/标题缓存）
+- `core/session/*` `[C → core-data / feature-files]`：目录会话实体、DAO、仓储与用例
+- `core/cache` `[C → core-domain]`：缓存打开、淘汰与清理
+- `core/domain` `[C → core-domain]`：领域模型与用例（目录列表/标题/历史保留）
+- `core/title` `[C → core-domain]`：标题提取能力（HTML/PDF）
+- `core/backup` `[C → core-domain]`：JSON 导入导出
+- `core/fileops` `[C → feature-files]`：复制/移动/删除/重命名/建目录
+- `core/files` `[C → feature-files]`：目录会话用例
+- `core/reader` `[C → feature-reader]`：阅读器模型、标签、PDF/Web 适配、ViewModel
+- `core/favorites` `[O]`：收藏树模型与用例（未编译）
+- `core/settings` `[O]`：应用设置与 DataStore（未编译）
+- `core/network` `[O]`：网络配置用例与连接测试（未编译）
+- `core/work` `[O]`：后台任务调度与 Worker（未编译；实际生效的 Worker 位于 `app` 包内）
+- `core/maintenance` `[O]`：维护管理器（未编译）
+- `core/di` `[O]`：核心 DI 装配（未编译）
 
 ### 4.5 Web 阅读相关（高频）
 
@@ -165,11 +198,23 @@
 
 1. 变更以下任一内容时，必须同步更新本文件：
    - 模块结构、目录职责、入口文件路径
+   - 模块 srcDirs 映射或编译归属（1.4、4.4）
    - SDK/JDK/AGP/Gradle 版本基线
    - 开发约束与协作规范
 2. 若新增跨模块能力，先补“目录索引与定位说明”，再提交代码。  
 3. 文档内容应与仓库当前状态一致，禁止保留过期说明。  
+4. 目录索引（4.4）必须标注编译归属 `[C]/[O]`，与 1.4 的映射表保持一致。
+
+---
+
 ## 6. git
-1. 每次对话结束之后，如果对代码有修改，必须做git commit并附上本次修改message。
+
+1. 每次对话结束之后，如果对代码有修改，必须做 git commit 并附上本次修改 message。
+2. commit message 使用简洁、可预测的格式：`<type>: <简述>`（如 `fix: 补 3→4 数据库迁移`、`docs: 更新模块映射`）。
+
+---
+
 ## 7. 交付
-1. 请在每次修改代码之后生成apk文件，并且更新版本号，每次递增0.0.1。
+
+1. 仅在功能性代码修改后生成 APK：每次递增 `versionName`（+0.0.1）并同步递增 `versionCode`（+1）。纯文档/注释类修改不生成 APK，但仍须按第 6 节提交。
+2. 生成的 APK 命名遵循 `MHTMLReader_v<versionName>_<buildType>.apk`（`app/build.gradle.kts` 已配置输出规则）。
