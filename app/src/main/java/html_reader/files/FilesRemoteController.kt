@@ -34,6 +34,9 @@ interface FilesRemoteHost {
     fun reloadEntriesAfterRemoteMutation()
     fun persistCurrentDir()
     fun formatNetworkError(error: Throwable, protocol: NetworkProtocol): String
+    /** 独占互斥：本地文件操作与远程 SMB 操作共用同一把锁，避免并发写进度与列表。 */
+    fun tryAcquireOperationLock(): Boolean
+    fun releaseOperationLock()
 }
 
 /**
@@ -53,7 +56,6 @@ class FilesRemoteController(
 
     private var loadToken: Long = 0L
     private var remoteLoadJob: Job? = null
-    private var smbOperationRunning = false
 
     fun cancelRemoteLoad() {
         remoteLoadJob?.cancel()
@@ -311,18 +313,19 @@ class FilesRemoteController(
     }
 
     private fun runNetworkSmbOperation(block: suspend () -> Unit) {
-        if (smbOperationRunning) return
-        smbOperationRunning = true
+        if (!host.tryAcquireOperationLock()) return
         host.setOperationButtonsEnabled(false)
         host.showOperationProgress()
         host.hostLifecycleScope.launch {
             try {
                 block()
                 host.updateStatus(host.string(R.string.files_status_done), isError = false)
+            } catch (ce: CancellationException) {
+                throw ce
             } catch (error: Throwable) {
                 host.updateStatus(host.formatNetworkError(error, NetworkProtocol.SMB), isError = true)
             } finally {
-                smbOperationRunning = false
+                host.releaseOperationLock()
                 host.setOperationButtonsEnabled(true)
                 host.hideOperationProgress()
                 host.reloadEntriesAfterRemoteMutation()

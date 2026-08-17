@@ -32,6 +32,15 @@ class CredentialCipher(
         }
     }
 
+    /**
+     * 是否为 Keystore 加密格式。未带前缀的历史明文返回 false。
+     */
+    fun isEncrypted(stored: String): Boolean = stored.startsWith(PREFIX)
+
+    /**
+     * 解密。无前缀的历史明文原样返回（迁移用）；带前缀的密文解密失败时
+     * 抛出异常，由调用方决定如何呈现，避免静默置空丢失原始密码。
+     */
     fun decrypt(stored: String): String {
         if (stored.isBlank() || !stored.startsWith(PREFIX)) {
             return stored
@@ -39,7 +48,7 @@ class CredentialCipher(
         val payload = stored.removePrefix(PREFIX)
         val parts = payload.split(':')
         if (parts.size != 2) {
-            return stored
+            throw IllegalArgumentException("Malformed credential payload")
         }
         val iv = Base64.decode(parts[0], Base64.NO_WRAP)
         val encrypted = Base64.decode(parts[1], Base64.NO_WRAP)

@@ -1,5 +1,6 @@
 package core.data.repo
 
+import android.util.Log
 import core.common.DispatcherProvider
 import core.database.dao.NetworkConfigDao
 import core.database.entity.NetworkConfigEntity
@@ -12,12 +13,17 @@ import kotlinx.coroutines.withContext
 /**
  * 网络配置Repo。密码在写入口统一加密、在读取路径统一解密；
  * DAO 层仍保持 TEXT 列不变，旧明文数据无 enc:v1: 前缀可继续读取。
+ *
+ * 解密失败时保留原存值并标记 decryptFailed，由 UI 警示并阻断覆盖保存。
  */
 class NetworkConfigRepository(
     private val dao: NetworkConfigDao,
     private val dispatcherProvider: DispatcherProvider,
     private val credentialCipher: CredentialCipher
 ) {
+    companion object {
+        private const val TAG = "NetworkConfigRepository"
+    }
     fun observeAll(): Flow<List<NetworkConfigEntity>> =
         dao.observeAll()
             .map { entities -> entities.map { it.withDecryptedPassword() } }
@@ -52,9 +58,36 @@ class NetworkConfigRepository(
 
     suspend fun clearAll() = withContext(dispatcherProvider.io) { dao.clearAll() }
 
+    /**
+     * 一次性迁移：把历史明文密码（无 enc:v1: 前缀）重加密写回。幂等。
+     */
+    suspend fun migrateLegacyPlaintextIfNeeded() = withContext(dispatcherProvider.io) {
+        var offset = 0
+        val pageSize = 100
+        while (true) {
+            val page = dao.getAll(limit = pageSize, offset = offset)
+            if (page.isEmpty()) break
+            page.forEach { entity ->
+                val stored = entity.password
+                if (stored.isNotEmpty() && !credentialCipher.isEncrypted(stored)) {
+                    dao.update(entity.copy(password = credentialCipher.encrypt(stored)))
+                    Log.d(TAG, "credential_migrated id=${entity.id} host=${entity.host}")
+                }
+            }
+            offset += page.size
+        }
+    }
+
     private fun NetworkConfigEntity.withEncryptedPassword(): NetworkConfigEntity =
         copy(password = credentialCipher.encrypt(password))
 
-    private fun NetworkConfigEntity.withDecryptedPassword(): NetworkConfigEntity =
-        copy(password = runCatching { credentialCipher.decrypt(password) }.getOrElse { "" })
+    private fun NetworkConfigEntity.withDecryptedPassword(): NetworkConfigEntity {
+        val decrypted = runCatching { credentialCipher.decrypt(password) }
+        return if (decrypted.isSuccess) {
+            copy(password = decrypted.getOrThrow())
+        } else {
+            Log.w(TAG, "credential_decrypt_failed id=$id host=$host err=${decrypted.exceptionOrNull()?.javaClass?.simpleName}")
+            this.apply { decryptFailed = true }
+        }
+    }
 }

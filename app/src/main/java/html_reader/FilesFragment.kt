@@ -118,6 +118,10 @@ class FilesFragment : Fragment(), FilesRemoteHost {
         private const val ARG_SAF_TREE_URI = "arg_saf_tree_uri"
         private const val FILE_BROWSER_PREFS = "files_browser_settings"
         private const val KEY_NAME_FONT_SIZE_INDEX = "name_font_size_index"
+        private const val KEY_QUERY_TEXT = "query_text"
+        private const val KEY_SCROLL_DIR = "scroll_dir"
+        private const val KEY_SCROLL_POSITION = "scroll_position"
+        private const val KEY_SCROLL_TOP = "scroll_top"
         private const val FONT_INDEX_SMALL = 0
         private const val FONT_INDEX_MEDIUM = 1
         private const val FONT_INDEX_LARGE = 2
@@ -271,6 +275,7 @@ class FilesFragment : Fragment(), FilesRemoteHost {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
             override fun afterTextChanged(s: Editable?) {
+                saveQueryText(s?.toString().orEmpty())
                 renderEntries()
             }
         })
@@ -344,9 +349,39 @@ class FilesFragment : Fragment(), FilesRemoteHost {
         }
 
         operationStatusLabel.text = getString(R.string.files_status_idle)
+        restoreQueryText()
         restoreSessionAndLoad()
         observeSessionSwitch()
         ensureStoragePermissionIfNeeded()
+    }
+
+    private fun browserPrefs() = requireContext().getSharedPreferences(FILE_BROWSER_PREFS, Context.MODE_PRIVATE)
+
+    internal fun saveQueryText(value: String) {
+        browserPrefs().edit().putString(KEY_QUERY_TEXT, value).apply()
+    }
+
+    internal fun restoreQueryText() {
+        queryInput.setText(browserPrefs().getString(KEY_QUERY_TEXT, "").orEmpty())
+        queryInput.setSelection(queryInput.text?.length ?: 0)
+    }
+
+    internal fun saveScrollState(dir: File) {
+        val position = listView.firstVisiblePosition
+        val child = listView.getChildAt(0) ?: return
+        browserPrefs().edit()
+            .putString(KEY_SCROLL_DIR, dir.absolutePath)
+            .putInt(KEY_SCROLL_POSITION, position)
+            .putInt(KEY_SCROLL_TOP, child.top)
+            .apply()
+    }
+
+    internal fun restoreScrollState(dir: File) {
+        val prefs = browserPrefs()
+        if (prefs.getString(KEY_SCROLL_DIR, null) != dir.absolutePath) return
+        val position = prefs.getInt(KEY_SCROLL_POSITION, 0)
+        val top = prefs.getInt(KEY_SCROLL_TOP, 0)
+        listView.post { listView.setSelectionFromTop(position, top) }
     }
 
     private fun initDependencies() {
@@ -385,6 +420,11 @@ class FilesFragment : Fragment(), FilesRemoteHost {
         if (browseSource == BrowseSource.LOCAL && !checkStoragePermission()) {
             // Optional: check again if needed
         }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        currentDir?.let { saveScrollState(it) }
     }
 
     fun navigateUp(): Boolean {
@@ -455,10 +495,9 @@ class FilesFragment : Fragment(), FilesRemoteHost {
     }
 
     internal fun runOperation(request: FileOpRequest) {
-        if (operationRunning) {
+        if (!tryAcquireOperationLock()) {
             return
         }
-        operationRunning = true
         FilesOperationUiBinder.onBeforeRun(operationProgress, ::setOperationButtonsEnabled)
         viewLifecycleOwner.lifecycleScope.launch {
             try {
@@ -483,12 +522,24 @@ class FilesFragment : Fragment(), FilesRemoteHost {
             } catch (t: Throwable) {
                 updateStatus(t.message ?: t.javaClass.simpleName, isError = true)
             } finally {
-                operationRunning = false
+                releaseOperationLock()
                 FilesOperationUiBinder.onAfterRun(operationProgress, ::setOperationButtonsEnabled)
                 loadEntries()
                 persistCurrentDir()
             }
         }
+    }
+
+    override fun tryAcquireOperationLock(): Boolean {
+        if (operationRunning) {
+            return false
+        }
+        operationRunning = true
+        return true
+    }
+
+    override fun releaseOperationLock() {
+        operationRunning = false
     }
 
     internal fun selectResultPath(resultPath: VfsPath?) {

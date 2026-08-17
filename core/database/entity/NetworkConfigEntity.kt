@@ -24,4 +24,11 @@ data class NetworkConfigEntity(
     val password: String,
     val defaultPath: String,
     val encoding: String = "Auto"
-)
+) {
+    /**
+     * 运行时标记：本次读取时密码解密失败（Keystore key 失效/数据损坏等）。
+     * 不落库，仅用于 UI 警示并阻断覆盖保存。copy() 后需重新赋值。
+     */
+    @Ignore
+    var decryptFailed: Boolean = false
+}

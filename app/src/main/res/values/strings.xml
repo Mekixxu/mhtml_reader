@@ -160,6 +160,7 @@
     <string name="more_network_port_hint">Port</string>
     <string name="more_network_user_hint">Username</string>
     <string name="more_network_password_hint">Password</string>
+    <string name="more_network_password_undecryptable">Saved password cannot be decrypted. Enter a new password to overwrite it.</string>
     <string name="more_network_path_hint">Default path</string>
     <string name="more_network_ftp_anonymous">Use anonymous FTP login</string>
     <string name="more_network_auth_anonymous">anonymous</string>

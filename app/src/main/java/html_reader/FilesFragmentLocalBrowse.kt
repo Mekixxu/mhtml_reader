@@ -47,6 +47,7 @@ internal fun FilesFragment.loadEntries() {
         setLocalActionButtonsEnabled(true)
         actionCreateButton.text = getString(R.string.action_new_folder)
         renderEntries()
+        restoreScrollState(dir)
         refreshTitlesAsync()
     }
 }

@@ -152,6 +152,18 @@ class MoreFragment : Fragment() {
         val anonymousCheck = CheckBox(requireContext())
         val encodingSpinner = Spinner(requireContext())
 
+        val decryptFailed = existing?.decryptFailed == true
+        val decryptWarning = if (decryptFailed) {
+            TextView(requireContext()).apply {
+                text = getString(R.string.more_network_password_undecryptable)
+                setTextColor(android.graphics.Color.RED)
+                textSize = 14f
+                setPadding(0, 8, 0, 8)
+            }
+        } else {
+            null
+        }
+
         val protocolValues = listOf(NetworkProtocol.SMB, NetworkProtocol.FTP)
         val encodingValues = listOf("Auto", "UTF-8", "GBK", "Big5", "ISO-8859-1", "Shift_JIS", "Windows-1251")
 
@@ -174,11 +186,11 @@ class MoreFragment : Fragment() {
         pathInput.hint = getString(R.string.more_network_path_hint)
         anonymousCheck.text = getString(R.string.more_network_ftp_anonymous)
         
-        root.addView(protocolSpinner)
+root.addView(protocolSpinner)
         root.addView(nameInput)
         root.addView(hostInput)
         root.addView(portInput)
-        root.addView(anonymousCheck)
+        decryptWarning?.let { root.addView(it) }
         root.addView(userInput)
         root.addView(passwordInput)
         root.addView(pathInput)
@@ -203,7 +215,9 @@ class MoreFragment : Fragment() {
             hostInput.setText(existing.host)
             portInput.setText(existing.port.toString())
             userInput.setText(existing.username)
-            passwordInput.setText(existing.password)
+            if (!decryptFailed) {
+                passwordInput.setText(existing.password)
+            }
             pathInput.setText(existing.defaultPath)
             anonymousCheck.isChecked = existing.protocol == NetworkProtocol.FTP && existing.username.isBlank()
             encodingSpinner.setSelection(encodingValues.indexOf(existing.encoding).coerceAtLeast(0))
@@ -251,6 +265,10 @@ class MoreFragment : Fragment() {
                 
                 if (name.isBlank() || host.isBlank() || port == null || port <= 0) {
                     showStatus(R.string.more_network_invalid, isError = true)
+                    return@setPositiveButton
+                }
+                if (decryptFailed && password.isBlank()) {
+                    showStatus(R.string.more_network_password_undecryptable, isError = true)
                     return@setPositiveButton
                 }
                 val entity = NetworkConfigEntity(
