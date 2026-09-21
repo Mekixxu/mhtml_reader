@@ -29,7 +29,7 @@
   - `compileSdk = 36`
   - `targetSdk = 36`
   - `minSdk = 30`
-- 版本号：`versionName = 1.0.17` / `versionCode = 18`（见 `app/build.gradle.kts`）
+- 版本号：`versionName = 1.0.19` / `versionCode = 20`（见 `app/build.gradle.kts`）
 - 核心依赖（关键版本）：
   - AndroidX（AppCompat `1.7.0`、Lifecycle `2.8.4`、WorkManager `2.9.1`、WebKit `1.11.0`、Room `2.6.1`）
   - Hilt `2.52`
@@ -212,6 +212,7 @@
 
 - `reviews/claude_sonnet4_2026-08-16.md`：2026-08-16 全项目代码审查报告（21 条问题清单）。
 - `reviews/review_plan_2026-08-16.md`：升级执行计划（剩余任务 T1-T9、优先级、验收标准、构建命令），供后续开发按序实施。
+- `reviews/opencode_2026-09-21.md`：2026-09-21 全量审查报告与改进计划（P0/P1/P2 清单、批次 A-D 计划、待决策项）。
 
 ---
 

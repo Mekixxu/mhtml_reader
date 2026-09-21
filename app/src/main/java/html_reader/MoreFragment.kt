@@ -186,10 +186,11 @@ class MoreFragment : Fragment() {
         pathInput.hint = getString(R.string.more_network_path_hint)
         anonymousCheck.text = getString(R.string.more_network_ftp_anonymous)
         
-root.addView(protocolSpinner)
+        root.addView(protocolSpinner)
         root.addView(nameInput)
         root.addView(hostInput)
         root.addView(portInput)
+        root.addView(anonymousCheck)
         decryptWarning?.let { root.addView(it) }
         root.addView(userInput)
         root.addView(passwordInput)
@@ -267,7 +268,7 @@ root.addView(protocolSpinner)
                     showStatus(R.string.more_network_invalid, isError = true)
                     return@setPositiveButton
                 }
-                if (decryptFailed && password.isBlank()) {
+                if (decryptFailed && password.isBlank() && !useAnonymous) {
                     showStatus(R.string.more_network_password_undecryptable, isError = true)
                     return@setPositiveButton
                 }
