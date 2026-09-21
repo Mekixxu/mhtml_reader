@@ -26,10 +26,11 @@ class CopyUseCase(
         val sourceName = extractName(from)
         val resolvedPath = nameResolver.resolve(toDir, sourceName, strategy)
         val defaultTarget = core.fileops.util.FileNameUtils.childPath(toDir, sourceName)
-        var copied = fileSystem.copy(from, toDir).getOrElse { throw it }
-        if (resolvedPath.raw != defaultTarget.raw) {
-            val resolvedName = extractName(resolvedPath)
-            copied = fileSystem.rename(copied, resolvedName).getOrElse { throw it }
+        // 冲突时直接复制到解析后的目标名，避免先写默认名再改名导致覆盖
+        val copied = if (resolvedPath.raw == defaultTarget.raw) {
+            fileSystem.copy(from, toDir).getOrElse { throw it }
+        } else {
+            fileSystem.copyTo(from, resolvedPath).getOrElse { throw it }
         }
         emit(FileOpState.Progress(1L, 1L))
         emit(FileOpState.Success(copied))

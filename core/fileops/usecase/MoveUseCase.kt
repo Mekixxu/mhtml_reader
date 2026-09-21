@@ -26,10 +26,11 @@ class MoveUseCase(
         val sourceName = extractName(from)
         val resolvedPath = nameResolver.resolve(toDir, sourceName, strategy)
         val defaultTarget = core.fileops.util.FileNameUtils.childPath(toDir, sourceName)
-        var moved = fileSystem.move(from, toDir).getOrElse { throw it }
-        if (resolvedPath.raw != defaultTarget.raw) {
-            val resolvedName = extractName(resolvedPath)
-            moved = fileSystem.rename(moved, resolvedName).getOrElse { throw it }
+        // 冲突时直接移动到解析后的目标名，避免先覆盖默认名再改名导致数据丢失
+        val moved = if (resolvedPath.raw == defaultTarget.raw) {
+            fileSystem.move(from, toDir).getOrElse { throw it }
+        } else {
+            fileSystem.moveTo(from, resolvedPath).getOrElse { throw it }
         }
         emit(FileOpState.Progress(1L, 1L))
         emit(FileOpState.Success(moved))

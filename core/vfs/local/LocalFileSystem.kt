@@ -296,6 +296,52 @@ class LocalFileSystem(
             }
         }
 
+    override suspend fun moveTo(from: VfsPath, target: VfsPath): Result<VfsPath> =
+        withContext(dispatcherProvider.io) {
+            try {
+                when {
+                    from is VfsPath.LocalFile && target is VfsPath.LocalFile -> {
+                        val src = File(from.filePath)
+                        val dst = File(target.filePath)
+                        if (!src.exists()) return@withContext Result.failure(AppError.NotFound)
+                        if (dst.exists()) {
+                            return@withContext Result.failure(AppError.IoError("Target already exists: ${dst.name}"))
+                        }
+                        if (src.renameTo(dst)) Result.success(VfsPath.LocalFile(dst.absolutePath))
+                        else Result.failure(AppError.IoError("Move failed"))
+                    }
+                    else -> Result.failure(AppError.UnsupportedOperation)
+                }
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (e: Exception) {
+                Result.failure(AppError.IoError(e.message, e))
+            }
+        }
+
+    override suspend fun copyTo(from: VfsPath, target: VfsPath): Result<VfsPath> =
+        withContext(dispatcherProvider.io) {
+            try {
+                when {
+                    from is VfsPath.LocalFile && target is VfsPath.LocalFile -> {
+                        val src = File(from.filePath)
+                        val dst = File(target.filePath)
+                        if (!src.exists()) return@withContext Result.failure(AppError.NotFound)
+                        if (dst.exists()) {
+                            return@withContext Result.failure(AppError.IoError("Target already exists: ${dst.name}"))
+                        }
+                        src.copyTo(dst, overwrite = false)
+                        Result.success(VfsPath.LocalFile(dst.absolutePath))
+                    }
+                    else -> Result.failure(AppError.UnsupportedOperation)
+                }
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (e: Exception) {
+                Result.failure(AppError.IoError(e.message, e))
+            }
+        }
+
     override suspend fun lastModified(path: VfsPath): Result<Long> =
         withContext(dispatcherProvider.io) {
             try {
