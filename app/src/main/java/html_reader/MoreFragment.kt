@@ -284,14 +284,21 @@ class MoreFragment : Fragment() {
                     encoding = encoding
                 )
                 viewLifecycleOwner.lifecycleScope.launch {
-                    if (existing == null) {
-                        val newId = FilesRuntime.networkConfigRepository(requireContext()).add(entity)
-                        selectedId = newId
-                        showStatus(R.string.more_network_added, isSuccess = true)
-                    } else {
-                        FilesRuntime.networkConfigRepository(requireContext()).update(entity)
-                        selectedId = existing.id
-                        showStatus(R.string.more_network_updated, isSuccess = true)
+                    try {
+                        if (existing == null) {
+                            val newId = FilesRuntime.networkConfigRepository(requireContext()).add(entity)
+                            selectedId = newId
+                            showStatus(R.string.more_network_added, isSuccess = true)
+                        } else {
+                            FilesRuntime.networkConfigRepository(requireContext()).update(entity)
+                            selectedId = existing.id
+                            showStatus(R.string.more_network_updated, isSuccess = true)
+                        }
+                    } catch (ce: kotlinx.coroutines.CancellationException) {
+                        throw ce
+                    } catch (t: Throwable) {
+                        // 唯一索引冲突等写入失败，提示而非崩溃
+                        showStatus(R.string.more_network_duplicate, isError = true)
                     }
                 }
             }

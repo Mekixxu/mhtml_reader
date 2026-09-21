@@ -79,7 +79,9 @@ class NetworkConfigRepository(
     }
 
     private fun NetworkConfigEntity.withEncryptedPassword(): NetworkConfigEntity =
-        copy(password = credentialCipher.encrypt(password))
+        // 已是密文（如导入的备份）直接保留，避免二次加密导致永久不可解
+        if (credentialCipher.isEncrypted(password)) this
+        else copy(password = credentialCipher.encrypt(password))
 
     private fun NetworkConfigEntity.withDecryptedPassword(): NetworkConfigEntity {
         val decrypted = runCatching { credentialCipher.decrypt(password) }

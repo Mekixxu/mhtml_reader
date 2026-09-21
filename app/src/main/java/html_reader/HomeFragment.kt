@@ -13,6 +13,7 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.ListView
 import android.widget.Spinner
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
@@ -158,17 +159,27 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
                 
                 if (name.isNotBlank() && host.isNotBlank()) {
                     viewLifecycleOwner.lifecycleScope.launch {
-                        networkConfigRepository.add(
-                            NetworkConfigEntity(
-                                name = name,
-                                protocol = protocol,
-                                host = host,
-                                port = if (port > 0) port else if (protocol == NetworkProtocol.FTP) 21 else 445,
-                                username = user,
-                                password = pass,
-                                defaultPath = "/"
+                        try {
+                            networkConfigRepository.add(
+                                NetworkConfigEntity(
+                                    name = name,
+                                    protocol = protocol,
+                                    host = host,
+                                    port = if (port > 0) port else if (protocol == NetworkProtocol.FTP) 21 else 445,
+                                    username = user,
+                                    password = pass,
+                                    defaultPath = "/"
+                                )
                             )
-                        )
+                        } catch (ce: kotlinx.coroutines.CancellationException) {
+                            throw ce
+                        } catch (t: Throwable) {
+                            Toast.makeText(
+                                requireContext(),
+                                getString(R.string.home_network_duplicate),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
                     }
                 }
             }
