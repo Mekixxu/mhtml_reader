@@ -14,15 +14,18 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.sync.Mutex
 import kotlin.coroutines.coroutineContext
 import java.io.File
 import java.io.OutputStream
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * 统一缓存打开、流式拷贝
  * - 缓存分区按类型/[contentType]/[cacheKey]/content.[ext]组织提高维护与调试便利
  * - cacheKey生成纳入contentType、路径、size
- * - extName按内容类型、若未知直接抛InvalidContentType
+ * - extName按内容类型推断，未知类型返回 Result.failure，不抛异常
+ * - 同一 cacheKey 使用 Mutex 单飞，避免并发写坏缓存
  */
 class CacheOpenManager(
     private val context: Context,
@@ -32,6 +35,7 @@ class CacheOpenManager(
     private val cacheEvictor: CacheEvictor,
     private val activeKeysProvider: () -> Set<String> = { emptySet() }
 ) {
+    private val copyLocks = ConcurrentHashMap<String, Mutex>()
 
     suspend fun openToCache(
         src: VfsPath,
@@ -47,70 +51,77 @@ class CacheOpenManager(
             size = totalBytes,
             versionStamp = versionStamp
         )
-        val typeDir = cacheRoot.resolve(contentType.name.lowercase())
-        typeDir.mkdirs()
-        val cacheDir = typeDir.resolve(cacheKey)
-        cacheDir.mkdirs()
-        val fileExt = extName
-            ?: when (contentType) {
-                ContentType.PDF -> "pdf"
-                ContentType.MHTML -> "mhtml"
-                ContentType.HTML -> "html"
-                ContentType.WEB -> "web"
-                else -> null // InvalidContentType，按失败结果返回，不抛异常
-            }
-        if (fileExt == null) {
-            emit(Result.failure(AppError.InvalidUri))
-            return@flow
-        }
-        val cacheFile = File(cacheDir, "content.$fileExt")
-
-        // 已存在直接100%进度
-        if (cacheFile.exists() && cacheFile.length() == totalBytes) {
-            emit(Result.success(CopyProgress(totalBytes, totalBytes)))
-            return@flow
-        }
-
-        // Proactive eviction：超限或无法腾出空间时按失败结果返回，不抛异常
-        if (!cacheEvictor.makeRoomFor(totalBytes, activeKeysProvider(), cacheKey)) {
-            emit(Result.failure(AppError.IoError("File exceeds cache capacity", null)))
-            return@flow
-        }
-
-        // 开始流式拷贝
-        val inputResult = fileSystem.openInputStream(src)
-        val `in` = inputResult.getOrElse { error ->
-            emit(Result.failure(AppError.IoError("OpenInputStream failed", error)))
-            return@flow
-        }
-        var out: OutputStream? = null
+        // 同一 cacheKey 串行拷贝，避免并发打开同一文件时互相写坏缓存
+        val copyLock = copyLocks.computeIfAbsent(cacheKey) { Mutex() }
+        copyLock.lock()
         try {
-            out = cacheFile.outputStream()
-            val buf = ByteArray(64 * 1024)
-            var copied = 0L
-            var read: Int
-            while (true) {
-                coroutineContext.ensureActive()
-                read = `in`.read(buf)
-                if (read == -1) break
-                out.write(buf, 0, read)
-                copied += read
-                emit(Result.success(CopyProgress(copied, totalBytes)))
+            val typeDir = cacheRoot.resolve(contentType.name.lowercase())
+            typeDir.mkdirs()
+            val cacheDir = typeDir.resolve(cacheKey)
+            cacheDir.mkdirs()
+            val fileExt = extName
+                ?: when (contentType) {
+                    ContentType.PDF -> "pdf"
+                    ContentType.MHTML -> "mhtml"
+                    ContentType.HTML -> "html"
+                    ContentType.WEB -> "web"
+                    else -> null // InvalidContentType，按失败结果返回，不抛异常
+                }
+            if (fileExt == null) {
+                emit(Result.failure(AppError.InvalidUri))
+                return@flow
             }
-            out.flush()
-        } catch (ce: CancellationException) {
-            cacheFile.delete()
-            emit(Result.failure(ce))
-            throw ce
-        } catch (e: Throwable) {
-            cacheFile.delete()
-            // 只上报失败，不再二次抛出，避免调用方 collect 崩溃
-            emit(Result.failure(e))
+            val cacheFile = File(cacheDir, "content.$fileExt")
+
+            // 已存在直接100%进度
+            if (cacheFile.exists() && cacheFile.length() == totalBytes) {
+                emit(Result.success(CopyProgress(totalBytes, totalBytes)))
+                return@flow
+            }
+
+            // Proactive eviction：超限或无法腾出空间时按失败结果返回，不抛异常
+            if (!cacheEvictor.makeRoomFor(totalBytes, activeKeysProvider(), cacheKey)) {
+                emit(Result.failure(AppError.IoError("File exceeds cache capacity", null)))
+                return@flow
+            }
+
+            // 开始流式拷贝
+            val inputResult = fileSystem.openInputStream(src)
+            val `in` = inputResult.getOrElse { error ->
+                emit(Result.failure(AppError.IoError("OpenInputStream failed", error)))
+                return@flow
+            }
+            var out: OutputStream? = null
+            try {
+                out = cacheFile.outputStream()
+                val buf = ByteArray(64 * 1024)
+                var copied = 0L
+                var read: Int
+                while (true) {
+                    coroutineContext.ensureActive()
+                    read = `in`.read(buf)
+                    if (read == -1) break
+                    out.write(buf, 0, read)
+                    copied += read
+                    emit(Result.success(CopyProgress(copied, totalBytes)))
+                }
+                out.flush()
+            } catch (ce: CancellationException) {
+                cacheFile.delete()
+                emit(Result.failure(ce))
+                throw ce
+            } catch (e: Throwable) {
+                cacheFile.delete()
+                // 只上报失败，不再二次抛出，避免调用方 collect 崩溃
+                emit(Result.failure(e))
+            } finally {
+                try { `in`.close() } catch (_: Throwable) {}
+                try { out?.close() } catch (_: Throwable) {}
+            }
+            emit(Result.success(CopyProgress(totalBytes, totalBytes)))
         } finally {
-            try { `in`.close() } catch (_: Throwable) {}
-            try { out?.close() } catch (_: Throwable) {}
+            copyLock.unlock()
         }
-        emit(Result.success(CopyProgress(totalBytes, totalBytes)))
     }.flowOn(dispatcherProvider.io)
 
     fun generateCacheKey(

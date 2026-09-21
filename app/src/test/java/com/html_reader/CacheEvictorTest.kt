@@ -88,6 +88,28 @@ class CacheEvictorTest {
         assertFalse(idle.exists())
     }
 
+    @Test
+    fun makeRoomFor_countsAndEvictsLooseFiles() = runBlocking {
+        val root = tempFolder.newFolder("app_cache_loose")
+        val typeDir = File(root, "mhtml").apply { mkdirs() }
+        val now = System.currentTimeMillis()
+        val cached = createCacheDir(typeDir, "cached", now - 3 * 86_400_000L, bytes = 100)
+        val typeLoose = File(typeDir, "loose.tmp").apply {
+            writeBytes(ByteArray(100)); setLastModified(now - 4 * 86_400_000L)
+        }
+        val rootLoose = File(root, "root.tmp").apply {
+            writeBytes(ByteArray(100)); setLastModified(now - 5 * 86_400_000L)
+        }
+
+        val evictor = CacheEvictor(cacheRoot = root, maxBytes = 250)
+        val result = evictor.makeRoomFor(requiredBytes = 100)
+
+        assertTrue(result)
+        assertFalse(rootLoose.exists())
+        assertFalse(typeLoose.exists())
+        assertTrue(cached.exists())
+    }
+
     private fun createCacheDir(typeDir: File, name: String, lastModified: Long, bytes: Int): File {
         val dir = File(typeDir, name).apply { mkdirs() }
         File(dir, "content.mhtml").apply {

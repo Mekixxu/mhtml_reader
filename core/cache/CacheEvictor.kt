@@ -5,20 +5,27 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * LRU淘汰器，目录分区后按最后修改时间淘汰
+ * LRU淘汰器，目录分区后按最后修改时间淘汰。
+ * 同时统计根/一级目录下的散落文件，避免缓存总量被低估。
  */
 class CacheEvictor(
     private val cacheRoot: File,
     private val maxBytes: Long = 2L * 1024 * 1024 * 1024
 ) {
+    private data class CacheItem(
+        val file: File,
+        val size: Long,
+        val protectedName: String? // keyDir 名称，散落文件为 null（不可受保护）
+    )
+
     suspend fun evictOldFiles(maxAgeMs: Long, protectedKeys: Set<String> = emptySet()) =
         withContext(Dispatchers.IO) {
             val cutoff = System.currentTimeMillis() - maxAgeMs
-            collectCacheDirs()
-                .filter { it.name !in protectedKeys }
-                .forEach { dir ->
-                    if (dir.lastModified() < cutoff) {
-                        dir.deleteRecursively()
+            collectCacheItems()
+                .filter { it.isDeletable(protectedKeys) }
+                .forEach { item ->
+                    if (item.file.lastModified() < cutoff) {
+                        item.file.deleteRecursively()
                     }
                 }
         }
@@ -36,15 +43,14 @@ class CacheEvictor(
     ): Boolean = withContext(Dispatchers.IO) {
         if (requiredBytes >= maxBytes) return@withContext false
         val protected = protectedKeys + setOfNotNull(currentKey)
-        val all = collectCacheDirs().map { dir -> dir to dir.sizeAndChildren() }
-        var total = all.sumOf { it.second }
+        val all = collectCacheItems()
+        var total = all.sumOf { it.size }
         val limit = maxBytes - requiredBytes
         if (total <= limit) return@withContext true
 
-        val deletable = all.filter { it.first.name !in protected }
-        for ((dir, size) in deletable.sortedBy { it.first.lastModified() }) {
-            dir.deleteRecursively()
-            total -= size
+        for (item in all.filter { it.isDeletable(protected) }.sortedBy { it.file.lastModified() }) {
+            item.file.deleteRecursively()
+            total -= item.size
             if (total <= limit) return@withContext true
         }
         total <= limit
@@ -53,11 +59,26 @@ class CacheEvictor(
     suspend fun evictIfNeeded(protectedKeys: Set<String> = emptySet()) =
         makeRoomFor(0L, protectedKeys)
 
-    private fun collectCacheDirs(): List<File> =
-        cacheRoot.listFiles()
-            ?.filter { it.isDirectory }
-            ?.flatMap { dir -> dir.listFiles()?.filter { it.isDirectory } ?: emptyList() }
-            ?: emptyList()
+    private fun CacheItem.isDeletable(protectedKeys: Set<String>): Boolean =
+        protectedName == null || protectedName !in protectedKeys
+
+    private fun collectCacheItems(): List<CacheItem> {
+        val items = mutableListOf<CacheItem>()
+        cacheRoot.listFiles()?.forEach { entry ->
+            if (entry.isDirectory) {
+                entry.listFiles()?.forEach { child ->
+                    if (child.isDirectory) {
+                        items += CacheItem(child, child.sizeAndChildren(), child.name)
+                    } else {
+                        items += CacheItem(child, child.length(), null)
+                    }
+                }
+            } else {
+                items += CacheItem(entry, entry.length(), null)
+            }
+        }
+        return items
+    }
 }
 
 /**
