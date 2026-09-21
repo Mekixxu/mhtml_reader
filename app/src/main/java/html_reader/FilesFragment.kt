@@ -58,6 +58,7 @@ import java.io.File
 import java.text.DateFormat
 import java.util.Date
 import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
@@ -519,13 +520,18 @@ class FilesFragment : Fragment(), FilesRemoteHost {
                         updateStatus(message, isError = true)
                     }
                 )
+            } catch (ce: CancellationException) {
+                throw ce
             } catch (t: Throwable) {
                 updateStatus(t.message ?: t.javaClass.simpleName, isError = true)
             } finally {
                 releaseOperationLock()
-                FilesOperationUiBinder.onAfterRun(operationProgress, ::setOperationButtonsEnabled)
-                loadEntries()
-                persistCurrentDir()
+                // 视图已销毁时不再触碰 UI/触发新任务
+                if (view != null) {
+                    FilesOperationUiBinder.onAfterRun(operationProgress, ::setOperationButtonsEnabled)
+                    loadEntries()
+                    persistCurrentDir()
+                }
             }
         }
     }
@@ -585,15 +591,18 @@ class FilesFragment : Fragment(), FilesRemoteHost {
     internal fun defaultRootDir(): File = requireContext().filesDir.parentFile ?: requireContext().filesDir
 
     override fun setOperationButtonsEnabled(enabled: Boolean) {
+        if (view == null) return
         actionUpButton.isEnabled = enabled
         actionCreateButton.isEnabled = enabled
     }
 
     internal fun setLocalActionButtonsEnabled(enabled: Boolean) {
+        if (view == null) return
         actionCreateButton.isEnabled = enabled
     }
 
     override fun updateStatus(value: String, isError: Boolean) {
+        if (view == null) return
         operationStatusLabel.text = value
         val colorRes = if (isError) android.R.color.holo_red_dark else android.R.color.black
         operationStatusLabel.setTextColor(resources.getColor(colorRes, null))
@@ -616,13 +625,15 @@ class FilesFragment : Fragment(), FilesRemoteHost {
 
     override fun isAttached(): Boolean = isAdded
 
-    override fun string(resId: Int): String = getString(resId)
+    override fun string(resId: Int): String = if (isAdded) getString(resId) else ""
 
     override fun updateCurrentDirLabel() {
+        if (view == null) return
         currentDirLabel.text = buildCurrentDirText(currentDirFile())
     }
 
     override fun prepareRemoteBrowse(createActionLabelRes: Int) {
+        if (view == null) return
         setLocalActionButtonsEnabled(false)
         actionCreateButton.isEnabled = true
         actionCreateButton.text = getString(createActionLabelRes)
@@ -638,6 +649,7 @@ class FilesFragment : Fragment(), FilesRemoteHost {
     }
 
     override fun onRemoteEntriesLoadFailed(message: String) {
+        if (view == null) return
         allEntries.clear()
         displayedEntries.clear()
         adapter.clear()
@@ -646,16 +658,19 @@ class FilesFragment : Fragment(), FilesRemoteHost {
     }
 
     override fun showOperationProgress() {
+        if (view == null) return
         operationProgress.visibility = View.VISIBLE
         operationProgress.isIndeterminate = true
         operationProgress.progress = 0
     }
 
     override fun hideOperationProgress() {
+        if (view == null) return
         operationProgress.visibility = View.GONE
     }
 
     override fun openDownloadedFile(file: File, displayName: String, isBackground: Boolean) {
+        if (view == null) return
         updateStatus(getString(R.string.files_status_done), isError = false)
         if (isBackground) {
             openFileInBackground(file, displayName)
@@ -665,10 +680,12 @@ class FilesFragment : Fragment(), FilesRemoteHost {
     }
 
     override fun reloadEntriesAfterRemoteMutation() {
+        if (view == null) return
         loadEntries()
     }
 
     override fun formatNetworkError(error: Throwable, protocol: NetworkProtocol): String {
+        if (!isAdded) return ""
         return FilesErrorFormatter.format(
             error = error,
             protocol = protocol,
@@ -694,17 +711,25 @@ class FilesFragment : Fragment(), FilesRemoteHost {
         Toast.makeText(requireContext(), getString(R.string.files_msg_opening_background, displayName), Toast.LENGTH_SHORT).show()
 
         viewLifecycleOwner.lifecycleScope.launch {
-            readerViewModel.open(request).collect { state ->
-                when (state) {
-                    is OpenState.Ready -> {
-                        Toast.makeText(requireContext(), getString(R.string.files_msg_opened_background_tab, displayName), Toast.LENGTH_SHORT).show()
+            try {
+                readerViewModel.open(request).collect { state ->
+                    when (state) {
+                        is OpenState.Ready -> {
+                            Toast.makeText(requireContext(), getString(R.string.files_msg_opened_background_tab, displayName), Toast.LENGTH_SHORT).show()
+                        }
+                        is OpenState.Error -> {
+                            Toast.makeText(requireContext(), getString(R.string.files_msg_open_background_error, displayName, state.error.message ?: getString(R.string.common_unknown_error)), Toast.LENGTH_SHORT).show()
+                        }
+                        else -> {
+                            // Ignore other states
+                        }
                     }
-                    is OpenState.Error -> {
-                        Toast.makeText(requireContext(), getString(R.string.files_msg_open_background_error, displayName, state.error.message ?: getString(R.string.common_unknown_error)), Toast.LENGTH_SHORT).show()
-                    }
-                    else -> {
-                        // Ignore other states
-                    }
+                }
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (t: Throwable) {
+                if (view != null) {
+                    Toast.makeText(requireContext(), getString(R.string.files_msg_open_background_error, displayName, t.message ?: getString(R.string.common_unknown_error)), Toast.LENGTH_SHORT).show()
                 }
             }
         }

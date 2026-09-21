@@ -56,8 +56,12 @@ class CacheOpenManager(
                 ContentType.MHTML -> "mhtml"
                 ContentType.HTML -> "html"
                 ContentType.WEB -> "web"
-                else -> throw AppError.InvalidUri // InvalidContentType，无效类型直接抛异常
+                else -> null // InvalidContentType，按失败结果返回，不抛异常
             }
+        if (fileExt == null) {
+            emit(Result.failure(AppError.InvalidUri))
+            return@flow
+        }
         val cacheFile = File(cacheDir, "content.$fileExt")
 
         // 已存在直接100%进度
@@ -71,8 +75,9 @@ class CacheOpenManager(
 
         // 开始流式拷贝
         val inputResult = fileSystem.openInputStream(src)
-        val `in` = inputResult.getOrElse {
-            throw AppError.IoError("OpenInputStream failed", it)
+        val `in` = inputResult.getOrElse { error ->
+            emit(Result.failure(AppError.IoError("OpenInputStream failed", error)))
+            return@flow
         }
         var out: OutputStream? = null
         try {
@@ -95,8 +100,8 @@ class CacheOpenManager(
             throw ce
         } catch (e: Throwable) {
             cacheFile.delete()
+            // 只上报失败，不再二次抛出，避免调用方 collect 崩溃
             emit(Result.failure(e))
-            throw AppError.IoError("Copy failed: $e", e)
         } finally {
             try { `in`.close() } catch (_: Throwable) {}
             try { out?.close() } catch (_: Throwable) {}

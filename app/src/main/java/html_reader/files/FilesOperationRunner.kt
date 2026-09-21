@@ -40,7 +40,8 @@ object FilesOperationRunner {
                 }
             }
         } catch (e: CancellationException) {
-            onError("Operation canceled")
+            // 取消是生命周期正常行为，必须重抛，由调用方决定是否清理 UI
+            throw e
         } catch (t: Throwable) {
             onError(t.message ?: t.javaClass.simpleName)
         }

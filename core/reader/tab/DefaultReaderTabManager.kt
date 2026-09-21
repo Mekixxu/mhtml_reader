@@ -11,6 +11,7 @@ import core.reader.model.OpenRequest
 import core.reader.model.OpenState
 import core.reader.model.ReaderTab
 import core.reader.model.ReadingPosition
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.collect
@@ -69,21 +70,27 @@ class DefaultReaderTabManager(
         var copyFailure: Throwable? = null
 
         // 1) 拷贝到缓存（并把拷贝进度转发出去）
-        cacheOpenManager.openToCache(
-            src = request.source,
-            totalBytes = totalBytes,
-            contentType = contentType,
-            versionStamp = request.versionStamp,
-            extName = extName
-        ).collect { result ->
-            result.fold(
-                onSuccess = { progress ->
-                    emit(OpenState.Copying(progress.copiedBytes, progress.totalBytes))
-                },
-                onFailure = { t ->
-                    copyFailure = t
-                }
-            )
+        try {
+            cacheOpenManager.openToCache(
+                src = request.source,
+                totalBytes = totalBytes,
+                contentType = contentType,
+                versionStamp = request.versionStamp,
+                extName = extName
+            ).collect { result ->
+                result.fold(
+                    onSuccess = { progress ->
+                        emit(OpenState.Copying(progress.copiedBytes, progress.totalBytes))
+                    },
+                    onFailure = { t ->
+                        copyFailure = t
+                    }
+                )
+            }
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (t: Throwable) {
+            copyFailure = t
         }
         copyFailure?.let { t ->
             emit(OpenState.Error(AppError.IoError(t.message ?: "copy to cache failed", t)))
