@@ -26,13 +26,14 @@ object FilesTransferGateway {
     ): File = withContext(Dispatchers.IO) {
         runCatching {
             val targetDir = cacheDir.resolve("ftp_open")
-            val target = FilesNetworkGateway.createUniqueCacheFile(targetDir, displayName, "ftp:$remotePath")
+            // 唯一键包含配置身份，避免不同服务器的同路径文件互相覆盖
+            val target = FilesNetworkGateway.createUniqueCacheFile(
+                targetDir, displayName, "ftp:${config.id}:${config.host}:$remotePath"
+            )
             val url = URL(FilesNetworkGateway.buildFtpUrl(config, remotePath, "i", charset))
             val elapsed = measureTimeMillis {
-                url.openStream().use { input ->
-                    FileOutputStream(target).use { output ->
-                        input.copyTo(output, BUFFER_SIZE)
-                    }
+                writeAtomically(target) { output ->
+                    url.openStream().use { input -> input.copyTo(output, BUFFER_SIZE) }
                 }
             }
             Log.d(TAG, "download_ftp_done host=${config.host} path=$remotePath elapsedMs=$elapsed")
@@ -48,13 +49,14 @@ object FilesTransferGateway {
     ): File = withContext(Dispatchers.IO) {
         runCatching {
             val targetDir = cacheDir.resolve("smb_open")
-            val target = FilesNetworkGateway.createUniqueCacheFile(targetDir, displayName, "smb:$remotePath")
+            // 唯一键包含配置身份，避免不同服务器的同路径文件互相覆盖
+            val target = FilesNetworkGateway.createUniqueCacheFile(
+                targetDir, displayName, "smb:${config.id}:${config.host}:$remotePath"
+            )
             val source = SmbFile(FilesNetworkGateway.buildSmbFileUrl(config, remotePath), FilesSmbGateway.smbContext(config))
             val elapsed = measureTimeMillis {
-                source.inputStream.use { input ->
-                    FileOutputStream(target).use { output ->
-                        input.copyTo(output, BUFFER_SIZE)
-                    }
+                writeAtomically(target) { output ->
+                    source.inputStream.use { input -> input.copyTo(output, BUFFER_SIZE) }
                 }
             }
             Log.d(TAG, "download_smb_done host=${config.host} path=$remotePath elapsedMs=$elapsed")
@@ -110,6 +112,21 @@ object FilesTransferGateway {
             }
             Log.d(TAG, "upload_smb_done host=${config.host} path=$targetPath elapsedMs=$elapsed")
         }.getOrElse { throw mapTransferError(it) }
+    }
+
+    /**
+     * 先写随机 .part 临时文件，再原子改名覆盖目标，避免并发/中断产生半截文件。
+     */
+    private fun writeAtomically(target: File, write: (java.io.OutputStream) -> Unit) {
+        val temp = File(target.parentFile, "${target.name}.part-${java.util.UUID.randomUUID()}")
+        try {
+            FileOutputStream(temp).use(write)
+            if (!temp.renameTo(target)) {
+                throw java.io.IOException("Atomic rename failed: ${target.name}")
+            }
+        } finally {
+            if (temp.exists()) temp.delete()
+        }
     }
 
     private fun mapTransferError(error: Throwable): Throwable {

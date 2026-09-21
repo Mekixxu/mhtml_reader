@@ -34,7 +34,7 @@ interface FilesRemoteHost {
     fun reloadEntriesAfterRemoteMutation()
     fun persistCurrentDir()
     fun formatNetworkError(error: Throwable, protocol: NetworkProtocol): String
-    /** 独占互斥：本地文件操作与远程 SMB 操作共用同一把锁，避免并发写进度与列表。 */
+    /** 独占互斥：本地文件操作、远程文件操作与上传下载共用同一把锁，避免并发写进度与列表。 */
     fun tryAcquireOperationLock(): Boolean
     fun releaseOperationLock()
 }
@@ -278,16 +278,20 @@ class FilesRemoteController(
     ) {
         val config = resolveConfig() ?: return
         val remotePath = resolveRemotePath(entry) ?: return
+        if (!host.tryAcquireOperationLock()) return
         host.updateStatus(downloadingStatus, isError = false)
         host.hostLifecycleScope.launch {
-            runCatching { downloader(config, remotePath, entry.name) }
-                .onSuccess { local ->
-                    host.updateStatus(host.string(R.string.files_status_done), isError = false)
-                    host.openDownloadedFile(local, entry.name, isBackground)
-                }
-                .onFailure { error ->
-                    host.updateStatus(host.formatNetworkError(error, protocol), isError = true)
-                }
+            try {
+                val local = downloader(config, remotePath, entry.name)
+                host.updateStatus(host.string(R.string.files_status_done), isError = false)
+                host.openDownloadedFile(local, entry.name, isBackground)
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (error: Throwable) {
+                host.updateStatus(host.formatNetworkError(error, protocol), isError = true)
+            } finally {
+                host.releaseOperationLock()
+            }
         }
     }
 
@@ -299,16 +303,20 @@ class FilesRemoteController(
         uploader: suspend (NetworkConfigEntity) -> Unit
     ) {
         val config = resolveConfig() ?: return
+        if (!host.tryAcquireOperationLock()) return
         host.updateStatus(uploadingStatus, isError = false)
         host.hostLifecycleScope.launch {
-            runCatching { uploader(config) }
-                .onSuccess {
-                    host.updateStatus(uploadedStatus, isError = false)
-                    host.reloadEntriesAfterRemoteMutation()
-                }
-                .onFailure { error ->
-                    host.updateStatus(host.formatNetworkError(error, protocol), isError = true)
-                }
+            try {
+                uploader(config)
+                host.updateStatus(uploadedStatus, isError = false)
+                host.reloadEntriesAfterRemoteMutation()
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (error: Throwable) {
+                host.updateStatus(host.formatNetworkError(error, protocol), isError = true)
+            } finally {
+                host.releaseOperationLock()
+            }
         }
     }
 
