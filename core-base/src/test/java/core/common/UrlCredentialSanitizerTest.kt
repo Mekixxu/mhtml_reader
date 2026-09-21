@@ -46,4 +46,19 @@ class UrlCredentialSanitizerTest {
             UrlCredentialSanitizer.stripPassword("ftp://user:p%40ss@host/file.mhtml")
         )
     }
+
+    @Test
+    fun sanitizeText_erasesPasswordInExceptionMessage() {
+        val message = "java.io.FileNotFoundException: ftp://alice:s3cret@host:21/private/a.mhtml"
+        assertEquals(
+            "java.io.FileNotFoundException: ftp://alice@host:21/private/a.mhtml",
+            UrlCredentialSanitizer.sanitizeText(message)
+        )
+    }
+
+    @Test
+    fun sanitizeText_keepsTextWithoutCredentials() {
+        val message = "Connection refused: /storage/emulated/0/a.mhtml"
+        assertEquals(message, UrlCredentialSanitizer.sanitizeText(message))
+    }
 }

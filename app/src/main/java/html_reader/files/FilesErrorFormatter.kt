@@ -1,5 +1,6 @@
 package com.html_reader.files
 
+import core.common.UrlCredentialSanitizer
 import core.database.entity.enums.NetworkProtocol
 
 data class NetworkErrorTexts(
@@ -36,6 +37,7 @@ object FilesErrorFormatter {
         if (msg.contains("timed out", ignoreCase = true) || msg.contains("connect", ignoreCase = true)) {
             return if (protocol == NetworkProtocol.FTP) texts.ftpConnectionFailed else texts.smbConnectionFailed
         }
-        return msg.ifBlank { texts.defaultMessage }
+        // 兜底：擦除异常消息中可能携带的 URL 密码
+        return UrlCredentialSanitizer.sanitizeText(msg).ifBlank { texts.defaultMessage }
     }
 }

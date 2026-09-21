@@ -22,7 +22,8 @@ object FilesStartupHandler {
         folderSessionRepository: FolderSessionRepository,
         sessionSourceStore: AppSessionSourceStore,
         currentSessionStore: AppCurrentSessionStore,
-        onInvalidStartPath: () -> Unit
+        onInvalidStartPath: () -> Unit,
+        onCredentialUnavailable: () -> Unit = onInvalidStartPath
     ): InitialOpenState {
         var remainingNetworkConfigId = state.networkConfigId
         var remainingStartPath = state.startPath
@@ -31,7 +32,10 @@ object FilesStartupHandler {
         val networkConfigId = remainingNetworkConfigId
         if (networkConfigId != null) {
             val config = networkConfigRepository.getById(networkConfigId)
-            if (config != null) {
+            if (config != null && config.decryptFailed) {
+                // 凭据解密失败：不建立网络会话，避免把密文当密码发送
+                onCredentialUnavailable()
+            } else if (config != null) {
                 val sessionName = "${config.protocol.name}: ${config.name}"
                 val initialPath = when (config.protocol) {
                     NetworkProtocol.FTP -> FilesNetworkGateway.normalizeFtpPath(config.defaultPath)

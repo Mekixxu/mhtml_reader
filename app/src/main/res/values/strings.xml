@@ -35,6 +35,7 @@
     <string name="files_select_folder_first">Select a folder first</string>
     <string name="files_session_created">Session opened</string>
     <string name="files_status_invalid_start_path">Requested path is not available</string>
+    <string name="files_status_network_credential_invalid">Saved password cannot be decrypted. Re-enter it in More → Network.</string>
     <string name="files_status_ftp_loading">Loading FTP directory…</string>
     <string name="files_status_ftp_downloading">Downloading FTP file…</string>
     <string name="files_status_ftp_uploading">Uploading file to FTP…</string>
@@ -102,6 +103,7 @@
     <string name="home_network_subtitle">SMB / FTP connections</string>
     <string name="home_network_add_hint">Tap to add network location</string>
     <string name="home_network_add_title">Add Network Connection</string>
+    <string name="home_network_duplicate">A config with the same protocol/host/port/user/path already exists</string>
     <string name="home_network_type_smb">SMB</string>
     <string name="home_network_type_ftp">FTP</string>
     <string name="home_network_delete_title">Delete Connection</string>
@@ -151,6 +153,7 @@
     <string name="more_network_delete">Delete</string>
     <string name="more_network_added">Network config added</string>
     <string name="more_network_updated">Network config updated</string>
+    <string name="more_network_duplicate">A config with the same protocol/host/port/user/path already exists</string>
     <string name="more_network_deleted">Network config deleted</string>
     <string name="more_network_invalid">Please input valid name, host and port</string>
     <string name="more_network_add_title">Add network config</string>
