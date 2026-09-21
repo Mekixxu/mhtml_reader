@@ -72,6 +72,7 @@ class ReaderFragment : Fragment() {
 
     private val tabs = mutableListOf<ReaderTab>()
     private var selectedTabId: String? = null
+    private var restoredContentLoaded = false
     private var opening = false
     private var pdfPageCount = 0
     private var currentPdfPageIndex = 0
@@ -157,6 +158,12 @@ class ReaderFragment : Fragment() {
             readerViewModel.tabs.collect { newTabs ->
                 tabs.clear()
                 tabs.addAll(newTabs)
+                // 配置变更（旋转/分屏）后 currentTabId 与恢复的 selectedTabId 相同，
+                // currentTabId 收集器不会触发加载，这里补一次幂等恢复。
+                if (!restoredContentLoaded && selectedTabId != null && tabs.any { it.tabId == selectedTabId }) {
+                    restoredContentLoaded = true
+                    loadSelectedTabContent()
+                }
             }
         }
 
@@ -164,9 +171,11 @@ class ReaderFragment : Fragment() {
             readerViewModel.currentTabId.collect { tabId ->
                 if (tabId != null && tabId != selectedTabId) {
                     selectedTabId = tabId
+                    restoredContentLoaded = true
                     loadSelectedTabContent()
                 } else if (tabId == null && selectedTabId != null) {
                     selectedTabId = null
+                    restoredContentLoaded = true
                     loadSelectedTabContent()
                 }
             }
