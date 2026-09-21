@@ -391,6 +391,7 @@ class ReaderFragment : Fragment() {
             WebViewConfigurator.configure(webPreview, profile = activeWebRenderProfile)
             webPreview.webViewClient = BlockingResourceWebViewClient(
                 fileType = tab.fileType,
+                allowedCacheRootPath = requireContext().cacheDir.resolve("app_cache").absolutePath,
                 onOpenLinkInNewTab = NewTabLinkHandler { url ->
                     if (tab.fileType == FileType.WEB) {
                         webPreview.loadUrl(url)
