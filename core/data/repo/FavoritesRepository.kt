@@ -23,8 +23,10 @@ class FavoritesRepository(
         dao.getChildren(parentId)
     }
 
-    suspend fun addFolder(parentId: Long?, name: String): Long = withContext(dispatcherProvider.io) {
-        dao.insert(
+    // 说明：DAO 的 suspend 方法自带调度；不额外 withContext(io)，
+    // 以便在 Room 事务中调用（事务是线程约束的）。
+    suspend fun addFolder(parentId: Long?, name: String): Long {
+        return dao.insert(
             FavoriteEntity(
                 parentId = parentId,
                 name = name,
@@ -36,7 +38,7 @@ class FavoritesRepository(
         )
     }
 
-    suspend fun addFile(parentId: Long?, name: String, path: String, sourceType: SourceType): Long = withContext(dispatcherProvider.io) {
+    suspend fun addFile(parentId: Long?, name: String, path: String, sourceType: SourceType): Long {
         val existing = dao.findByPath(
             parentId = parentId,
             path = path,
@@ -44,9 +46,9 @@ class FavoritesRepository(
             type = FavoriteType.FILE
         )
         if (existing != null) {
-            return@withContext existing.id
+            return existing.id
         }
-        dao.insert(
+        return dao.insert(
             FavoriteEntity(
                 parentId = parentId,
                 name = name,
@@ -58,7 +60,7 @@ class FavoritesRepository(
         )
     }
 
-    suspend fun addDirectory(parentId: Long?, name: String, path: String, sourceType: SourceType): Long = withContext(dispatcherProvider.io) {
+    suspend fun addDirectory(parentId: Long?, name: String, path: String, sourceType: SourceType): Long {
         val existing = dao.findByPath(
             parentId = parentId,
             path = path,
@@ -66,9 +68,9 @@ class FavoritesRepository(
             type = FavoriteType.FOLDER
         )
         if (existing != null) {
-            return@withContext existing.id
+            return existing.id
         }
-        dao.insert(
+        return dao.insert(
             FavoriteEntity(
                 parentId = parentId,
                 name = name,
@@ -86,5 +88,5 @@ class FavoritesRepository(
     suspend fun deleteById(id: Long) = withContext(dispatcherProvider.io) { dao.deleteById(id) }
     suspend fun getById(id: Long): FavoriteEntity? = withContext(dispatcherProvider.io) { dao.getById(id) }
     suspend fun getAll(): List<FavoriteEntity> = withContext(dispatcherProvider.io) { dao.getAll() }
-    suspend fun clearAll() = withContext(dispatcherProvider.io) { dao.clearAll() }
+    suspend fun clearAll() = dao.clearAll()
 }

@@ -22,9 +22,8 @@ class HistoryRepository(
             )
         }
 
-    suspend fun upsert(entity: HistoryEntity) = withContext(dispatcherProvider.io) {
-        dao.upsert(entity)
-    }
+    // DAO 自带调度，不加 withContext(io)，以便在 Room 事务中调用
+    suspend fun upsert(entity: HistoryEntity) = dao.upsert(entity)
 
     suspend fun updateProgress(path: String, progress: Float, pageIndex: Int) =
         withContext(dispatcherProvider.io) {
@@ -44,7 +43,7 @@ class HistoryRepository(
     suspend fun getByPath(path: String): HistoryEntity? =
         withContext(dispatcherProvider.io) { dao.getByPath(path) }
 
-    suspend fun clearAll() = withContext(dispatcherProvider.io) { dao.clearAll() }
+    suspend fun clearAll() = dao.clearAll()
 
     suspend fun deleteOne(path: String) = withContext(dispatcherProvider.io) { dao.delete(path) }
 

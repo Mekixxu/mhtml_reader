@@ -32,7 +32,8 @@ class JsonBackupManager(
     private val historyRepo: HistoryRepository,
     private val networkRepo: NetworkConfigRepository,
     private val titleCacheRepo: TitleCacheRepository,
-    private val supportedSchemaVersion: Int = 1
+    private val supportedSchemaVersion: Int = 1,
+    private val transactionRunner: BackupTransactionRunner = BackupTransactionRunner.Direct
 ) {
     private val json = Json {
         prettyPrint = true
@@ -68,53 +69,56 @@ class JsonBackupManager(
                 )
             }
 
-            if (clearBeforeImport) {
-                clearEverything()
-            }
+            // 清库 + 导入整体在一个事务中，中途失败回滚，避免半清空
+            transactionRunner.run {
+                if (clearBeforeImport) {
+                    clearEverything()
+                }
 
-            // 1) Favorites：先导入文件夹，再导入文件；全程使用 oldId -> newId 映射
-            importFavorites(bundle.favorites)
+                // 1) Favorites：先导入文件夹，再导入文件；全程使用 oldId -> newId 映射
+                importFavorites(bundle.favorites)
 
-            // 2) History：保留进度与时间戳
-            bundle.history.forEach { dto ->
-                historyRepo.upsert(
-                    core.database.entity.HistoryEntity(
-                        path = UrlCredentialSanitizer.stripPassword(dto.path),
-                        title = dto.title,
-                        lastAccess = dto.lastAccess,
-                        progress = dto.progress,
-                        pageIndex = dto.pageIndex,
-                        fileType = fromSafeFileType(dto.fileType)
+                // 2) History：保留进度与时间戳
+                bundle.history.forEach { dto ->
+                    historyRepo.upsert(
+                        core.database.entity.HistoryEntity(
+                            path = UrlCredentialSanitizer.stripPassword(dto.path),
+                            title = dto.title,
+                            lastAccess = dto.lastAccess,
+                            progress = dto.progress,
+                            pageIndex = dto.pageIndex,
+                            fileType = fromSafeFileType(dto.fileType)
+                        )
                     )
-                )
-            }
+                }
 
-            // 3) Network configs
-            bundle.networkConfigs.forEach { dto ->
-                networkRepo.add(
-                    NetworkConfigEntity(
-                        id = 0L,
-                        name = dto.name,
-                        protocol = fromSafeNetworkProtocol(dto.protocol),
-                        host = dto.host,
-                        port = dto.port,
-                        username = dto.username,
-                        password = dto.password, // 明文警告，仅 v1.0
-                        defaultPath = dto.defaultPath
+                // 3) Network configs
+                bundle.networkConfigs.forEach { dto ->
+                    networkRepo.add(
+                        NetworkConfigEntity(
+                            id = 0L,
+                            name = dto.name,
+                            protocol = fromSafeNetworkProtocol(dto.protocol),
+                            host = dto.host,
+                            port = dto.port,
+                            username = dto.username,
+                            password = dto.password, // 明文警告，仅 v1.0
+                            defaultPath = dto.defaultPath
+                        )
                     )
-                )
-            }
+                }
 
-            // 4) Title cache：按原数据写入
-            bundle.titleCache.forEach { dto ->
-                titleCacheRepo.upsert(
-                    TitleCacheEntity(
-                        path = dto.path,
-                        title = dto.title,
-                        lastModified = dto.lastModified,
-                        updatedAt = dto.updatedAt
+                // 4) Title cache：按原数据写入
+                bundle.titleCache.forEach { dto ->
+                    titleCacheRepo.upsert(
+                        TitleCacheEntity(
+                            path = dto.path,
+                            title = dto.title,
+                            lastModified = dto.lastModified,
+                            updatedAt = dto.updatedAt
+                        )
                     )
-                )
+                }
             }
 
             Result.success(Unit)

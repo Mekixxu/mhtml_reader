@@ -31,6 +31,8 @@ import core.database.entity.enums.NetworkProtocol
 import core.database.entity.enums.SourceType
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import androidx.room.withTransaction
+import core.backup.BackupTransactionRunner
 import core.backup.JsonBackupManager
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
@@ -41,7 +43,11 @@ class MoreFragment : Fragment() {
             favoritesRepo = FilesRuntime.favoritesRepository(requireContext()),
             historyRepo = ReaderRuntime.historyRepository(requireContext()),
             networkRepo = FilesRuntime.networkConfigRepository(requireContext()),
-            titleCacheRepo = FilesRuntime.titleCacheRepository(requireContext())
+            titleCacheRepo = FilesRuntime.titleCacheRepository(requireContext()),
+            transactionRunner = object : BackupTransactionRunner {
+                override suspend fun <T> run(block: suspend () -> T): T =
+                    CoreRuntime.database.withTransaction { block() }
+            }
         )
     }
     private lateinit var addButton: Button

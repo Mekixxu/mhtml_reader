@@ -29,12 +29,15 @@ class NetworkConfigRepository(
             .map { entities -> entities.map { it.withDecryptedPassword() } }
             .flowOn(dispatcherProvider.io)
 
-    suspend fun add(entity: NetworkConfigEntity): Long = withContext(dispatcherProvider.io) {
-        dao.insert(entity.withEncryptedPassword())
+    // 仅加密切到 IO；DAO 调用保持在调用方上下文，以便参与 Room 事务（事务线程约束）
+    suspend fun add(entity: NetworkConfigEntity): Long {
+        val encrypted = withContext(dispatcherProvider.io) { entity.withEncryptedPassword() }
+        return dao.insert(encrypted)
     }
 
-    suspend fun update(entity: NetworkConfigEntity) = withContext(dispatcherProvider.io) {
-        dao.update(entity.withEncryptedPassword())
+    suspend fun update(entity: NetworkConfigEntity) {
+        val encrypted = withContext(dispatcherProvider.io) { entity.withEncryptedPassword() }
+        dao.update(encrypted)
     }
 
     suspend fun delete(id: Long) = withContext(dispatcherProvider.io) { dao.delete(id) }
@@ -56,7 +59,7 @@ class NetworkConfigRepository(
         dao.getById(id)?.withDecryptedPassword()
     }
 
-    suspend fun clearAll() = withContext(dispatcherProvider.io) { dao.clearAll() }
+    suspend fun clearAll() = dao.clearAll()
 
     /**
      * 一次性迁移：把历史明文密码（无 enc:v1: 前缀）重加密写回。幂等。
