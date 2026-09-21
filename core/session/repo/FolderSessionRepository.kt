@@ -27,17 +27,14 @@ class FolderSessionRepository(
         )
     }
     suspend fun updateCurrentDir(id: Long, currentPath: String) = withContext(dispatcherProvider.io) {
-        dao.getById(id)?.let {
-            dao.update(it.copy(currentPath = currentPath, lastAccess = System.currentTimeMillis()))
-        }
+        // 列级更新，避免整行覆盖把并发写入的 sortOption 回退
+        dao.updateCurrentDir(id, currentPath, System.currentTimeMillis())
     }
     suspend fun updateSortOption(id: Long, sortOption: Int) = withContext(dispatcherProvider.io) {
         dao.updateSortOption(id, sortOption)
     }
     suspend fun switchTo(id: Long) = withContext(dispatcherProvider.io) {
-        dao.getById(id)?.let {
-            dao.update(it.copy(lastAccess = System.currentTimeMillis()))
-        }
+        dao.touchLastAccess(id, System.currentTimeMillis())
     }
     suspend fun delete(id: Long) = withContext(dispatcherProvider.io) { dao.delete(id) }
     suspend fun getById(id: Long): FolderSessionEntity? = withContext(dispatcherProvider.io) { dao.getById(id) }

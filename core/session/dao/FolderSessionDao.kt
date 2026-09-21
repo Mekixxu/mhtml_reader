@@ -27,6 +27,12 @@ interface FolderSessionDao {
     @Query("UPDATE folder_sessions SET sortOption = :sortOption WHERE id = :id")
     suspend fun updateSortOption(id: Long, sortOption: Int)
 
+    @Query("UPDATE folder_sessions SET currentPath = :currentPath, lastAccess = :lastAccess WHERE id = :id")
+    suspend fun updateCurrentDir(id: Long, currentPath: String, lastAccess: Long)
+
+    @Query("UPDATE folder_sessions SET lastAccess = :lastAccess WHERE id = :id")
+    suspend fun touchLastAccess(id: Long, lastAccess: Long)
+
     @Query("DELETE FROM folder_sessions")
     suspend fun deleteAll()
 }

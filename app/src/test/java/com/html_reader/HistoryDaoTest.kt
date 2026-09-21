@@ -67,6 +67,39 @@ class HistoryDaoTest {
         assertFalse(remaining.contains("old"))
     }
 
+    @Test
+    fun touchOpen_preservesExistingProgressAndPageIndex() = runBlocking {
+        val path = "/docs/read.mhtml"
+        dao.upsert(
+            HistoryEntity(
+                path = path,
+                title = "old title",
+                lastAccess = 1_000,
+                progress = 0.42f,
+                pageIndex = 7,
+                fileType = FileType.MHTML
+            )
+        )
+
+        dao.touchOpen(path = path, title = "new title", lastAccess = 2_000, fileType = FileType.MHTML)
+
+        val row = dao.getByPath(path)!!
+        assertEquals("new title", row.title)
+        assertEquals(2_000, row.lastAccess)
+        assertEquals(0.42f, row.progress, 0.0001f)
+        assertEquals(7, row.pageIndex)
+    }
+
+    @Test
+    fun touchOpen_insertsNewRowWhenMissing() = runBlocking {
+        dao.touchOpen(path = "/docs/new.pdf", title = "new", lastAccess = 3_000, fileType = FileType.PDF)
+
+        val row = dao.getByPath("/docs/new.pdf")!!
+        assertEquals("new", row.title)
+        assertEquals(0f, row.progress, 0.0001f)
+        assertEquals(-1, row.pageIndex)
+    }
+
     private suspend fun insertHistory(path: String, lastAccess: Long) {
         dao.upsert(
             HistoryEntity(

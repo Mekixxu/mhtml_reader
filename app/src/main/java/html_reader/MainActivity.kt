@@ -21,7 +21,6 @@ class MainActivity : AppCompatActivity() {
     private var lastFoldersTag: String? = null
     private var lastReaderTag: String? = null
     private var isProgrammaticSelection = false
-    private var isUserNavigation = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -58,6 +57,11 @@ class MainActivity : AppCompatActivity() {
                     showOverview(TabsOverviewFragment(), "tabs_overview")
                     return
                 }
+                val currentTag = current?.tag
+                if (currentTag == "favorites_page" || currentTag == "recents_page") {
+                    showHomeRoot()
+                    return
+                }
                 if (current is FoldersOverviewFragment || current is TabsOverviewFragment || current is MoreFragment) {
                     bottomNav.selectedItemId = R.id.nav_home
                     return
@@ -76,29 +80,24 @@ class MainActivity : AppCompatActivity() {
             if (isProgrammaticSelection) {
                 return@setOnItemSelectedListener true
             }
-            isUserNavigation = true
-            try {
-                // Switching TO a tab
-                when (item.itemId) {
-                    R.id.nav_home -> showHomeRoot()
-                    R.id.nav_files -> {
-                        if (lastFoldersTag == "directory_mode_folders") {
-                            showContent(FilesFragment(), "directory_mode_folders")
-                        } else {
-                            showOverview(FoldersOverviewFragment(), "folders_overview")
-                        }
+            // Switching TO a tab
+            when (item.itemId) {
+                R.id.nav_home -> showHomeRoot()
+                R.id.nav_files -> {
+                    if (lastFoldersTag == "directory_mode_folders") {
+                        showContent(FilesFragment(), "directory_mode_folders")
+                    } else {
+                        showOverview(FoldersOverviewFragment(), "folders_overview")
                     }
-                    R.id.nav_reader -> {
-                        if (lastReaderTag == "reader_mode") {
-                            showContent(ReaderFragment(), "reader_mode")
-                        } else {
-                            showOverview(TabsOverviewFragment(), "tabs_overview")
-                        }
-                    }
-                    R.id.nav_more -> showOverview(MoreFragment(), "more_overview")
                 }
-            } finally {
-                isUserNavigation = false
+                R.id.nav_reader -> {
+                    if (lastReaderTag == "reader_mode") {
+                        showContent(ReaderFragment(), "reader_mode")
+                    } else {
+                        showOverview(TabsOverviewFragment(), "tabs_overview")
+                    }
+                }
+                R.id.nav_more -> showOverview(MoreFragment(), "more_overview")
             }
             true
         }
@@ -252,9 +251,10 @@ class MainActivity : AppCompatActivity() {
         }
 
         val target = if (forceReplace) create() else (fm.findFragmentByTag(tag) ?: create())
+        // commitNow 保证 getCurrentVisibleFragment/高亮与返回键判断同步，避免快速点击竞态
         fm.beginTransaction()
             .replace(R.id.main_content, target, tag)
-            .commit()
+            .commitNow()
         syncBottomNavSelection(tag)
     }
 

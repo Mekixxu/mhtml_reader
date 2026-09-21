@@ -2,12 +2,28 @@ package core.database.dao
 
 import androidx.room.*
 import core.database.entity.HistoryEntity
+import core.database.entity.enums.FileType
 import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface HistoryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: HistoryEntity)
+
+    /**
+     * 记录一次打开：原子 UPSERT，冲突时只更新标题/时间/类型，保留已有阅读进度。
+     * 避免 getByPath + REPLACE 的读改写竞态覆盖 updateProgress。
+     */
+    @Query("""
+        INSERT INTO history (path, title, lastAccess, progress, pageIndex, fileType)
+        VALUES (:path, :title, :lastAccess, 0.0, -1, :fileType)
+        ON CONFLICT(path) DO UPDATE SET
+            title = excluded.title,
+            lastAccess = excluded.lastAccess,
+            fileType = excluded.fileType
+    """)
+    suspend fun touchOpen(path: String, title: String, lastAccess: Long, fileType: FileType)
+
     @Query("UPDATE history SET progress = :progress, pageIndex = :pageIndex, lastAccess = :lastAccess WHERE path = :path")
     suspend fun updateProgress(path: String, progress: Float, pageIndex: Int, lastAccess: Long)
     @Query("SELECT * FROM history ORDER BY lastAccess DESC LIMIT :limit OFFSET :offset")

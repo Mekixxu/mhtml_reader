@@ -13,16 +13,12 @@ class HistoryRepository(
 ) {
     suspend fun recordOpen(path: String, fileType: FileType, title: String) =
         withContext(dispatcherProvider.io) {
-            val existing = dao.getByPath(path)
-            dao.upsert(
-                HistoryEntity(
-                    path = path,
-                    title = title,
-                    lastAccess = System.currentTimeMillis(),
-                    progress = existing?.progress ?: 0f,
-                    pageIndex = existing?.pageIndex ?: -1,
-                    fileType = fileType
-                )
+            // 原子 UPSERT，保留已有 progress/pageIndex，避免读改写竞态覆盖进度
+            dao.touchOpen(
+                path = path,
+                title = title,
+                lastAccess = System.currentTimeMillis(),
+                fileType = fileType
             )
         }
 
