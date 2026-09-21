@@ -16,6 +16,7 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import com.html_reader.files.FilesNetworkOpenResolver
 import com.html_reader.files.NetworkOpenIssue
+import core.common.UrlCredentialSanitizer
 import core.database.entity.FavoriteEntity
 import core.database.entity.NetworkConfigEntity
 import core.database.entity.enums.FavoriteType
@@ -246,10 +247,13 @@ class FavoritesFragment : Fragment() {
             .setView(root)
             .setPositiveButton(android.R.string.ok) { _, _ ->
                 val name = nameInput.text?.toString()?.trim().orEmpty()
-                val path = pathInput.text?.toString()?.trim().orEmpty()
-                if (name.isBlank() || path.isBlank()) {
+                val rawPath = pathInput.text?.toString()?.trim().orEmpty()
+                if (name.isBlank() || rawPath.isBlank()) {
                     return@setPositiveButton
                 }
+                // 安全：URL 中的密码不落库，仅保留用户名（打开依赖网络配置）
+                val path = UrlCredentialSanitizer.stripPassword(rawPath)
+                val credentialStripped = path != rawPath
                 val sourceType = inferSourceType(path)
                 viewLifecycleOwner.lifecycleScope.launch {
                     val repo = FilesRuntime.favoritesRepository(requireContext())
@@ -299,7 +303,12 @@ class FavoritesFragment : Fragment() {
                             )
                         }
                     }
-                    showShort(getString(R.string.favorites_added))
+                    val messageRes = if (credentialStripped) {
+                        R.string.favorites_added_network_credential_note
+                    } else {
+                        R.string.favorites_added
+                    }
+                    showShort(getString(messageRes))
                 }
             }
             .setNegativeButton(android.R.string.cancel, null)

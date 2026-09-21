@@ -2,6 +2,7 @@ package core.backup
 
 import core.backup.model.*
 import core.common.AppError
+import core.common.UrlCredentialSanitizer
 import core.data.repo.FavoritesRepository
 import core.data.repo.HistoryRepository
 import core.data.repo.NetworkConfigRepository
@@ -78,7 +79,7 @@ class JsonBackupManager(
             bundle.history.forEach { dto ->
                 historyRepo.upsert(
                     core.database.entity.HistoryEntity(
-                        path = dto.path,
+                        path = UrlCredentialSanitizer.stripPassword(dto.path),
                         title = dto.title,
                         lastAccess = dto.lastAccess,
                         progress = dto.progress,
@@ -175,7 +176,8 @@ class JsonBackupManager(
             favoritesRepo.addFile(
                 parentId = newParentId,
                 name = dto.name,
-                path = dto.path,
+                // 安全：导入的路径同样剥离密码，避免旧备份把凭据带回库
+                path = UrlCredentialSanitizer.stripPassword(dto.path),
                 sourceType = fromSafeSourceType(dto.sourceType)
             )
         }
@@ -195,13 +197,14 @@ class JsonBackupManager(
         parentId = parentId,
         name = name,
         type = type.name,
-        path = path,
+        // 安全：导出前剥离 URL 中的密码
+        path = UrlCredentialSanitizer.stripPassword(path),
         sourceType = sourceType.name,
         createdAt = createdAt
     )
 
     private fun core.database.entity.HistoryEntity.toDto() = HistoryDto(
-        path = path,
+        path = UrlCredentialSanitizer.stripPassword(path),
         title = title,
         lastAccess = lastAccess,
         progress = progress,
