@@ -694,7 +694,9 @@ class FilesFragment : Fragment(), FilesRemoteHost {
                 smbAuthFailed = getString(R.string.files_status_smb_auth_failed),
                 ftpConnectionFailed = getString(R.string.files_status_ftp_connection_failed),
                 smbConnectionFailed = getString(R.string.files_status_smb_connection_failed),
-                defaultMessage = getString(R.string.files_status_invalid_start_path)
+                defaultMessage = getString(R.string.files_status_invalid_start_path),
+                inputUnavailable = getString(R.string.files_error_document_unreadable),
+                permissionDenied = getString(R.string.files_error_permission_denied)
             )
         )
     }

@@ -221,6 +221,7 @@ class ReaderFragment : Fragment() {
         statusLabel.setOnClickListener(null)
         
         viewLifecycleOwner.lifecycleScope.launch {
+            var terminalStateReached = false
             try {
                 readerViewModel.open(request).collect { state ->
                     when (state) {
@@ -243,6 +244,7 @@ class ReaderFragment : Fragment() {
                             }
                         }
                         is OpenState.Ready -> {
+                            terminalStateReached = true
                             // selectedTabId = state.tab.tabId // Handled by currentTabId flow
                             statusLabel.visibility = View.GONE
                             statusLabel.setOnClickListener(null)
@@ -250,17 +252,22 @@ class ReaderFragment : Fragment() {
                             // loadSelectedTabContent() // Handled by currentTabId flow
                         }
                         is OpenState.Error -> {
+                            terminalStateReached = true
                             val message = state.error.message ?: state.error.javaClass.simpleName
                             reportOpenError(message)
                         }
                     }
                 }
+            } catch (ce: kotlinx.coroutines.CancellationException) {
+                throw ce
             } catch (e: Exception) {
+                 terminalStateReached = true
                  val msg = e.message ?: getString(R.string.common_unknown_error)
                  reportOpenError(msg)
             } finally {
                 opening = false
-                if (statusLabel.text == getString(R.string.reader_status_loading) || statusLabel.text.startsWith("Copying")) {
+                // 未到达终态说明仍处于加载/拷贝中，收起进度；不再依赖本地化文案比较
+                if (!terminalStateReached && view != null) {
                      statusLabel.visibility = View.GONE
                      openProgress.visibility = View.GONE
                 }

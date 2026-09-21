@@ -28,7 +28,7 @@
             android:layout_marginTop="@dimen/home_spacing_medium"
             android:minHeight="@dimen/home_action_min_height"
             android:textAllCaps="false"
-            android:text="Clear All" />
+            android:text="@string/recents_clear_all" />
     </LinearLayout>
 
     <LinearLayout
@@ -48,7 +48,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/home_spacing_large"
             android:gravity="center"
-            android:text="No recent files"
+            android:text="@string/recents_empty"
             android:visibility="gone" />
 
         <ListView

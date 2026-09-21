@@ -122,10 +122,10 @@ internal fun FilesFragment.showDiagnosticDialog(entry: BrowserEntry) {
         val message = FilesFtpDiagnosticBuilder.buildMessage(rawBytes, currentEncoding)
 
         AlertDialog.Builder(requireContext())
-            .setTitle("Encoding Diagnosis")
+            .setTitle(R.string.files_encoding_diagnosis_title)
             .setMessage(message)
             .setPositiveButton(android.R.string.ok, null)
-            .setNeutralButton("Copy") { _, _ ->
+            .setNeutralButton(R.string.common_copy) { _, _ ->
                 val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                 val clip = android.content.ClipData.newPlainText("Diagnostic Info", message)
                 clipboard.setPrimaryClip(clip)

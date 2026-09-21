@@ -31,8 +31,8 @@ class RecentsFragment : Fragment(R.layout.fragment_recents) {
 
         clearButton.setOnClickListener {
             AlertDialog.Builder(requireContext())
-                .setTitle("Clear History")
-                .setMessage("Are you sure you want to clear all history?")
+                .setTitle(R.string.recents_clear_history_title)
+                .setMessage(R.string.recents_clear_history_message)
                 .setPositiveButton(android.R.string.ok) { _, _ ->
                     viewLifecycleOwner.lifecycleScope.launch {
                         historyRepository.clearAll()

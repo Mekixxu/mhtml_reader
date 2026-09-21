@@ -8,7 +8,9 @@ data class NetworkErrorTexts(
     val smbAuthFailed: String,
     val ftpConnectionFailed: String,
     val smbConnectionFailed: String,
-    val defaultMessage: String
+    val defaultMessage: String,
+    val inputUnavailable: String = "",
+    val permissionDenied: String = ""
 )
 
 object FilesErrorFormatter {
@@ -20,10 +22,10 @@ object FilesErrorFormatter {
             return if (protocol == NetworkProtocol.FTP) texts.ftpConnectionFailed else texts.smbConnectionFailed
         }
         if (error is FilesTransferException.InputUnavailable) {
-            return "Selected document is not readable"
+            return texts.inputUnavailable.ifBlank { texts.defaultMessage }
         }
         if (error is FilesTransferException.PermissionDenied) {
-            return "Permission denied while accessing remote target"
+            return texts.permissionDenied.ifBlank { texts.defaultMessage }
         }
         val msg = error.message.orEmpty()
         if (protocol == NetworkProtocol.FTP && msg.contains("530")) {
