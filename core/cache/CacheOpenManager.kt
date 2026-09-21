@@ -29,7 +29,8 @@ class CacheOpenManager(
     private val cacheRoot: File, // e.g. context.cacheDir/app_cache/
     private val fileSystem: IFileSystem,
     private val dispatcherProvider: DispatcherProvider,
-    private val cacheEvictor: CacheEvictor
+    private val cacheEvictor: CacheEvictor,
+    private val activeKeysProvider: () -> Set<String> = { emptySet() }
 ) {
 
     suspend fun openToCache(
@@ -70,8 +71,11 @@ class CacheOpenManager(
             return@flow
         }
 
-        // Proactive eviction
-        cacheEvictor.makeRoomFor(totalBytes)
+        // Proactive eviction：超限或无法腾出空间时按失败结果返回，不抛异常
+        if (!cacheEvictor.makeRoomFor(totalBytes, activeKeysProvider(), cacheKey)) {
+            emit(Result.failure(AppError.IoError("File exceeds cache capacity", null)))
+            return@flow
+        }
 
         // 开始流式拷贝
         val inputResult = fileSystem.openInputStream(src)

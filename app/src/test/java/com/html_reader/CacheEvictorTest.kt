@@ -31,6 +31,63 @@ class CacheEvictorTest {
         assertTrue(newest.exists())
     }
 
+    @Test
+    fun makeRoomFor_requiredExceedsMax_returnsFalseAndKeepsCache() = runBlocking {
+        val root = tempFolder.newFolder("app_cache_oversize")
+        val typeDir = File(root, "mhtml").apply { mkdirs() }
+        val cached = createCacheDir(typeDir, "cached", System.currentTimeMillis() - 86_400_000L, bytes = 100)
+
+        val evictor = CacheEvictor(cacheRoot = root, maxBytes = 200)
+        val result = evictor.makeRoomFor(requiredBytes = 300)
+
+        assertFalse(result)
+        assertTrue(cached.exists())
+    }
+
+    @Test
+    fun makeRoomFor_skipsProtectedAndCurrentKeys() = runBlocking {
+        val root = tempFolder.newFolder("app_cache_protected")
+        val typeDir = File(root, "mhtml").apply { mkdirs() }
+        val now = System.currentTimeMillis()
+        val active = createCacheDir(typeDir, "active", now - 3 * 86_400_000L, bytes = 100)
+        val current = createCacheDir(typeDir, "current", now - 2 * 86_400_000L, bytes = 100)
+        val idle = createCacheDir(typeDir, "idle", now - 86_400_000L, bytes = 100)
+
+        val evictor = CacheEvictor(cacheRoot = root, maxBytes = 400)
+        val result = evictor.makeRoomFor(
+            requiredBytes = 150,
+            protectedKeys = setOf("active"),
+            currentKey = "current"
+        )
+
+        assertTrue(result)
+        assertTrue(active.exists())
+        assertTrue(current.exists())
+        assertFalse(idle.exists())
+    }
+
+    @Test
+    fun makeRoomFor_protectedUsagePreventsFitting_returnsFalse() = runBlocking {
+        val root = tempFolder.newFolder("app_cache_protected_full")
+        val typeDir = File(root, "mhtml").apply { mkdirs() }
+        val now = System.currentTimeMillis()
+        val active = createCacheDir(typeDir, "active", now - 3 * 86_400_000L, bytes = 100)
+        val current = createCacheDir(typeDir, "current", now - 2 * 86_400_000L, bytes = 100)
+        val idle = createCacheDir(typeDir, "idle", now - 86_400_000L, bytes = 100)
+
+        val evictor = CacheEvictor(cacheRoot = root, maxBytes = 250)
+        val result = evictor.makeRoomFor(
+            requiredBytes = 100,
+            protectedKeys = setOf("active"),
+            currentKey = "current"
+        )
+
+        assertFalse(result)
+        assertTrue(active.exists())
+        assertTrue(current.exists())
+        assertFalse(idle.exists())
+    }
+
     private fun createCacheDir(typeDir: File, name: String, lastModified: Long, bytes: Int): File {
         val dir = File(typeDir, name).apply { mkdirs() }
         File(dir, "content.mhtml").apply {

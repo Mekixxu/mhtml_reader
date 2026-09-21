@@ -39,14 +39,15 @@ object ReaderRuntime {
                     cacheRoot = cacheRoot,
                     maxBytes = 2L * 1024 * 1024 * 1024 // 2GB，与 AppSettings.DEFAULT_CACHE_MAX_BYTES 对齐
                 )
+                val tabCacheRegistry = TabCacheRegistry(cacheRoot)
                 val cacheOpenManager = CacheOpenManager(
                     context = appContext,
                     cacheRoot = cacheRoot,
                     fileSystem = localFileSystem,
                     dispatcherProvider = dispatcherProvider,
-                    cacheEvictor = cacheEvictor
+                    cacheEvictor = cacheEvictor,
+                    activeKeysProvider = tabCacheRegistry::activeCacheKeys
                 )
-                val tabCacheRegistry = TabCacheRegistry(cacheRoot)
                 
                 val historyRepository = HistoryRepository(db.historyDao(), dispatcherProvider)
                 val tabManager = DefaultReaderTabManager(
