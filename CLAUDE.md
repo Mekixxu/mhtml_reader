@@ -59,7 +59,8 @@
 | `feature-reader` | `core/reader` |
 
 **当前无孤儿目录**：原先 `core/favorites`、`core/settings`、`core/network`、`core/work`、`core/maintenance`、`core/di` 均已通过上表接线参与编译。
-⚠️ `core/work`、`core/di`、`core/settings`、`core/maintenance` 及 `core/*/di` 下的 Hilt 装配当前已可编译，但运行时仍走 `HtmlReaderApp` + `App*Worker` 唯一维护路径；启用 Hilt 路径前必须同步改造 `HtmlReaderApp`/`CoreRuntime`，不得双轨调度。
+⚠️ **Hilt 装配当前未生效（保留并标注，2026-09-21 决策）**：只有 `app` 应用 Hilt 插件 + kapt，`core-domain`/`core-data`/`feature-*` 未应用 `com.google.dagger.hilt.android` + `hilt-compiler`，因此 `core/di`、`core/*/di`、`core/work`、`core/maintenance` 中的 `@Module`/`@HiltWorker` 不会被聚合（生成的 Hilt 组件不含业务 binding）。运行时仍走 `HtmlReaderApp` + `App*Worker` 唯一维护路径。
+后续若启用 Hilt：必须一次性完成（库模块插件/kapt 聚合 + `Configuration.Provider`/`HiltWorkerFactory` + 删除 `HtmlReaderApp` 的手工 Worker 注册），否则会出现 `Dagger/MissingBinding` 或双轨调度。
 
 **同包重复告警**：根目录 `core/vfs/IFileSystem.kt`、`core/vfs/FileSystemResolver.kt` 已移入 `reviews/deprecated/`；生效的 VFS 抽象仅保留 `core-storage/src/main/java/core/vfs/` 一份。
 
@@ -123,10 +124,11 @@
 .\gradlew.bat connectedAndroidTest
 ```
 
-### 3.2.1 测试基础设施（2026-08-16 补齐）
+### 3.2.1 测试基础设施（2026-09-21 更新）
 
-- `core-base/src/test/java`：纯 JVM 单元测试（`HashUtilsTest` / `OutcomeTest` / `AppErrorTest`），不依赖模拟器。
-- `app/src/test/java`：纯 JVM 单元测试（`FilesSortHelperTest`），不依赖模拟器。
+- `core-base/src/test/java`：纯 JVM 单元测试（`HashUtilsTest` / `OutcomeTest` / `AppErrorTest` / `UrlCredentialSanitizerTest`），不依赖模拟器。
+- `app/src/test/java`：Robolectric 单元测试（`FilesSortHelperTest`、`FilesFtpCodecTest`、`FilesNetworkGatewayTest`、`TransferCacheCleanerTest`、`CacheEvictorTest`、`MoveUseCaseTest`、`HistoryDaoTest`、`DefaultReaderTabManagerTest`、`BlockingResourceWebViewClientTest`、`FilesStartupHandlerTest`、`BackupImportTransactionTest`）。
+  - `app/src/test/resources/robolectric.properties` 固定 `sdk=35` 与测试用 `Application`；`testOptions.unitTests.isIncludeAndroidResources = true` 已开启（避免走 `HtmlReaderApp` 的 WorkManager 初始化）。
 - `app/src/androidTest/java`：设备端冒烟测试（`AppSmokeTest`），验证 app 冷启动不崩，需连接模拟器/真机。
 - 本地运行：`./gradlew :core-base:testDebugUnitTest`、`:app:testDebugUnitTest`、`:app:connectedDebugAndroidTest`。
 
@@ -212,7 +214,7 @@
 
 - `reviews/claude_sonnet4_2026-08-16.md`：2026-08-16 全项目代码审查报告（21 条问题清单）。
 - `reviews/review_plan_2026-08-16.md`：升级执行计划（剩余任务 T1-T9、优先级、验收标准、构建命令），供后续开发按序实施。
-- `reviews/opencode_2026-09-21.md`：2026-09-21 全量审查报告与改进计划（P0/P1/P2 清单、批次 A-D 计划、待决策项）。
+- `reviews/opencode_2026-09-21.md`：2026-09-21 全量审查报告与改进计划（P0/P1/P2 清单、批次 A/B/D 已完成记录、批次 C 待决策项）。
 
 ---
 

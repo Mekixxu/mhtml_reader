@@ -11,7 +11,7 @@
 - 平台：Android 15+（minSdk 30，targetSdk 36），需兼容到Android 11。
 - 设备：手机为主，适配SD卡（如存在）。
 - 编译和运行：开发平台完成，云服务器仅做文本中转和仓库。
-- 包名：`html_reader`（源码包建议用 `htmlreader`）。
+- 包名：`com.html_reader`（applicationId 与源码包一致）。
 
 ---
 

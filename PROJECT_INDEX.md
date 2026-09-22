@@ -13,7 +13,7 @@
 - `core-base/`：基础核心模块 Gradle 配置
 - `core-data/`：数据核心模块 Gradle 配置
 - `core-domain/`：领域核心模块 Gradle 配置
-- `core-storage/`：存储核心模块（含 vfs 接口镜像）
+- `core-storage/`：存储核心模块（`core/vfs` 抽象与本地实现的唯一生效位置）
 - `feature-files/`：文件功能模块 Gradle 配置
 - `feature-reader/`：阅读器功能模块 Gradle 配置
 - `gradle/`：Gradle Wrapper 与构建支持文件
