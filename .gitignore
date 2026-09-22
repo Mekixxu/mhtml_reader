@@ -11,6 +11,7 @@
 *.jks
 google-services.json
 local.properties
+keystore.properties
 .android-sdk/
 **/build/
 *.apk
