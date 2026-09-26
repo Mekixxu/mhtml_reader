@@ -303,8 +303,9 @@ class FilesFragment : Fragment(), FilesRemoteHost {
                 loadEntries()
                 persistCurrentDir()
             } else {
-                // Direct open logic
+                // Direct open logic：打开前先记录当前目录，避免返回时位置丢失
                 selectedEntry = null
+                persistCurrentDir()
                 if (browseSource == BrowseSource.FTP) {
                     remoteController.openFtpFile(item)
                 } else if (browseSource == BrowseSource.SMB) {
@@ -426,6 +427,8 @@ class FilesFragment : Fragment(), FilesRemoteHost {
     override fun onPause() {
         super.onPause()
         currentDir?.let { saveScrollState(it) }
+        // 离开页面（如进入阅读器）时同步持久化目录，防止进程被回收后位置丢失
+        persistCurrentDir()
     }
 
     fun navigateUp(): Boolean {
@@ -583,7 +586,9 @@ class FilesFragment : Fragment(), FilesRemoteHost {
             remoteController.ftpCurrentPath,
             remoteController.smbCurrentPath
         ) ?: return
-        viewLifecycleOwner.lifecycleScope.launch {
+        // 使用 Activity 作用域，避免导航到阅读器时 viewLifecycle 销毁取消尚未完成的写入
+        val scope = activity?.lifecycleScope ?: viewLifecycleOwner.lifecycleScope
+        scope.launch {
             folderSessionRepository.updateCurrentDir(sessionId, dir)
         }
     }

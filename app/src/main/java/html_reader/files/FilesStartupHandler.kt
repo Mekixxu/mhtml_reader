@@ -41,7 +41,18 @@ object FilesStartupHandler {
                     NetworkProtocol.FTP -> FilesNetworkGateway.normalizeFtpPath(config.defaultPath)
                     NetworkProtocol.SMB -> FilesNetworkGateway.normalizeSmbPath(config.defaultPath)
                 }
-                val sessionId = folderSessionRepository.add(sessionName, initialPath)
+                // 同一网络配置复用既有会话，保留上次浏览位置；无会话才新建
+                val existingSessionId = sessionSourceStore.findSessionIdByConfigId(config.id)
+                    ?.takeIf { folderSessionRepository.getById(it) != null }
+                val sessionId = if (existingSessionId != null) {
+                    val existingPath = folderSessionRepository.getById(existingSessionId)?.currentPath.orEmpty()
+                    if (existingPath.isBlank()) {
+                        folderSessionRepository.updateCurrentDir(existingSessionId, initialPath)
+                    }
+                    existingSessionId
+                } else {
+                    folderSessionRepository.add(sessionName, initialPath)
+                }
                 sessionSourceStore.setNetworkConfigId(sessionId, config.id)
                 currentSessionStore.set(sessionId)
             }
@@ -58,7 +69,11 @@ object FilesStartupHandler {
                     folderSessionRepository.updateCurrentDir(active, startPath)
                 } else if (directory.exists() && directory.isDirectory) {
                     if (hasNetworkBinding) sessionSourceStore.setNetworkConfigId(active, null)
-                    folderSessionRepository.updateCurrentDir(active, directory.absolutePath)
+                    // 重新进入同一根目录（如再次点击 Home 目录卡片）时恢复上次浏览到的子目录
+                    folderSessionRepository.updateCurrentDir(
+                        active,
+                        resumePathForLocalEntry(active, directory, folderSessionRepository)
+                    )
                 } else if (hasNetworkBinding) {
                     folderSessionRepository.updateCurrentDir(active, startPath)
                 } else {
@@ -80,7 +95,10 @@ object FilesStartupHandler {
                     if (sessionSourceStore.getNetworkConfigId(active) != null) {
                         sessionSourceStore.setNetworkConfigId(active, null)
                     }
-                    folderSessionRepository.updateCurrentDir(active, directory.absolutePath)
+                    folderSessionRepository.updateCurrentDir(
+                        active,
+                        resumePathForLocalEntry(active, directory, folderSessionRepository)
+                    )
                 } else {
                     onInvalidStartPath()
                 }
@@ -93,5 +111,29 @@ object FilesStartupHandler {
             startPath = remainingStartPath,
             safTreeUri = remainingSafTreeUri
         )
+    }
+
+    /**
+     * 请求目录是会话当前位置的祖先（或相同）时，保留当前位置，实现「重进卡片恢复上次浏览位置」。
+     */
+    private suspend fun resumePathForLocalEntry(
+        sessionId: Long,
+        requestedDir: File,
+        folderSessionRepository: FolderSessionRepository
+    ): String {
+        val existingPath = folderSessionRepository.getById(sessionId)?.currentPath.orEmpty()
+        val existing = File(existingPath)
+        if (existing.exists() && existing.isDirectory && isSameOrDescendant(existing, requestedDir)) {
+            return existing.absolutePath
+        }
+        return requestedDir.absolutePath
+    }
+
+    private fun isSameOrDescendant(candidate: File, ancestor: File): Boolean {
+        val candidatePath = runCatching { candidate.canonicalPath }.getOrDefault(candidate.absolutePath)
+        val ancestorPath = runCatching { ancestor.canonicalPath }.getOrDefault(ancestor.absolutePath)
+            .trimEnd(File.separatorChar)
+        return candidatePath == ancestorPath ||
+            candidatePath.startsWith(ancestorPath + File.separator)
     }
 }

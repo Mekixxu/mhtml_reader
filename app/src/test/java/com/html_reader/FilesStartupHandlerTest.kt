@@ -81,6 +81,50 @@ class FilesStartupHandlerTest {
     }
 
     @Test
+    fun applyInitialOpen_reenterSameNetworkConfig_reusesExistingSession() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val configId = db.networkConfigDao().insert(
+            NetworkConfigEntity(
+                name = "reuse",
+                protocol = NetworkProtocol.FTP,
+                host = "host",
+                port = 21,
+                username = "user",
+                password = "plain",
+                defaultPath = "/"
+            )
+        )
+        val sourceStore = AppSessionSourceStore(context)
+        val sessionStore = AppCurrentSessionStore()
+
+        FilesStartupHandler.applyInitialOpen(
+            state = InitialOpenState(networkConfigId = configId, startPath = null, safTreeUri = null),
+            requestedNetworkEntry = false,
+            networkConfigRepository = networkRepo,
+            folderSessionRepository = sessionRepo,
+            sessionSourceStore = sourceStore,
+            currentSessionStore = sessionStore,
+            onInvalidStartPath = {}
+        )
+        val firstSessionId = sessionStore.get()!!
+        sessionRepo.updateCurrentDir(firstSessionId, "/deep/dir")
+
+        FilesStartupHandler.applyInitialOpen(
+            state = InitialOpenState(networkConfigId = configId, startPath = null, safTreeUri = null),
+            requestedNetworkEntry = false,
+            networkConfigRepository = networkRepo,
+            folderSessionRepository = sessionRepo,
+            sessionSourceStore = sourceStore,
+            currentSessionStore = sessionStore,
+            onInvalidStartPath = {}
+        )
+
+        assertEquals("再次进入同一网络配置应复用会话", 1, sessionRepo.getAll().size)
+        assertEquals(firstSessionId, sessionStore.get())
+        assertEquals("/deep/dir", sessionRepo.getById(firstSessionId)!!.currentPath)
+    }
+
+    @Test
     fun applyInitialOpen_noCredentialIssue_createsNetworkSession() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val configId = db.networkConfigDao().insert(
