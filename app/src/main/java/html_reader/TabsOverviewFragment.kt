@@ -47,14 +47,29 @@ class TabsOverviewFragment : Fragment(R.layout.fragment_tabs_overview) {
             }
         }
 
+        val readerViewModel = ReaderRuntime.viewModel(requireContext())
         viewLifecycleOwner.lifecycleScope.launch {
-            ReaderRuntime.viewModel(requireContext()).tabs.collect { list ->
+            readerViewModel.tabs.collect { list ->
                 tabs.clear()
                 tabs.addAll(list.reversed())
-                if (selectedTabId == null || tabs.none { it.tabId == selectedTabId }) {
+                // 选中项以 ViewModel 的 currentTabId 为准；仅在其为空/失效时回退到列表首项，
+                // 避免每次进入都高亮最新（最上）的 tab
+                val current = readerViewModel.currentTabId.value
+                if (current != null && tabs.any { it.tabId == current }) {
+                    selectedTabId = current
+                } else if (selectedTabId == null || tabs.none { it.tabId == selectedTabId }) {
                     selectedTabId = tabs.firstOrNull()?.tabId
                 }
                 renderList()
+            }
+        }
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            readerViewModel.currentTabId.collect { tabId ->
+                if (tabId != null && tabs.any { it.tabId == tabId }) {
+                    selectedTabId = tabId
+                    renderList()
+                }
             }
         }
     }
