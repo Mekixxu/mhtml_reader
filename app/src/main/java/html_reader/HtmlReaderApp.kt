@@ -66,12 +66,15 @@ class HtmlReaderApp : Application() {
     }
 
     /**
-     * 一次性升级：把 v1.0 遗留的明文网络密码重加密写回（幂等，前缀判定）。
+     * 一次性升级（幂等）：
+     * - 网络密码：v1.0 遗留明文重加密写回；
+     * - 收藏路径：剥离历史入库的 URL 明文密码。
      */
     private fun migrateLegacyCredentials() {
         appScope.launch {
             runCatching {
                 FilesRuntime.networkConfigRepository(applicationContext).migrateLegacyPlaintextIfNeeded()
+                FilesRuntime.favoritesRepository(applicationContext).migrateLegacyCredentialsIfNeeded()
             }.onFailure { e ->
                 Log.w(TAG, "credential_migration_failed err=${e.javaClass.simpleName}")
             }

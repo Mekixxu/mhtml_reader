@@ -1,5 +1,6 @@
 package core.data.repo
 
+import core.common.UrlCredentialSanitizer
 import core.database.dao.FavoriteDao
 import core.database.entity.FavoriteEntity
 import core.database.entity.enums.FavoriteType
@@ -38,10 +39,12 @@ class FavoritesRepository(
         )
     }
 
+    // 安全：写入口统一剥离 URL 密码，任何调用方都不可能把明文凭据存入收藏
     suspend fun addFile(parentId: Long?, name: String, path: String, sourceType: SourceType): Long {
+        val safePath = UrlCredentialSanitizer.stripPassword(path)
         val existing = dao.findByPath(
             parentId = parentId,
-            path = path,
+            path = safePath,
             sourceType = sourceType,
             type = FavoriteType.FILE
         )
@@ -53,7 +56,7 @@ class FavoritesRepository(
                 parentId = parentId,
                 name = name,
                 type = FavoriteType.FILE,
-                path = path,
+                path = safePath,
                 sourceType = sourceType,
                 createdAt = System.currentTimeMillis()
             )
@@ -61,9 +64,10 @@ class FavoritesRepository(
     }
 
     suspend fun addDirectory(parentId: Long?, name: String, path: String, sourceType: SourceType): Long {
+        val safePath = UrlCredentialSanitizer.stripPassword(path)
         val existing = dao.findByPath(
             parentId = parentId,
-            path = path,
+            path = safePath,
             sourceType = sourceType,
             type = FavoriteType.FOLDER
         )
@@ -75,11 +79,23 @@ class FavoritesRepository(
                 parentId = parentId,
                 name = name,
                 type = FavoriteType.FOLDER,
-                path = path,
+                path = safePath,
                 sourceType = sourceType,
                 createdAt = System.currentTimeMillis()
             )
         )
+    }
+
+    /**
+     * 一次性清洗历史版本入库的明文凭据收藏（幂等）。
+     */
+    suspend fun migrateLegacyCredentialsIfNeeded() {
+        dao.getAll().forEach { favorite ->
+            val sanitized = UrlCredentialSanitizer.stripPassword(favorite.path)
+            if (sanitized != favorite.path) {
+                dao.updatePath(favorite.id, sanitized)
+            }
+        }
     }
 
     suspend fun move(id: Long, newParentId: Long?) = withContext(dispatcherProvider.io) { dao.updateParent(id, newParentId) }

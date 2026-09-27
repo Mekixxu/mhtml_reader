@@ -53,6 +53,9 @@ interface FavoriteDao {
     @Query("UPDATE favorites SET name = :newName WHERE id = :id")
     suspend fun rename(id: Long, newName: String)
 
+    @Query("UPDATE favorites SET path = :path WHERE id = :id")
+    suspend fun updatePath(id: Long, path: String)
+
     @Query("SELECT * FROM favorites ORDER BY createdAt DESC")
     fun observeAll(): Flow<List<FavoriteEntity>>
 

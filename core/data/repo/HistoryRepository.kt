@@ -1,6 +1,7 @@
 package core.data.repo
 
 import core.common.DispatcherProvider
+import core.common.UrlCredentialSanitizer
 import core.database.dao.HistoryDao
 import core.database.entity.HistoryEntity
 import core.database.entity.enums.FileType
@@ -22,8 +23,9 @@ class HistoryRepository(
             )
         }
 
-    // DAO 自带调度，不加 withContext(io)，以便在 Room 事务中调用
-    suspend fun upsert(entity: HistoryEntity) = dao.upsert(entity)
+    // DAO 自带调度，不加 withContext(io)，以便在 Room 事务中调用；写入口统一剥离 URL 密码
+    suspend fun upsert(entity: HistoryEntity) =
+        dao.upsert(entity.copy(path = UrlCredentialSanitizer.stripPassword(entity.path)))
 
     suspend fun updateProgress(path: String, progress: Float, pageIndex: Int) =
         withContext(dispatcherProvider.io) {
