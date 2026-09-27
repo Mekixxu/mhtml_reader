@@ -8,6 +8,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import core.database.entity.enums.FileType
 import java.io.ByteArrayInputStream
+import java.io.File
 
 /**
  * 阅读器资源/导航拦截。
@@ -75,6 +76,10 @@ class BlockingResourceWebViewClient(
         if (!url.startsWith("file:")) return false
         val root = allowedCacheRootPath ?: return false
         val path = runCatching { Uri.parse(url).path }.getOrNull() ?: return false
-        return path.startsWith(root)
+        // 规范化后比较，阻断 ../、%2e%2e 及 app_cacheX 兄弟目录前缀绕过
+        val canonicalRoot = runCatching { File(root).canonicalPath }.getOrNull() ?: return false
+        val canonicalPath = runCatching { File(path).canonicalPath }.getOrNull() ?: return false
+        val rootPrefix = canonicalRoot.trimEnd(File.separatorChar) + File.separator
+        return canonicalPath == canonicalRoot || canonicalPath.startsWith(rootPrefix)
     }
 }

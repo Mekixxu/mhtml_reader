@@ -86,6 +86,39 @@ class BlockingResourceWebViewClientTest {
     }
 
     @Test
+    fun fileTraversal_isBlocked() {
+        val (client, _) = client()
+        assertTrue(
+            client.shouldOverrideUrlLoading(
+                null,
+                request("file://$cacheRoot/../../databases/history.db")
+            )
+        )
+    }
+
+    @Test
+    fun encodedTraversal_isBlocked() {
+        val (client, _) = client()
+        assertTrue(
+            client.shouldOverrideUrlLoading(
+                null,
+                request("file://$cacheRoot/%2e%2e/%2e%2e/databases/history.db")
+            )
+        )
+    }
+
+    @Test
+    fun siblingDirectoryPrefix_isBlocked() {
+        val (client, _) = client()
+        assertTrue(
+            client.shouldOverrideUrlLoading(
+                null,
+                request("file://${cacheRoot}X/evil.mhtml")
+            )
+        )
+    }
+
+    @Test
     fun interceptRequest_blocksRemoteResources() {
         val (client, _) = client()
         val response = client.shouldInterceptRequest(null, request("https://example.com/a.png"))
