@@ -112,8 +112,9 @@ class CacheOpenManager(
                 throw ce
             } catch (e: Throwable) {
                 cacheFile.delete()
-                // 只上报失败，不再二次抛出，避免调用方 collect 崩溃
+                // 只上报失败，不再二次抛出，避免调用方 collect 崩溃；并终止，避免落入末尾的假成功
                 emit(Result.failure(e))
+                return@flow
             } finally {
                 try { `in`.close() } catch (_: Throwable) {}
                 try { out?.close() } catch (_: Throwable) {}
