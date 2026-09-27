@@ -61,6 +61,10 @@
 **当前无孤儿目录**：原先 `core/favorites`、`core/settings`、`core/network`、`core/work`、`core/maintenance`、`core/di` 均已通过上表接线参与编译。
 ⚠️ **Hilt 装配当前未生效（保留并标注，2026-09-21 决策）**：只有 `app` 应用 Hilt 插件 + kapt，`core-domain`/`core-data`/`feature-*` 未应用 `com.google.dagger.hilt.android` + `hilt-compiler`，因此 `core/di`、`core/*/di`、`core/work`、`core/maintenance` 中的 `@Module`/`@HiltWorker` 不会被聚合（生成的 Hilt 组件不含业务 binding）。运行时仍走 `HtmlReaderApp` + `App*Worker` 唯一维护路径。
 后续若启用 Hilt：必须一次性完成（库模块插件/kapt 聚合 + `Configuration.Provider`/`HiltWorkerFactory` + 删除 `HtmlReaderApp` 的手工 Worker 注册），否则会出现 `Dagger/MissingBinding` 或双轨调度。
+**启用即回归清单（必须逐项补齐）**：
+1. `DefaultMaintenanceManager`/`CoreModule` 未传 `protectedKeys`/`activeKeysProvider` → 会复活「淘汰活跃 tab 缓存」缺陷；
+2. `core/backup/di/BackupModule` 未注入 `BackupTransactionRunner` → 备份导入静默回退为非事务；
+3. `AddFavoriteFileUseCase` 等未接线用例若直接接线，需确认走 `FavoritesRepository` 写入口（凭据脱敏已下沉到仓库层）。
 
 **同包重复告警**：根目录 `core/vfs/IFileSystem.kt`、`core/vfs/FileSystemResolver.kt` 已移入 `reviews/deprecated/`；生效的 VFS 抽象仅保留 `core-storage/src/main/java/core/vfs/` 一份。
 
