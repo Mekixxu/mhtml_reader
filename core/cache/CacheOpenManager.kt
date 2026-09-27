@@ -36,6 +36,7 @@ class CacheOpenManager(
     private val activeKeysProvider: () -> Set<String> = { emptySet() }
 ) {
     private val copyLocks = ConcurrentHashMap<String, Mutex>()
+    private val inFlightKeys = ConcurrentHashMap.newKeySet<String>()
 
     suspend fun openToCache(
         src: VfsPath,
@@ -54,6 +55,7 @@ class CacheOpenManager(
         // 同一 cacheKey 串行拷贝，避免并发打开同一文件时互相写坏缓存
         val copyLock = copyLocks.computeIfAbsent(cacheKey) { Mutex() }
         copyLock.lock()
+        inFlightKeys.add(cacheKey)
         try {
             val typeDir = cacheRoot.resolve(contentType.name.lowercase())
             typeDir.mkdirs()
@@ -79,8 +81,8 @@ class CacheOpenManager(
                 return@flow
             }
 
-            // Proactive eviction：超限或无法腾出空间时按失败结果返回，不抛异常
-            if (!cacheEvictor.makeRoomFor(totalBytes, activeKeysProvider(), cacheKey)) {
+            // Proactive eviction：保护活跃 tab 与所有在途拷贝的 cacheKey
+            if (!cacheEvictor.makeRoomFor(totalBytes, activeKeysProvider() + inFlightKeys, cacheKey)) {
                 emit(Result.failure(AppError.IoError("File exceeds cache capacity", null)))
                 return@flow
             }
@@ -121,6 +123,7 @@ class CacheOpenManager(
             }
             emit(Result.success(CopyProgress(totalBytes, totalBytes)))
         } finally {
+            inFlightKeys.remove(cacheKey)
             copyLock.unlock()
         }
     }.flowOn(dispatcherProvider.io)
