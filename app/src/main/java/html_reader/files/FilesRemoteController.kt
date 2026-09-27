@@ -278,7 +278,10 @@ class FilesRemoteController(
     ) {
         val config = resolveConfig() ?: return
         val remotePath = resolveRemotePath(entry) ?: return
-        if (!host.tryAcquireOperationLock()) return
+        if (!host.tryAcquireOperationLock()) {
+            host.updateStatus(host.string(R.string.files_status_operation_in_progress), isError = true)
+            return
+        }
         host.updateStatus(downloadingStatus, isError = false)
         host.hostLifecycleScope.launch {
             try {
@@ -303,7 +306,10 @@ class FilesRemoteController(
         uploader: suspend (NetworkConfigEntity) -> Unit
     ) {
         val config = resolveConfig() ?: return
-        if (!host.tryAcquireOperationLock()) return
+        if (!host.tryAcquireOperationLock()) {
+            host.updateStatus(host.string(R.string.files_status_operation_in_progress), isError = true)
+            return
+        }
         host.updateStatus(uploadingStatus, isError = false)
         host.hostLifecycleScope.launch {
             try {
@@ -321,7 +327,10 @@ class FilesRemoteController(
     }
 
     private fun runNetworkSmbOperation(block: suspend () -> Unit) {
-        if (!host.tryAcquireOperationLock()) return
+        if (!host.tryAcquireOperationLock()) {
+            host.updateStatus(host.string(R.string.files_status_operation_in_progress), isError = true)
+            return
+        }
         host.setOperationButtonsEnabled(false)
         host.showOperationProgress()
         host.hostLifecycleScope.launch {

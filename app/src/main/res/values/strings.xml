@@ -36,6 +36,7 @@
     <string name="files_session_created">Session opened</string>
     <string name="files_status_invalid_start_path">Requested path is not available</string>
     <string name="files_status_network_credential_invalid">Saved password cannot be decrypted. Re-enter it in More → Network.</string>
+    <string name="files_status_operation_in_progress">Another operation is in progress. Try again later.</string>
     <string name="recents_clear_history_title">Clear History</string>
     <string name="recents_clear_history_message">Are you sure you want to clear all history?</string>
     <string name="recents_clear_all">Clear All</string>

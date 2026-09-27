@@ -500,6 +500,7 @@ class FilesFragment : Fragment(), FilesRemoteHost {
 
     internal fun runOperation(request: FileOpRequest) {
         if (!tryAcquireOperationLock()) {
+            updateStatus(getString(R.string.files_status_operation_in_progress), isError = true)
             return
         }
         FilesOperationUiBinder.onBeforeRun(operationProgress, ::setOperationButtonsEnabled)
