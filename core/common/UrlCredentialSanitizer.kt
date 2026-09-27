@@ -9,7 +9,7 @@ package core.common
  * 无 userInfo、无密码或无法识别时原样返回。
  */
 object UrlCredentialSanitizer {
-    private val CREDENTIALS_IN_TEXT = Regex("(://[^:/@\\s]+):[^@\\s]*@")
+    private val CREDENTIALS_IN_TEXT = Regex("(://[^:/@\\s]*):[^@\\s]*@")
 
     /**
      * 从任意文本（如异常 message）中擦除 URL 里的密码，避免日志/错误弹窗泄露凭据。

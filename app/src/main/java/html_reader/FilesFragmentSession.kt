@@ -67,9 +67,12 @@ internal suspend fun FilesFragment.switchToSession(sessionId: Long) {
         currentSessionStore.set(sessionId)
         val linkedNetworkConfig = sessionSourceStore.getNetworkConfigId(sessionId)
             ?.let { networkConfigRepository.getById(it) }
-        // 解密失败的凭据是密文，禁止发往远端；提示用户重设密码
+        // 解密失败的凭据是密文，禁止发往远端；提示用户重设密码并清空残留列表
         if (linkedNetworkConfig?.decryptFailed == true) {
             updateStatus(getString(R.string.files_status_network_credential_invalid), isError = true)
+            allEntries.clear()
+            displayedEntries.clear()
+            adapter.notifyDataSetChanged()
             return
         }
         val plan = FilesSessionPlanner.build(

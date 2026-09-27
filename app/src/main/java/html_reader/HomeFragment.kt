@@ -173,10 +173,16 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
                             )
                         } catch (ce: kotlinx.coroutines.CancellationException) {
                             throw ce
-                        } catch (t: Throwable) {
+                        } catch (e: android.database.sqlite.SQLiteConstraintException) {
                             Toast.makeText(
                                 requireContext(),
                                 getString(R.string.home_network_duplicate),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        } catch (t: Throwable) {
+                            Toast.makeText(
+                                requireContext(),
+                                t.message ?: getString(R.string.common_unknown_error),
                                 Toast.LENGTH_SHORT
                             ).show()
                         }

@@ -33,9 +33,19 @@ class CredentialCipher(
     }
 
     /**
-     * 是否为 Keystore 加密格式。未带前缀的历史明文返回 false。
+     * 是否为 Keystore 加密格式（严格校验：两段合法 base64 + IV/GCM tag 长度）。
+     * 未带前缀的历史明文、以及恰好以 enc:v1: 开头的真实密码都返回 false，避免误判导致明文落库。
      */
-    fun isEncrypted(stored: String): Boolean = stored.startsWith(PREFIX)
+    fun isEncrypted(stored: String): Boolean {
+        if (!stored.startsWith(PREFIX)) return false
+        val parts = stored.removePrefix(PREFIX).split(':')
+        if (parts.size != 2 || parts[0].isEmpty() || parts[1].isEmpty()) return false
+        return runCatching {
+            val iv = Base64.decode(parts[0], Base64.NO_WRAP)
+            val ciphertext = Base64.decode(parts[1], Base64.NO_WRAP)
+            iv.size == GCM_IV_LENGTH_BYTES && ciphertext.size > GCM_TAG_LENGTH_BITS / 8
+        }.getOrDefault(false)
+    }
 
     /**
      * 解密。无前缀的历史明文原样返回（迁移用）；带前缀的密文解密失败时
@@ -83,6 +93,7 @@ class CredentialCipher(
         private const val ANDROID_KEYSTORE = "AndroidKeyStore"
         private const val TRANSFORMATION = "AES/GCM/NoPadding"
         private const val GCM_TAG_LENGTH_BITS = 128
+        private const val GCM_IV_LENGTH_BYTES = 12
         private const val KEY_SIZE_BITS = 256
         private const val PREFIX = "enc:v1:"
     }

@@ -1,6 +1,8 @@
 package com.html_reader
 
 import core.cache.CacheEvictor
+import core.cache.EvictionResult
+import org.junit.Assert.assertEquals
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -32,7 +34,7 @@ class CacheEvictorTest {
     }
 
     @Test
-    fun makeRoomFor_requiredExceedsMax_returnsFalseAndKeepsCache() = runBlocking {
+    fun makeRoomFor_requiredExceedsMax_reportsExceedsLimit() = runBlocking {
         val root = tempFolder.newFolder("app_cache_oversize")
         val typeDir = File(root, "mhtml").apply { mkdirs() }
         val cached = createCacheDir(typeDir, "cached", System.currentTimeMillis() - 86_400_000L, bytes = 100)
@@ -40,7 +42,7 @@ class CacheEvictorTest {
         val evictor = CacheEvictor(cacheRoot = root, maxBytes = 200)
         val result = evictor.makeRoomFor(requiredBytes = 300)
 
-        assertFalse(result)
+        assertEquals(EvictionResult.EXCEEDS_LIMIT, result)
         assertTrue(cached.exists())
     }
 
@@ -60,14 +62,14 @@ class CacheEvictorTest {
             currentKey = "current"
         )
 
-        assertTrue(result)
+        assertEquals(EvictionResult.READY, result)
         assertTrue(active.exists())
         assertTrue(current.exists())
         assertFalse(idle.exists())
     }
 
     @Test
-    fun makeRoomFor_protectedUsagePreventsFitting_returnsFalse() = runBlocking {
+    fun makeRoomFor_protectedUsagePreventsFitting_reportsCannotFree() = runBlocking {
         val root = tempFolder.newFolder("app_cache_protected_full")
         val typeDir = File(root, "mhtml").apply { mkdirs() }
         val now = System.currentTimeMillis()
@@ -82,7 +84,7 @@ class CacheEvictorTest {
             currentKey = "current"
         )
 
-        assertFalse(result)
+        assertEquals(EvictionResult.CANNOT_FREE, result)
         assertTrue(active.exists())
         assertTrue(current.exists())
         assertFalse(idle.exists())
@@ -104,7 +106,7 @@ class CacheEvictorTest {
         val evictor = CacheEvictor(cacheRoot = root, maxBytes = 250)
         val result = evictor.makeRoomFor(requiredBytes = 100)
 
-        assertTrue(result)
+        assertEquals(EvictionResult.READY, result)
         assertFalse(rootLoose.exists())
         assertFalse(typeLoose.exists())
         assertTrue(cached.exists())

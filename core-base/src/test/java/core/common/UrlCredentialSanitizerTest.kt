@@ -57,6 +57,14 @@ class UrlCredentialSanitizerTest {
     }
 
     @Test
+    fun sanitizeText_erasesPasswordWithEmptyUsername() {
+        assertEquals(
+            "connect failed: ftp://@host/path",
+            UrlCredentialSanitizer.sanitizeText("connect failed: ftp://:secret@host/path")
+        )
+    }
+
+    @Test
     fun sanitizeText_keepsTextWithoutCredentials() {
         val message = "Connection refused: /storage/emulated/0/a.mhtml"
         assertEquals(message, UrlCredentialSanitizer.sanitizeText(message))

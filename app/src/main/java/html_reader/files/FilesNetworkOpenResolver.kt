@@ -52,9 +52,16 @@ object FilesNetworkOpenResolver {
             return ResolvedNetworkOpen(configId = existing.id, openPath = openPath)
         }
         val userInfo = uri.userInfo.orEmpty()
-        val username = userInfo.substringBefore(':', "").let { URLDecoder.decode(it, "UTF-8") }
+        // 注意：无冒号时必须回退为整个 userInfo（anonymous 等无密码用户名）
+        val username = userInfo.substringBefore(':', userInfo).let { URLDecoder.decode(it, "UTF-8") }
         val password = userInfo.substringAfter(':', "").let { URLDecoder.decode(it, "UTF-8") }
         if (username.isBlank() && password.isBlank()) {
+            return ResolvedNetworkOpen(issue = NetworkOpenIssue.MISSING_CREDENTIAL)
+        }
+        // 收藏路径已剥离密码：无密码的 adHoc 配置无法认证，应提示用户先建网络配置；
+        // 匿名 FTP（anonymous + 空密码）除外
+        val isAnonymous = username.equals("anonymous", ignoreCase = true) && password.isBlank()
+        if (password.isBlank() && !isAnonymous) {
             return ResolvedNetworkOpen(issue = NetworkOpenIssue.MISSING_CREDENTIAL)
         }
         val adHoc = NetworkConfigEntity(

@@ -33,9 +33,11 @@ object FilesStartupHandler {
         if (networkConfigId != null) {
             val config = networkConfigRepository.getById(networkConfigId)
             if (config != null && config.decryptFailed) {
-                // 凭据解密失败：不建立网络会话，避免把密文当密码发送
+                // 凭据解密失败：不建立网络会话，避免把密文当密码发送；直接结束，避免提示被后续路径覆盖
                 onCredentialUnavailable()
-            } else if (config != null) {
+                return InitialOpenState(networkConfigId = null, startPath = null, safTreeUri = null)
+            }
+            if (config != null) {
                 val sessionName = "${config.protocol.name}: ${config.name}"
                 val initialPath = when (config.protocol) {
                     NetworkProtocol.FTP -> FilesNetworkGateway.normalizeFtpPath(config.defaultPath)

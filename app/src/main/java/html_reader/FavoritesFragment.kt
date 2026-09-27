@@ -365,7 +365,20 @@ class FavoritesFragment : Fragment() {
                 showShort(getString(R.string.favorites_unreachable))
                 return@launch
             }
-            val configId = resolved.configId ?: resolved.adHocConfig?.let { repository.add(it) }
+            val configId = resolved.configId ?: resolved.adHocConfig?.let { adHoc ->
+                try {
+                    repository.add(adHoc)
+                } catch (e: android.database.sqlite.SQLiteConstraintException) {
+                    // 唯一键冲突（并发/重复打开）：复用已存在的同键配置
+                    repository.getAll().firstOrNull {
+                        it.protocol == adHoc.protocol &&
+                            it.host.equals(adHoc.host, ignoreCase = true) &&
+                            it.port == adHoc.port &&
+                            it.username == adHoc.username &&
+                            it.defaultPath == adHoc.defaultPath
+                    }?.id
+                }
+            }
             val openPath = resolved.openPath
             if (configId == null || openPath.isNullOrBlank()) {
                 showShort(getString(R.string.favorites_unreachable))

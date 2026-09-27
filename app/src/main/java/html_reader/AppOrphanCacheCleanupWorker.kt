@@ -13,7 +13,7 @@ class AppOrphanCacheCleanupWorker(
     override suspend fun doWork(): Result {
         val daysUnused = inputData.getInt("daysUnused", AppMaintenancePolicy.ORPHAN_DAYS_UNUSED)
         return runCatching {
-            val cacheRoot = File(applicationContext.cacheDir, "app_cache")
+            val cacheRoot = AppMaintenancePolicy.cacheRoot(applicationContext)
             val activeKeys = ReaderRuntime.tabCacheRegistry(applicationContext).activeCacheKeys()
             OrphanCacheCleaner(cacheRoot, daysUnused).clean(activeKeys)
             TransferCacheCleaner.clean(cacheDir = applicationContext.cacheDir, daysUnused = daysUnused)

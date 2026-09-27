@@ -28,6 +28,7 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import core.common.DefaultDispatcherProvider
 import core.data.repo.HistoryRepository
+import core.common.UrlCredentialSanitizer
 import core.database.entity.enums.FileType
 import core.reader.model.OpenRequest
 import core.reader.model.OpenState
@@ -48,6 +49,7 @@ import java.net.URL
 import java.util.Locale
 import android.util.Base64
 import java.io.ByteArrayOutputStream
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -253,12 +255,13 @@ class ReaderFragment : Fragment() {
                         }
                         is OpenState.Error -> {
                             terminalStateReached = true
+                            openProgress.visibility = View.GONE
                             val message = state.error.message ?: state.error.javaClass.simpleName
                             reportOpenError(message)
                         }
                     }
                 }
-            } catch (ce: kotlinx.coroutines.CancellationException) {
+            } catch (ce: CancellationException) {
                 throw ce
             } catch (e: Exception) {
                  terminalStateReached = true
@@ -276,12 +279,12 @@ class ReaderFragment : Fragment() {
     }
 
     private fun reportOpenError(fullDetails: String) {
-        Log.w("ReaderFragment", "reader_open_error details=$fullDetails")
+        Log.w("ReaderFragment", "reader_open_error details=${UrlCredentialSanitizer.sanitizeText(fullDetails)}")
         setErrorState(getString(R.string.reader_status_error))
     }
 
     private fun reportPdfOpenError(fullDetails: String) {
-        Log.w("ReaderFragment", "reader_pdf_open_error details=$fullDetails")
+        Log.w("ReaderFragment", "reader_pdf_open_error details=${UrlCredentialSanitizer.sanitizeText(fullDetails)}")
         setErrorState(getString(R.string.reader_pdf_open_error))
     }
 
@@ -546,7 +549,7 @@ class ReaderFragment : Fragment() {
                     return@setItems
                 }
                 viewLifecycleOwner.lifecycleScope.launch {
-                    runCatching {
+                    try {
                         val context = requireContext().applicationContext
                         val payload = withContext(Dispatchers.IO) {
                             resolveImagePayload(imageSource)
@@ -554,11 +557,11 @@ class ReaderFragment : Fragment() {
                         withContext(Dispatchers.IO) {
                             saveImagePayload(context, payload)
                         }
-                        payload.fileName
-                    }.onSuccess { fileName ->
-                        showShort(getString(R.string.reader_save_image_success, fileName))
-                    }.onFailure {
-                        val message = it.message?.ifBlank { getString(R.string.reader_save_image_failed) }
+                        showShort(getString(R.string.reader_save_image_success, payload.fileName))
+                    } catch (ce: CancellationException) {
+                        throw ce
+                    } catch (t: Throwable) {
+                        val message = t.message?.ifBlank { getString(R.string.reader_save_image_failed) }
                             ?: getString(R.string.reader_save_image_failed)
                         showShort(getString(R.string.reader_save_image_failed_reason, message))
                     }

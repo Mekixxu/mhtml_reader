@@ -1,6 +1,8 @@
 package com.html_reader
 
+import android.content.Context
 import core.settings.model.AppSettings
+import java.io.File
 
 /**
  * 应用维护任务的唯一参数源。
@@ -17,4 +19,7 @@ object AppMaintenancePolicy {
 
     const val HISTORY_RETENTION_WORK_NAME = "history_retention_daily"
     const val ORPHAN_CACHE_WORK_NAME = "orphan_cache_cleanup_daily"
+
+    /** 缓存根目录唯一来源，避免各处硬编码 "app_cache"。 */
+    fun cacheRoot(context: Context): File = File(context.cacheDir, "app_cache")
 }

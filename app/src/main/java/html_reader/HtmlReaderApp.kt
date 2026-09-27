@@ -89,10 +89,14 @@ class HtmlReaderApp : Application() {
         appScope.launch {
             runCatching {
                 val daysUnused = AppMaintenancePolicy.ORPHAN_DAYS_UNUSED
-                val cacheRoot = File(cacheDir, "app_cache")
+                val cacheRoot = AppMaintenancePolicy.cacheRoot(this@HtmlReaderApp)
                 val activeKeys = ReaderRuntime.tabCacheRegistry(applicationContext).activeCacheKeys()
                 OrphanCacheCleaner(cacheRoot = cacheRoot, daysUnused = daysUnused).clean(activeKeys)
                 TransferCacheCleaner.clean(cacheDir = cacheDir, daysUnused = daysUnused)
+                // 与周期 Worker 对齐：启动兜底同样裁剪标题缓存
+                val titleCutoff = System.currentTimeMillis() -
+                    AppMaintenancePolicy.TITLE_CACHE_MAX_DAYS * 86_400_000L
+                FilesRuntime.titleCacheRepository(applicationContext).deleteOlderThan(titleCutoff)
             }.onFailure { e ->
                 Log.w(TAG, "startup_cache_cleanup_failed err=${e.javaClass.simpleName}")
             }

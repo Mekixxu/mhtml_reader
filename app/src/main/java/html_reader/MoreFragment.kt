@@ -302,9 +302,12 @@ class MoreFragment : Fragment() {
                         }
                     } catch (ce: kotlinx.coroutines.CancellationException) {
                         throw ce
-                    } catch (t: Throwable) {
-                        // 唯一索引冲突等写入失败，提示而非崩溃
+                    } catch (e: android.database.sqlite.SQLiteConstraintException) {
                         showStatus(R.string.more_network_duplicate, isError = true)
+                    } catch (t: Throwable) {
+                        // 真实故障（Keystore/磁盘/DB）不能误诊为重复配置
+                        android.util.Log.w("MoreFragment", "network_config_save_failed err=${t.javaClass.simpleName}")
+                        showStatus(R.string.common_unknown_error, isError = true)
                     }
                 }
             }
@@ -366,13 +369,15 @@ class MoreFragment : Fragment() {
 
     private fun exportToUri(uri: Uri) {
         viewLifecycleOwner.lifecycleScope.launch {
-            runCatching {
+            try {
                 val jsonText = buildMetadataJson()
                 requireContext().contentResolver.openOutputStream(uri)?.bufferedWriter(Charsets.UTF_8)?.use { writer ->
                     writer.write(jsonText)
                 } ?: throw IllegalStateException("open output stream failed")
                 showStatus(R.string.more_export_success, isSuccess = true)
-            }.onFailure {
+            } catch (ce: kotlinx.coroutines.CancellationException) {
+                throw ce
+            } catch (t: Throwable) {
                 showStatus(R.string.more_export_failed, isError = true)
             }
         }
@@ -380,13 +385,15 @@ class MoreFragment : Fragment() {
 
     private fun importFromUri(uri: Uri) {
         viewLifecycleOwner.lifecycleScope.launch {
-            runCatching {
+            try {
                 val text = requireContext().contentResolver.openInputStream(uri)?.use { input ->
                     BufferedReader(InputStreamReader(input, Charsets.UTF_8)).readText()
                 } ?: throw IllegalStateException("open input stream failed")
                 applyMetadataJson(text)
                 showStatus(R.string.more_import_success, isSuccess = true)
-            }.onFailure {
+            } catch (ce: kotlinx.coroutines.CancellationException) {
+                throw ce
+            } catch (t: Throwable) {
                 showStatus(R.string.more_import_failed, isError = true)
             }
         }

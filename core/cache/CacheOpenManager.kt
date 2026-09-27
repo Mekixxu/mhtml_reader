@@ -82,8 +82,13 @@ class CacheOpenManager(
             }
 
             // Proactive eviction：保护活跃 tab 与所有在途拷贝的 cacheKey
-            if (!cacheEvictor.makeRoomFor(totalBytes, activeKeysProvider() + inFlightKeys, cacheKey)) {
-                emit(Result.failure(AppError.IoError("File exceeds cache capacity", null)))
+            val eviction = cacheEvictor.makeRoomFor(totalBytes, activeKeysProvider() + inFlightKeys, cacheKey)
+            if (eviction != EvictionResult.READY) {
+                val message = when (eviction) {
+                    EvictionResult.EXCEEDS_LIMIT -> "File exceeds cache capacity"
+                    else -> "Cache is held by active tabs; close some tabs and retry"
+                }
+                emit(Result.failure(AppError.IoError(message, null)))
                 return@flow
             }
 
