@@ -43,12 +43,10 @@ internal fun FilesFragment.loadEntries() {
         }
         allEntries.clear()
         allEntries.addAll(displayable)
-        displayTitleByPath.clear()
         setLocalActionButtonsEnabled(true)
         actionCreateButton.text = getString(R.string.action_new_folder)
         renderEntries()
         restoreScrollState()
-        refreshTitlesAsync()
     }
 }
 
@@ -91,23 +89,4 @@ internal fun FilesFragment.sortEntriesWithinGroup(entries: List<BrowserEntry>): 
     return FilesSortHelper.sortEntriesWithinGroup(entries, sortSpinner.selectedItemPosition)
 }
 
-internal fun FilesFragment.refreshTitlesAsync() {
-    if (browseSource != BrowseSource.LOCAL) {
-        return
-    }
-    titleRefreshJob?.cancel()
-    val snapshot = allEntries.toList()
-    titleRefreshJob = viewLifecycleOwner.lifecycleScope.launch {
-        val localFiles = snapshot.filter { !it.isDirectory }.mapNotNull { it.localFile }
-        filesTitleRefresher.refreshLocalTitles(
-            files = localFiles,
-            onCachedTitle = { path, title ->
-                displayTitleByPath[path] = title
-            },
-            onResolvedTitle = { path, title ->
-                displayTitleByPath[path] = title
-            }
-        )
-        renderEntries()
-    }
-}
+

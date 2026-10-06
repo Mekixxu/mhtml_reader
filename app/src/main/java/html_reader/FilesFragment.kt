@@ -35,13 +35,11 @@ import com.html_reader.files.FilesPathHelper
 import com.html_reader.files.FilesScrollStateStore
 import com.html_reader.files.FilesStatusUiHelper
 import com.html_reader.files.NetworkErrorTexts
-import com.html_reader.files.FilesTitleRefresher
 import com.html_reader.files.FilesUiBinder
 import com.html_reader.files.isSamePathAs
 import core.common.DefaultDispatcherProvider
 import core.data.repo.FavoritesRepository
 import core.data.repo.NetworkConfigRepository
-import core.data.repo.TitleCacheRepository
 import core.database.entity.enums.FileType
 import core.database.entity.enums.NetworkProtocol
 import core.fileops.model.FileOpRequest
@@ -52,15 +50,12 @@ import core.reader.model.OpenState
 import core.reader.usecase.InferFileTypeUseCase
 import core.reader.vm.ReaderViewModel
 import core.session.repo.FolderSessionRepository
-import core.title.impl.HtmlTitleExtractor
 import core.vfs.local.LocalFileSystem
 import core.vfs.model.VfsPath
 import java.io.File
 import java.text.DateFormat
 import java.util.Date
-import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
@@ -79,10 +74,8 @@ class FilesFragment : Fragment(), FilesRemoteHost {
     internal lateinit var folderSessionRepository: FolderSessionRepository
     internal lateinit var favoritesRepository: FavoritesRepository
     internal lateinit var networkConfigRepository: NetworkConfigRepository
-    internal lateinit var titleCacheRepository: TitleCacheRepository
     internal lateinit var currentSessionStore: AppCurrentSessionStore
     internal lateinit var sessionSourceStore: AppSessionSourceStore
-    internal lateinit var htmlTitleExtractor: HtmlTitleExtractor
     internal lateinit var readerViewModel: ReaderViewModel
 
     internal val allEntries = mutableListOf<BrowserEntry>()
@@ -97,12 +90,9 @@ class FilesFragment : Fragment(), FilesRemoteHost {
     internal var initialSafTreeUri: String? = null
     internal var currentNetworkLabel: String? = null
     internal var browseSource: BrowseSource = BrowseSource.LOCAL
-    internal var titleRefreshJob: Job? = null
-    internal lateinit var filesTitleRefresher: FilesTitleRefresher
     internal lateinit var remoteController: FilesRemoteController
     internal var currentNameTextSizeSp: Float = 16f
     internal val supportedExtensions = setOf("mht", "mhtml", "pdf")
-    internal val displayTitleByPath = ConcurrentHashMap<String, String>()
     internal val ftpUploadLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             remoteController.uploadDocumentToFtp(uri)
@@ -392,11 +382,8 @@ class FilesFragment : Fragment(), FilesRemoteHost {
         folderSessionRepository = FilesRuntime.folderSessionRepository(requireContext())
         favoritesRepository = FilesRuntime.favoritesRepository(requireContext())
         networkConfigRepository = FilesRuntime.networkConfigRepository(requireContext())
-        titleCacheRepository = FilesRuntime.titleCacheRepository(requireContext())
         currentSessionStore = FilesRuntime.currentSessionStore(requireContext())
         sessionSourceStore = FilesRuntime.sessionSourceStore(requireContext())
-        htmlTitleExtractor = HtmlTitleExtractor(DefaultDispatcherProvider())
-        filesTitleRefresher = FilesTitleRefresher(titleCacheRepository, htmlTitleExtractor)
         readerViewModel = ReaderRuntime.viewModel(requireContext())
         remoteController = FilesRemoteController(this, supportedExtensions)
     }
@@ -642,8 +629,6 @@ class FilesFragment : Fragment(), FilesRemoteHost {
         setLocalActionButtonsEnabled(false)
         actionCreateButton.isEnabled = true
         actionCreateButton.text = getString(createActionLabelRes)
-        titleRefreshJob?.cancel()
-        displayTitleByPath.clear()
     }
 
     override fun onRemoteEntriesLoaded(entries: List<BrowserEntry>) {
