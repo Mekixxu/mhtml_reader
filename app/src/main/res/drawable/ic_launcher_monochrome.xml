@@ -4,17 +4,19 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- 文档页（含右上折角） -->
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M43,27 H59 L72,40 V74 A7,7 0 0 1 65,81 H43 A7,7 0 0 1 36,74 V34 A7,7 0 0 1 43,27 Z" />
-    <path
-        android:fillColor="#FFBFDBFE"
-        android:pathData="M59,27 L72,40 H59 Z" />
-    <!-- M 字母 -->
+    <!-- 主题图标单色层：文档轮廓 + 折角 + M -->
     <path
         android:fillColor="#00000000"
-        android:strokeColor="#FF1D4ED8"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="4"
+        android:strokeLineJoin="round"
+        android:pathData="M43,27 H59 L72,40 V74 A7,7 0 0 1 65,81 H43 A7,7 0 0 1 36,74 V34 A7,7 0 0 1 43,27 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M59,27 L72,40 H59 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
         android:strokeWidth="7"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
