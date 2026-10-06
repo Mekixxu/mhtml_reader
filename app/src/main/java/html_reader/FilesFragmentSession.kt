@@ -33,6 +33,9 @@ internal fun FilesFragment.restoreSessionAndLoad() {
             initialSafTreeUri = updated.safTreeUri
             val active = currentSessionStore.get()
             if (active != null) switchToSession(active) else loadEntries()
+            // 初始恢复完成后才开始监听切换：observe 是 StateFlow，立即发射当前值，
+            // 若与 applyInitialOpen 并发会双次加载并用旧位置覆盖新位置
+            observeSessionSwitch()
         }
     }
 
@@ -62,6 +65,8 @@ internal suspend fun FilesFragment.ensureDefaultSession() {
 
 
 internal suspend fun FilesFragment.switchToSession(sessionId: Long) {
+        // 切出前保存当前会话的列表滚动位置（会话 id 与路径仍是切出方状态）
+        saveScrollState()
         val session = folderSessionRepository.getById(sessionId) ?: return
         currentSessionId = sessionId
         currentSessionStore.set(sessionId)

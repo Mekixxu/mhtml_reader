@@ -47,8 +47,14 @@ class FoldersOverviewFragment : Fragment(R.layout.fragment_folders_overview) {
         deleteButton.setOnClickListener {
             val id = selectedId ?: return@setOnClickListener
             viewLifecycleOwner.lifecycleScope.launch {
-                FilesRuntime.folderSessionRepository(requireContext()).delete(id)
-                FilesRuntime.sessionSourceStore(requireContext()).removeSession(id)
+                val context = requireContext()
+                FolderSessionDeleter.delete(
+                    context = context,
+                    sessionId = id,
+                    folderSessionRepository = FilesRuntime.folderSessionRepository(context),
+                    sessionSourceStore = FilesRuntime.sessionSourceStore(context),
+                    currentSessionStore = FilesRuntime.currentSessionStore(context)
+                )
                 selectedId = null
                 showStatus(R.string.folders_deleted, isSuccess = true)
             }

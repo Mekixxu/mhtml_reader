@@ -31,6 +31,7 @@ import com.html_reader.files.FilesNavigateUpHelper
 import com.html_reader.files.FilesOperationRunner
 import com.html_reader.files.FilesOperationUiBinder
 import com.html_reader.files.FilesPathHelper
+import com.html_reader.files.FilesScrollStateStore
 import com.html_reader.files.FilesStatusUiHelper
 import com.html_reader.files.NetworkErrorTexts
 import com.html_reader.files.FilesTitleRefresher
@@ -117,12 +118,8 @@ class FilesFragment : Fragment(), FilesRemoteHost {
         private const val ARG_NETWORK_CONFIG_ID = "arg_network_config_id"
         private const val ARG_START_PATH = "arg_start_path"
         private const val ARG_SAF_TREE_URI = "arg_saf_tree_uri"
-        private const val FILE_BROWSER_PREFS = "files_browser_settings"
         private const val KEY_NAME_FONT_SIZE_INDEX = "name_font_size_index"
         private const val KEY_QUERY_TEXT = "query_text"
-        private const val KEY_SCROLL_DIR = "scroll_dir"
-        private const val KEY_SCROLL_POSITION = "scroll_position"
-        private const val KEY_SCROLL_TOP = "scroll_top"
         private const val FONT_INDEX_SMALL = 0
         private const val FONT_INDEX_MEDIUM = 1
         private const val FONT_INDEX_LARGE = 2
@@ -353,11 +350,11 @@ class FilesFragment : Fragment(), FilesRemoteHost {
         operationStatusLabel.text = getString(R.string.files_status_idle)
         restoreQueryText()
         restoreSessionAndLoad()
-        observeSessionSwitch()
         ensureStoragePermissionIfNeeded()
     }
 
-    private fun browserPrefs() = requireContext().getSharedPreferences(FILE_BROWSER_PREFS, Context.MODE_PRIVATE)
+    private fun browserPrefs() =
+        requireContext().getSharedPreferences(FilesScrollStateStore.PREFS_NAME, Context.MODE_PRIVATE)
 
     internal fun saveQueryText(value: String) {
         browserPrefs().edit().putString(KEY_QUERY_TEXT, value).apply()
@@ -368,23 +365,35 @@ class FilesFragment : Fragment(), FilesRemoteHost {
         queryInput.setSelection(queryInput.text?.length ?: 0)
     }
 
-    internal fun saveScrollState(dir: File) {
-        val position = listView.firstVisiblePosition
+    /**
+     * 保存当前会话当前路径的列表滚动位置（本地/FTP/SMB 通用，按会话维度持久化）。
+     */
+    internal fun saveScrollState() {
+        val sessionId = currentSessionId ?: return
+        val path = currentBrowsePathForScroll() ?: return
         val child = listView.getChildAt(0) ?: return
-        browserPrefs().edit()
-            .putString(KEY_SCROLL_DIR, dir.absolutePath)
-            .putInt(KEY_SCROLL_POSITION, position)
-            .putInt(KEY_SCROLL_TOP, child.top)
-            .apply()
+        FilesScrollStateStore.save(
+            context = requireContext(),
+            sessionId = sessionId,
+            path = path,
+            position = listView.firstVisiblePosition,
+            top = child.top
+        )
     }
 
-    internal fun restoreScrollState(dir: File) {
-        val prefs = browserPrefs()
-        if (prefs.getString(KEY_SCROLL_DIR, null) != dir.absolutePath) return
-        val position = prefs.getInt(KEY_SCROLL_POSITION, 0)
-        val top = prefs.getInt(KEY_SCROLL_TOP, 0)
-        listView.post { listView.setSelectionFromTop(position, top) }
+    internal fun restoreScrollState() {
+        val sessionId = currentSessionId ?: return
+        val path = currentBrowsePathForScroll() ?: return
+        val state = FilesScrollStateStore.restore(requireContext(), sessionId, path) ?: return
+        listView.post { listView.setSelectionFromTop(state.position, state.top) }
     }
+
+    private fun currentBrowsePathForScroll(): String? = FilesPathHelper.pathForPersist(
+        browseSource,
+        currentDir,
+        remoteController.ftpCurrentPath,
+        remoteController.smbCurrentPath
+    )
 
     private fun initDependencies() {
         val dispatcherProvider = DefaultDispatcherProvider()
@@ -426,8 +435,8 @@ class FilesFragment : Fragment(), FilesRemoteHost {
 
     override fun onPause() {
         super.onPause()
-        currentDir?.let { saveScrollState(it) }
-        // 离开页面（如进入阅读器）时同步持久化目录，防止进程被回收后位置丢失
+        // 离开页面（进入阅读器/切到其他页）时持久化目录与列表滚动位置
+        saveScrollState()
         persistCurrentDir()
     }
 
@@ -462,7 +471,8 @@ class FilesFragment : Fragment(), FilesRemoteHost {
     }
 
     private fun readFontSizeIndex(): Int {
-        val prefs = requireContext().getSharedPreferences(FILE_BROWSER_PREFS, Context.MODE_PRIVATE)
+        val prefs = requireContext()
+            .getSharedPreferences(FilesScrollStateStore.PREFS_NAME, Context.MODE_PRIVATE)
         val value = prefs.getInt(KEY_NAME_FONT_SIZE_INDEX, FONT_INDEX_MEDIUM)
         return when (value) {
             FONT_INDEX_SMALL, FONT_INDEX_MEDIUM, FONT_INDEX_LARGE -> value
@@ -476,7 +486,7 @@ class FilesFragment : Fragment(), FilesRemoteHost {
             else -> FONT_INDEX_MEDIUM
         }
         requireContext()
-            .getSharedPreferences(FILE_BROWSER_PREFS, Context.MODE_PRIVATE)
+            .getSharedPreferences(FilesScrollStateStore.PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putInt(KEY_NAME_FONT_SIZE_INDEX, normalized)
             .apply()
@@ -651,6 +661,7 @@ class FilesFragment : Fragment(), FilesRemoteHost {
         allEntries.clear()
         allEntries.addAll(entries)
         renderEntries()
+        restoreScrollState()
         updateStatus(getString(R.string.files_status_done), isError = false)
     }
 

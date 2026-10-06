@@ -70,15 +70,18 @@ object FilesStartupHandler {
                 if (hasNetworkBinding && requestedNetworkEntry) {
                     folderSessionRepository.updateCurrentDir(active, startPath)
                 } else if (directory.exists() && directory.isDirectory) {
-                    if (hasNetworkBinding) sessionSourceStore.setNetworkConfigId(active, null)
+                    // 本地入口不得劫持网络会话：活跃会话是网络会话时切换到本地会话，
+                    // 避免网络会话被解绑并把远端路径改写成本地路径
+                    val localSessionId = ensureLocalSession(
+                        active, directory, folderSessionRepository, sessionSourceStore, currentSessionStore
+                    )
                     // 重新进入同一根目录（如再次点击 Home 目录卡片）时恢复上次浏览到的子目录
                     folderSessionRepository.updateCurrentDir(
-                        active,
-                        resumePathForLocalEntry(active, directory, folderSessionRepository)
+                        localSessionId,
+                        resumePathForLocalEntry(localSessionId, directory, folderSessionRepository)
                     )
-                } else if (hasNetworkBinding) {
-                    folderSessionRepository.updateCurrentDir(active, startPath)
                 } else {
+                    // 路径不可用：不得把无效本地路径写进网络会话的远端路径
                     onInvalidStartPath()
                 }
             }
@@ -94,12 +97,13 @@ object FilesStartupHandler {
             } else {
                 val directory = File(resolvedPath)
                 if (directory.exists() && directory.isDirectory) {
-                    if (sessionSourceStore.getNetworkConfigId(active) != null) {
-                        sessionSourceStore.setNetworkConfigId(active, null)
-                    }
+                    // SAF 入口同本地入口：不得劫持网络会话
+                    val localSessionId = ensureLocalSession(
+                        active, directory, folderSessionRepository, sessionSourceStore, currentSessionStore
+                    )
                     folderSessionRepository.updateCurrentDir(
-                        active,
-                        resumePathForLocalEntry(active, directory, folderSessionRepository)
+                        localSessionId,
+                        resumePathForLocalEntry(localSessionId, directory, folderSessionRepository)
                     )
                 } else {
                     onInvalidStartPath()
@@ -129,6 +133,35 @@ object FilesStartupHandler {
             return existing.absolutePath
         }
         return requestedDir.absolutePath
+    }
+
+    /**
+     * 为本地目录入口确定承载会话：
+     * 1. 活跃会话已是本地会话时沿用（保留既有行为与位置恢复语义）；
+     * 2. 否则优先选择当前路径位于请求目录内的本地会话（进入即恢复其位置）；
+     * 3. 再次选用任一本地会话；4. 都没有时新建本地会话。
+     * 网络会话绝不承载本地目录入口。
+     */
+    private suspend fun ensureLocalSession(
+        activeSessionId: Long?,
+        requestedDir: File,
+        folderSessionRepository: FolderSessionRepository,
+        sessionSourceStore: AppSessionSourceStore,
+        currentSessionStore: AppCurrentSessionStore
+    ): Long {
+        if (activeSessionId != null && sessionSourceStore.getNetworkConfigId(activeSessionId) == null) {
+            return activeSessionId
+        }
+        val unbound = folderSessionRepository.getAll()
+            .filter { sessionSourceStore.getNetworkConfigId(it.id) == null }
+        val resumable = unbound.firstOrNull { entity ->
+            val current = File(entity.currentPath)
+            current.exists() && current.isDirectory && isSameOrDescendant(current, requestedDir)
+        }
+        val target = resumable ?: unbound.firstOrNull()
+        val id = target?.id ?: folderSessionRepository.add("Local", requestedDir.absolutePath)
+        currentSessionStore.set(id)
+        return id
     }
 
     private fun isSameOrDescendant(candidate: File, ancestor: File): Boolean {
