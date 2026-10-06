@@ -24,6 +24,7 @@ import androidx.lifecycle.LifecycleCoroutineScope
 import androidx.lifecycle.lifecycleScope
 import com.html_reader.files.BrowseSource
 import com.html_reader.files.BrowserEntry
+import com.html_reader.files.FilesEntryMetaBuilder
 import com.html_reader.files.FilesErrorFormatter
 import com.html_reader.files.FilesRemoteController
 import com.html_reader.files.FilesRemoteHost
@@ -37,7 +38,6 @@ import com.html_reader.files.NetworkErrorTexts
 import com.html_reader.files.FilesTitleRefresher
 import com.html_reader.files.FilesUiBinder
 import com.html_reader.files.isSamePathAs
-import com.html_reader.files.pathKey
 import core.common.DefaultDispatcherProvider
 import core.data.repo.FavoritesRepository
 import core.data.repo.NetworkConfigRepository
@@ -189,22 +189,11 @@ class FilesFragment : Fragment(), FilesRemoteHost {
                 val text2 = itemView.findViewById<TextView>(R.id.files_item_meta)
 
                 val namePart = item.name
-                val titlePart = item.pathKey()?.let { displayTitleByPath[it] }
 
                 val typeLabel = if (item.isDirectory) getString(R.string.icon_dir) else getString(R.string.icon_file)
                 val sizeLabel = if (item.isDirectory) "" else formatSize(item.sizeBytes)
                 val timeLabel = item.modifiedText ?: item.modifiedEpochMs?.let { DateFormat.getDateTimeInstance().format(Date(it)) }.orEmpty()
-                val metaPart = buildList {
-                    if (!titlePart.isNullOrBlank()) {
-                        add("Title: $titlePart")
-                    }
-                    if (sizeLabel.isNotBlank()) {
-                        add(sizeLabel)
-                    }
-                    if (timeLabel.isNotBlank()) {
-                        add(timeLabel)
-                    }
-                }.joinToString("  •  ")
+                val metaPart = FilesEntryMetaBuilder.build(sizeLabel = sizeLabel, timeLabel = timeLabel)
 
                 val selectedPrefix = if (item.isSamePathAs(selectedEntry)) "▶ " else ""
                 
