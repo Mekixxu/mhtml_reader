@@ -18,6 +18,7 @@ data class FilesUiViews(
     val operationProgress: ProgressBar,
     val actionUpButton: Button,
     val actionCreateButton: Button,
+    val emptyLabel: TextView,
     val listView: ListView
 )
 
@@ -32,6 +33,7 @@ object FilesUiBinder {
             operationProgress = root.findViewById(R.id.files_operation_progress),
             actionUpButton = root.findViewById(R.id.files_action_up),
             actionCreateButton = root.findViewById(R.id.files_action_create),
+            emptyLabel = root.findViewById(R.id.files_empty_label),
             listView = root.findViewById(R.id.files_list)
         )
     }

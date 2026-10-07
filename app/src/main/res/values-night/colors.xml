@@ -16,6 +16,9 @@
     <color name="colorError">#F87171</color>
     <color name="colorWarning">#FBBF24</color>
 
+    <!-- Disabled stroke (textTertiary @ 40% alpha, dark) -->
+    <color name="colorStrokeDisabled">#4064748B</color>
+
     <!-- Text Colors -->
     <color name="textPrimary">#F8FAFC</color>
     <color name="textSecondary">#94A3B8</color>

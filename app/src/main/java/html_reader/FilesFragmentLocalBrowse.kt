@@ -1,5 +1,6 @@
 package com.html_reader
 
+import android.view.View
 import androidx.lifecycle.lifecycleScope
 import com.html_reader.files.BrowseSource
 import com.html_reader.files.BrowserEntry
@@ -24,10 +25,13 @@ internal fun FilesFragment.formatSize(bytes: Long): String {
 internal fun FilesFragment.loadEntries() {
     remoteController.cancelRemoteLoad()
     if (browseSource == BrowseSource.FTP) {
+        // 远程加载开始时先隐藏空态，加载完成后由 renderEntries 按结果决定
+        emptyLabel.visibility = View.GONE
         remoteController.loadFtpEntries()
         return
     }
     if (browseSource == BrowseSource.SMB) {
+        emptyLabel.visibility = View.GONE
         remoteController.loadSmbEntries()
         return
     }
@@ -60,6 +64,8 @@ internal fun FilesFragment.renderEntries() {
     val sorted = sortEntriesWithinGroup(directories) + sortEntriesWithinGroup(files)
     displayedEntries.clear()
     displayedEntries.addAll(sorted)
+    // 空态提示：目录为空或搜索无匹配时给出明确反馈，避免「空白 = 状态未知」
+    emptyLabel.visibility = if (displayedEntries.isEmpty()) View.VISIBLE else View.GONE
     adapter.notifyDataSetChanged()
 }
 

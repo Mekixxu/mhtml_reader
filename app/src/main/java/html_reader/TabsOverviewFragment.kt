@@ -22,6 +22,7 @@ import kotlinx.coroutines.launch
 class TabsOverviewFragment : Fragment(R.layout.fragment_tabs_overview) {
     private lateinit var listView: ListView
     private lateinit var statusLabel: TextView
+    private lateinit var emptyLabel: TextView
     private lateinit var adapter: TabsAdapter
     private lateinit var favoritesRepository: core.data.repo.FavoritesRepository
     private var statusDefaultColor: Int = 0
@@ -31,6 +32,7 @@ class TabsOverviewFragment : Fragment(R.layout.fragment_tabs_overview) {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         listView = view.findViewById(R.id.tabs_list)
         statusLabel = view.findViewById(R.id.tabs_status)
+        emptyLabel = view.findViewById(R.id.tabs_empty_label)
         statusDefaultColor = statusLabel.currentTextColor
         adapter = TabsAdapter()
         listView.adapter = adapter
@@ -120,6 +122,9 @@ class TabsOverviewFragment : Fragment(R.layout.fragment_tabs_overview) {
     }
 
     private fun renderList() {
+        val isEmpty = tabs.isEmpty()
+        emptyLabel.visibility = if (isEmpty) View.VISIBLE else View.GONE
+        listView.visibility = if (isEmpty) View.GONE else View.VISIBLE
         adapter.notifyDataSetChanged()
         val selectedIndex = tabs.indexOfFirst { it.tabId == selectedTabId }
         if (selectedIndex >= 0) {
@@ -133,8 +138,8 @@ class TabsOverviewFragment : Fragment(R.layout.fragment_tabs_overview) {
         statusLabel.text = getString(messageRes)
         statusLabel.setTextColor(
             when {
-                isError -> ContextCompat.getColor(requireContext(), android.R.color.holo_red_dark)
-                isSuccess -> ContextCompat.getColor(requireContext(), android.R.color.holo_green_dark)
+                isError -> ContextCompat.getColor(requireContext(), R.color.colorError)
+                isSuccess -> ContextCompat.getColor(requireContext(), R.color.colorSuccess)
                 else -> statusDefaultColor
             }
         )

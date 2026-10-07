@@ -26,6 +26,7 @@
     <string name="files_action_add_favorite">Add to favorites</string>
     <string name="files_action_details">Details</string>
     <string name="files_status_idle">Ready</string>
+    <string name="files_empty">No supported files or folders here</string>
     <string name="files_status_working">Working…</string>
     <string name="files_status_done">Done</string>
     <string name="files_status_network_source_template">Network source: %1$s %2$s (%3$s)</string>
@@ -135,13 +136,16 @@
     <string name="folders_deleted">Session deleted</string>
     <string name="folders_manage_title">Folder Sessions</string>
     <string name="folders_manage_subtitle">Manage and switch your session groups</string>
+    <string name="folders_empty">No folder sessions yet. Create one to start browsing.</string>
     <string name="tabs_close">Close</string>
     <string name="tabs_close_all">Close All</string>
     <string name="tabs_closed">Tab closed</string>
     <string name="tabs_closed_all">All tabs closed</string>
     <string name="tabs_manage_title">Opened Files</string>
     <string name="tabs_manage_subtitle">Tap any item to switch instantly</string>
+    <string name="tabs_empty">No open tabs. Open a file to start reading.</string>
     <string name="favorites_title">Favorites</string>
+    <string name="favorites_empty">No favorites yet. Add files or folders you open often.</string>
     <string name="favorites_up">Up</string>
     <string name="favorites_add_folder">New Folder</string>
     <string name="favorites_add_file">New Item</string>

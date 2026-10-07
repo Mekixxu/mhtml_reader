@@ -412,8 +412,8 @@ class MoreFragment : Fragment() {
         statusLabel.text = getString(messageRes)
         statusLabel.setTextColor(
             when {
-                isError -> ContextCompat.getColor(requireContext(), android.R.color.holo_red_dark)
-                isSuccess -> ContextCompat.getColor(requireContext(), android.R.color.holo_green_dark)
+                isError -> ContextCompat.getColor(requireContext(), R.color.colorError)
+                isSuccess -> ContextCompat.getColor(requireContext(), R.color.colorSuccess)
                 else -> statusDefaultColor
             }
         )

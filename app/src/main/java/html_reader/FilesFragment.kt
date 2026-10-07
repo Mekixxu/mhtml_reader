@@ -19,6 +19,7 @@ import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.LifecycleCoroutineScope
 import androidx.lifecycle.lifecycleScope
@@ -68,6 +69,7 @@ class FilesFragment : Fragment(), FilesRemoteHost {
     internal lateinit var operationProgress: ProgressBar
     internal lateinit var actionUpButton: Button
     internal lateinit var actionCreateButton: Button
+    internal lateinit var emptyLabel: TextView
     internal lateinit var listView: android.widget.ListView
     internal lateinit var adapter: ArrayAdapter<BrowserEntry>
     internal lateinit var executeFileOpUseCase: ExecuteFileOpUseCase
@@ -169,6 +171,7 @@ class FilesFragment : Fragment(), FilesRemoteHost {
         operationProgress = ui.operationProgress
         actionUpButton = ui.actionUpButton
         actionCreateButton = ui.actionCreateButton
+        emptyLabel = ui.emptyLabel
         listView = ui.listView
 
         adapter = object : ArrayAdapter<BrowserEntry>(requireContext(), R.layout.item_files_entry, displayedEntries) {
@@ -596,8 +599,9 @@ class FilesFragment : Fragment(), FilesRemoteHost {
     override fun updateStatus(value: String, isError: Boolean) {
         if (view == null) return
         operationStatusLabel.text = value
-        val colorRes = if (isError) android.R.color.holo_red_dark else android.R.color.black
-        operationStatusLabel.setTextColor(resources.getColor(colorRes, null))
+        // 语义状态色（含暗色主题变体），避免暗色主题下黑色/ho­lo 色不可见
+        val colorRes = if (isError) R.color.colorError else R.color.textPrimary
+        operationStatusLabel.setTextColor(ContextCompat.getColor(requireContext(), colorRes))
 
         if (isError) {
             FilesStatusUiHelper.bindErrorClick(requireContext(), operationStatusLabel, value)

@@ -21,6 +21,7 @@ class FoldersOverviewFragment : Fragment(R.layout.fragment_folders_overview) {
     private lateinit var deleteButton: Button
     private lateinit var listView: ListView
     private lateinit var statusLabel: TextView
+    private lateinit var emptyLabel: TextView
     private lateinit var adapter: ArrayAdapter<String>
     private var statusDefaultColor: Int = 0
     private val sessions = mutableListOf<FolderSessionEntity>()
@@ -32,6 +33,7 @@ class FoldersOverviewFragment : Fragment(R.layout.fragment_folders_overview) {
         deleteButton = view.findViewById(R.id.folders_delete)
         listView = view.findViewById(R.id.folders_list)
         statusLabel = view.findViewById(R.id.folders_status)
+        emptyLabel = view.findViewById(R.id.folders_empty_label)
         statusDefaultColor = statusLabel.currentTextColor
         adapter = ArrayAdapter(requireContext(), R.layout.item_home_rect, mutableListOf())
         listView.adapter = adapter
@@ -97,6 +99,9 @@ class FoldersOverviewFragment : Fragment(R.layout.fragment_folders_overview) {
     }
 
     private fun renderList() {
+        val isEmpty = sessions.isEmpty()
+        emptyLabel.visibility = if (isEmpty) android.view.View.VISIBLE else android.view.View.GONE
+        listView.visibility = if (isEmpty) android.view.View.GONE else android.view.View.VISIBLE
         adapter.clear()
         adapter.addAll(
             sessions.map {
@@ -123,8 +128,8 @@ class FoldersOverviewFragment : Fragment(R.layout.fragment_folders_overview) {
         statusLabel.text = getString(messageRes)
         statusLabel.setTextColor(
             when {
-                isError -> ContextCompat.getColor(requireContext(), android.R.color.holo_red_dark)
-                isSuccess -> ContextCompat.getColor(requireContext(), android.R.color.holo_green_dark)
+                isError -> ContextCompat.getColor(requireContext(), R.color.colorError)
+                isSuccess -> ContextCompat.getColor(requireContext(), R.color.colorSuccess)
                 else -> statusDefaultColor
             }
         )

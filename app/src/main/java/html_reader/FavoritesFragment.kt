@@ -34,6 +34,7 @@ class FavoritesFragment : Fragment() {
     private lateinit var renameButton: Button
     private lateinit var deleteButton: Button
     private lateinit var listView: ListView
+    private lateinit var emptyLabel: TextView
     private lateinit var adapter: ArrayAdapter<String>
     private var observeJob: Job? = null
     private val items = mutableListOf<FavoriteEntity>()
@@ -55,6 +56,7 @@ class FavoritesFragment : Fragment() {
         renameButton = view.findViewById(R.id.favorites_rename)
         deleteButton = view.findViewById(R.id.favorites_delete)
         listView = view.findViewById(R.id.favorites_list)
+        emptyLabel = view.findViewById(R.id.favorites_empty_label)
         adapter = ArrayAdapter(requireContext(), R.layout.item_home_rect, mutableListOf())
         listView.adapter = adapter
         refreshTitle()
@@ -184,6 +186,9 @@ class FavoritesFragment : Fragment() {
     }
 
     private fun renderList() {
+        val isEmpty = items.isEmpty()
+        emptyLabel.visibility = if (isEmpty) View.VISIBLE else View.GONE
+        listView.visibility = if (isEmpty) View.GONE else View.VISIBLE
         adapter.clear()
         adapter.addAll(
             items.map {

@@ -37,6 +37,17 @@
             android:textAppearance="?android:attr/textAppearanceSmall"
             android:textColor="?android:attr/textColorSecondary" />
 
+        <TextView
+            android:id="@+id/tabs_empty_label"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/home_spacing_large"
+            android:gravity="center"
+            android:text="@string/tabs_empty"
+            android:textAppearance="?android:attr/textAppearanceSmall"
+            android:textColor="?android:attr/textColorSecondary"
+            android:visibility="gone" />
+
         <ListView
             android:id="@+id/tabs_list"
             android:layout_width="match_parent"
