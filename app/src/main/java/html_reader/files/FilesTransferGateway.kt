@@ -17,12 +17,22 @@ object FilesTransferGateway {
     private const val TAG = "FilesTransferGateway"
     private const val BUFFER_SIZE = 64 * 1024
 
+    /**
+     * 已存在且大小与远端一致的下载目标可直接复用，避免同文件反复打开重复下载。
+     * expectedBytes 未知（<=0）时不复用，保守重新下载。
+     */
+    fun findReusableTarget(target: File, expectedBytes: Long): File? {
+        if (expectedBytes <= 0L || !target.isFile) return null
+        return if (target.length() == expectedBytes) target else null
+    }
+
     suspend fun downloadFtpToLocal(
         cacheDir: File,
         config: NetworkConfigEntity,
         remotePath: String,
         displayName: String,
-        charset: String
+        charset: String,
+        expectedBytes: Long = 0L
     ): File = withContext(Dispatchers.IO) {
         runCatching {
             val targetDir = cacheDir.resolve("ftp_open")
@@ -30,6 +40,10 @@ object FilesTransferGateway {
             val target = FilesNetworkGateway.createUniqueCacheFile(
                 targetDir, displayName, "ftp:${config.id}:${config.host}:$remotePath"
             )
+            findReusableTarget(target, expectedBytes)?.let { reusable ->
+                Log.d(TAG, "download_ftp_reused host=${config.host} path=$remotePath")
+                return@runCatching reusable
+            }
             val url = URL(FilesNetworkGateway.buildFtpUrl(config, remotePath, "i", charset))
             val elapsed = measureTimeMillis {
                 writeAtomically(target) { output ->
@@ -45,7 +59,8 @@ object FilesTransferGateway {
         cacheDir: File,
         config: NetworkConfigEntity,
         remotePath: String,
-        displayName: String
+        displayName: String,
+        expectedBytes: Long = 0L
     ): File = withContext(Dispatchers.IO) {
         runCatching {
             val targetDir = cacheDir.resolve("smb_open")
@@ -53,6 +68,10 @@ object FilesTransferGateway {
             val target = FilesNetworkGateway.createUniqueCacheFile(
                 targetDir, displayName, "smb:${config.id}:${config.host}:$remotePath"
             )
+            findReusableTarget(target, expectedBytes)?.let { reusable ->
+                Log.d(TAG, "download_smb_reused host=${config.host} path=$remotePath")
+                return@runCatching reusable
+            }
             val source = SmbFile(FilesNetworkGateway.buildSmbFileUrl(config, remotePath), FilesSmbGateway.smbContext(config))
             val elapsed = measureTimeMillis {
                 writeAtomically(target) { output ->

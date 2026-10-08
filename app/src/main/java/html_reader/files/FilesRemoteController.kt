@@ -116,13 +116,14 @@ class FilesRemoteController(
             downloadingStatus = host.string(R.string.files_status_ftp_downloading),
             resolveConfig = { ftpConfig },
             resolveRemotePath = { it.ftpPath },
-            downloader = { config, remotePath, displayName ->
+            downloader = { config, remotePath, displayName, expectedBytes ->
                 FilesTransferGateway.downloadFtpToLocal(
                     cacheDir = host.hostCacheDir,
                     config = config,
                     remotePath = remotePath,
                     displayName = displayName,
-                    charset = ftpEffectiveCharset(config)
+                    charset = ftpEffectiveCharset(config),
+                    expectedBytes = expectedBytes
                 )
             }
         )
@@ -136,12 +137,13 @@ class FilesRemoteController(
             downloadingStatus = host.string(R.string.files_status_smb_downloading),
             resolveConfig = { smbConfig },
             resolveRemotePath = { it.smbPath },
-            downloader = { config, remotePath, displayName ->
+            downloader = { config, remotePath, displayName, expectedBytes ->
                 FilesTransferGateway.downloadSmbToLocal(
                     cacheDir = host.hostCacheDir,
                     config = config,
                     remotePath = remotePath,
-                    displayName = displayName
+                    displayName = displayName,
+                    expectedBytes = expectedBytes
                 )
             }
         )
@@ -274,7 +276,7 @@ class FilesRemoteController(
         downloadingStatus: String,
         resolveConfig: () -> NetworkConfigEntity?,
         resolveRemotePath: (BrowserEntry) -> String?,
-        downloader: suspend (NetworkConfigEntity, String, String) -> File
+        downloader: suspend (NetworkConfigEntity, String, String, Long) -> File
     ) {
         val config = resolveConfig() ?: return
         val remotePath = resolveRemotePath(entry) ?: return
@@ -285,7 +287,7 @@ class FilesRemoteController(
         host.updateStatus(downloadingStatus, isError = false)
         host.hostLifecycleScope.launch {
             try {
-                val local = downloader(config, remotePath, entry.name)
+                val local = downloader(config, remotePath, entry.name, entry.sizeBytes)
                 host.updateStatus(host.string(R.string.files_status_done), isError = false)
                 host.openDownloadedFile(local, entry.name, isBackground)
             } catch (ce: CancellationException) {
