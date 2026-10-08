@@ -10,6 +10,7 @@ import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
+import com.html_reader.files.NetworkDisplayHelper
 import core.session.entity.FolderSessionEntity
 import java.io.File
 import kotlinx.coroutines.flow.collect
@@ -106,9 +107,7 @@ class FoldersOverviewFragment : Fragment(R.layout.fragment_folders_overview) {
         adapter.addAll(
             sessions.map {
                 val selected = if (it.id == selectedId) "▶ " else ""
-                val displayName = it.name
-                    .replace(Regex("(?i)^FTP:\\s*ftp://"), "FTP: ")
-                    .replace(Regex("(?i)^SMB:\\s*smb://"), "SMB: ")
+                val displayName = NetworkDisplayHelper.displaySessionName(it.name)
                 val displayPath = File(it.currentPath).absolutePath
                     .replace(Regex("(?i)^ftp://"), "")
                     .replace(Regex("(?i)^smb://"), "")

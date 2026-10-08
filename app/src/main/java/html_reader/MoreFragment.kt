@@ -327,9 +327,10 @@ class MoreFragment : Fragment() {
                 } else {
                     it.username
                 }
-                val cleanName = NetworkDisplayHelper.trimProtocolPrefix(it.name, it.protocol)
+                val meaningful = NetworkDisplayHelper.meaningfulName(it.name, it.protocol)
                 val cleanPath = NetworkDisplayHelper.trimProtocolPrefix(it.defaultPath, it.protocol)
-                "$selected${it.protocol.name}  $cleanName  •  ${it.host}:${it.port}  •  $authLabel  •  ${it.encoding}  •  $cleanPath"
+                val nameSegment = meaningful?.let { "$it  •  " } ?: ""
+                "$selected${it.protocol.name}  •  $nameSegment${it.host}:${it.port}  •  $authLabel  •  ${it.encoding}  •  $cleanPath"
             }
         )
         adapter.notifyDataSetChanged()

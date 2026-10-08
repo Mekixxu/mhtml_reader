@@ -117,8 +117,12 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
                 networkConfigs.clear()
                 networkConfigs.addAll(configs)
                 val display = configs.map {
-                    val cleanName = NetworkDisplayHelper.trimProtocolPrefix(it.name, it.protocol)
-                    "${it.protocol.name}: $cleanName (${it.host})"
+                    val meaningful = NetworkDisplayHelper.meaningfulName(it.name, it.protocol)
+                    if (meaningful == null) {
+                        "${it.protocol.name} (${it.host})"
+                    } else {
+                        "${it.protocol.name}: $meaningful (${it.host})"
+                    }
                 }.toMutableList()
                 display.add(getString(R.string.home_network_add_hint))
                 netAdapter.clear()

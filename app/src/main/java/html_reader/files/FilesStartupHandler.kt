@@ -38,7 +38,11 @@ object FilesStartupHandler {
                 return InitialOpenState(networkConfigId = null, startPath = null, safTreeUri = null)
             }
             if (config != null) {
-                val sessionName = "${config.protocol.name}: ${config.name}"
+                // 配置名无展示意义（空/与协议名重复，如 FTP 配置名叫 ftp）时回退用 host，
+                // 避免会话名出现「FTP: ftp」冗余
+                val meaningfulName = NetworkDisplayHelper.meaningfulName(config.name, config.protocol)
+                val sessionName = meaningfulName?.let { "${config.protocol.name}: $it" }
+                    ?: "${config.protocol.name}: ${config.host}"
                 val initialPath = when (config.protocol) {
                     NetworkProtocol.FTP -> FilesNetworkGateway.normalizeFtpPath(config.defaultPath)
                     NetworkProtocol.SMB -> FilesNetworkGateway.normalizeSmbPath(config.defaultPath)
