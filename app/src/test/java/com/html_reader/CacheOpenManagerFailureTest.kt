@@ -104,7 +104,37 @@ class CacheOpenManagerFailureTest {
 
         assertEquals(1, results.size)
         assertTrue(results.single().isFailure)
+        assertEquals(AppError.CacheLimitExceeded, results.single().exceptionOrNull())
         assertTrue(existing.exists())
+    }
+
+    @Test
+    fun cacheHeldByActiveTabs_emitsTypedCacheBusyFailure() = runBlocking {
+        val cacheRoot = File(tempFolder.root, "app_cache")
+        val existing = File(cacheRoot, "mhtml/keep/content.mhtml").apply {
+            parentFile?.mkdirs()
+            writeBytes(ByteArray(400))
+        }
+        val fileSystem = object : StubFileSystem() {}
+        val openManager = CacheOpenManager(
+            context = context,
+            cacheRoot = cacheRoot,
+            fileSystem = fileSystem,
+            dispatcherProvider = DefaultDispatcherProvider(),
+            cacheEvictor = CacheEvictor(cacheRoot = cacheRoot, maxBytes = 500),
+            activeKeysProvider = { setOf("keep") }
+        )
+
+        val results = openManager.openToCache(
+            src = VfsPath.LocalFile("/tmp/another.mhtml"),
+            totalBytes = 300,
+            contentType = ContentType.MHTML
+        ).toList()
+
+        assertEquals(1, results.size)
+        assertTrue(results.single().isFailure)
+        assertEquals(AppError.CacheBusy, results.single().exceptionOrNull())
+        assertTrue("受活跃保护缓存不得被删除", existing.exists())
     }
 
     private open class StubFileSystem : IFileSystem {

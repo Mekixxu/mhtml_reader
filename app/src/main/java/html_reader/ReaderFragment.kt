@@ -26,6 +26,7 @@ import android.widget.Toast
 import androidx.core.os.bundleOf
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
+import core.common.AppError
 import core.common.DefaultDispatcherProvider
 import core.data.repo.HistoryRepository
 import core.common.UrlCredentialSanitizer
@@ -253,20 +254,25 @@ class ReaderFragment : Fragment() {
                             openProgress.visibility = View.GONE
                             // loadSelectedTabContent() // Handled by currentTabId flow
                         }
-                        is OpenState.Error -> {
-                            terminalStateReached = true
-                            openProgress.visibility = View.GONE
-                            val message = state.error.message ?: state.error.javaClass.simpleName
-                            reportOpenError(message)
-                        }
+                         is OpenState.Error -> {
+                             terminalStateReached = true
+                             openProgress.visibility = View.GONE
+                             // 类型化错误映射为本地化文案，让用户能区分「文件超限」与「活跃缓存占满」
+                             val display = when (state.error) {
+                                 is AppError.CacheLimitExceeded -> getString(R.string.reader_error_cache_limit)
+                                 is AppError.CacheBusy -> getString(R.string.reader_error_cache_busy)
+                                 else -> getString(R.string.reader_status_error)
+                             }
+                             reportOpenError(display, state.error.message ?: state.error.javaClass.simpleName)
+                         }
                     }
                 }
             } catch (ce: CancellationException) {
                 throw ce
             } catch (e: Exception) {
                  terminalStateReached = true
-                 val msg = e.message ?: getString(R.string.common_unknown_error)
-                 reportOpenError(msg)
+                 // 展示通用错误文案，原始异常仅落日志（避免路径/异常栈暴露到对话框）
+                 reportOpenError(getString(R.string.reader_status_error), e.message ?: e.javaClass.simpleName)
             } finally {
                 opening = false
                 // 未到达终态说明仍处于加载/拷贝中，收起进度；不再依赖本地化文案比较
@@ -278,9 +284,12 @@ class ReaderFragment : Fragment() {
         }
     }
 
-    private fun reportOpenError(fullDetails: String) {
+    /**
+     * 展示用户可理解的摘要（displayMsg），完整错误仅落日志（fullDetails），避免路径/异常栈暴露到对话框。
+     */
+    private fun reportOpenError(displayMsg: String, fullDetails: String = displayMsg) {
         Log.w("ReaderFragment", "reader_open_error details=${UrlCredentialSanitizer.sanitizeText(fullDetails)}")
-        setErrorState(getString(R.string.reader_status_error))
+        setErrorState(displayMsg)
     }
 
     private fun reportPdfOpenError(fullDetails: String) {

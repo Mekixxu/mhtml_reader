@@ -146,6 +146,8 @@
     <string name="tabs_empty">No open tabs. Open a file to start reading.</string>
     <string name="favorites_title">Favorites</string>
     <string name="favorites_empty">No favorites yet. Add files or folders you open often.</string>
+    <string name="reader_error_cache_limit">This file is larger than the cache limit and cannot be opened.</string>
+    <string name="reader_error_cache_busy">The cache is full with active tabs. Close some tabs and try again.</string>
     <string name="favorites_up">Up</string>
     <string name="favorites_add_folder">New Folder</string>
     <string name="favorites_add_file">New Item</string>
