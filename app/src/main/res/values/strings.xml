@@ -199,6 +199,11 @@
     <string name="more_import_success">Metadata imported</string>
     <string name="more_import_failed">Metadata import failed</string>
     <string name="more_import_schema_mismatch">schemaVersion mismatch</string>
+    <string name="more_backup_working">Processing backup…</string>
+    <string name="more_backup_busy">Another backup operation is in progress.</string>
+    <string name="more_backup_too_large">Backup file exceeds the supported size limit.</string>
+    <string name="more_import_confirm_title">Replace current data?</string>
+    <string name="more_import_confirm_message">Importing will replace favorites, history, network configurations and title cache. Continue?</string>
     <string name="more_placeholder">More menu is under construction</string>
     <string name="icon_dir">📁</string>
     <string name="icon_file">📄</string>

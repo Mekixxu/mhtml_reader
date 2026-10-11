@@ -20,6 +20,8 @@ import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
+import com.html_reader.backup.BackupStreamIo
+import com.html_reader.backup.BackupTooLargeException
 import com.html_reader.files.NetworkDisplayHelper
 import core.database.entity.FavoriteEntity
 import core.database.entity.HistoryEntity
@@ -29,13 +31,15 @@ import core.database.entity.enums.FavoriteType
 import core.database.entity.enums.FileType
 import core.database.entity.enums.NetworkProtocol
 import core.database.entity.enums.SourceType
-import java.io.BufferedReader
-import java.io.InputStreamReader
+import java.io.IOException
 import androidx.room.withTransaction
 import core.backup.BackupTransactionRunner
 import core.backup.JsonBackupManager
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MoreFragment : Fragment() {
     private val jsonBackupManager: JsonBackupManager by lazy {
@@ -63,6 +67,7 @@ class MoreFragment : Fragment() {
     private var statusDefaultColor: Int = 0
     private val configs = mutableListOf<NetworkConfigEntity>()
     private var selectedId: Long? = null
+    private var backupOperationInProgress = false
     private val settingsPrefsName = "app_settings"
     private val themeModeKey = "theme_mode"
     private val backupSchemaVersion = 1
@@ -369,44 +374,88 @@ class MoreFragment : Fragment() {
     }
 
     private fun exportToUri(uri: Uri) {
+        if (!beginBackupOperation()) return
+        val appContext = requireContext().applicationContext
+        val manager = jsonBackupManager
         viewLifecycleOwner.lifecycleScope.launch {
             try {
-                val jsonText = buildMetadataJson()
-                requireContext().contentResolver.openOutputStream(uri)?.bufferedWriter(Charsets.UTF_8)?.use { writer ->
-                    writer.write(jsonText)
-                } ?: throw IllegalStateException("open output stream failed")
-                showStatus(R.string.more_export_success, isSuccess = true)
-            } catch (ce: kotlinx.coroutines.CancellationException) {
+                if (view != null) showStatus(R.string.more_backup_working)
+                val jsonText = manager.exportAll()
+                withContext(Dispatchers.IO) {
+                    val output = appContext.contentResolver.openOutputStream(uri)
+                        ?: throw IOException("open output stream failed")
+                    BackupStreamIo.writeUtf8(output, jsonText)
+                }
+                if (view != null) showStatus(R.string.more_export_success, isSuccess = true)
+            } catch (ce: CancellationException) {
                 throw ce
             } catch (t: Throwable) {
-                showStatus(R.string.more_export_failed, isError = true)
+                if (view != null) showStatus(R.string.more_export_failed, isError = true)
+            } finally {
+                endBackupOperation()
             }
         }
     }
 
     private fun importFromUri(uri: Uri) {
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.more_import_confirm_title)
+            .setMessage(R.string.more_import_confirm_message)
+            .setPositiveButton(android.R.string.ok) { _, _ -> performImport(uri) }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun performImport(uri: Uri) {
+        if (!beginBackupOperation()) return
+        val appContext = requireContext().applicationContext
+        val manager = jsonBackupManager
         viewLifecycleOwner.lifecycleScope.launch {
             try {
-                val text = requireContext().contentResolver.openInputStream(uri)?.use { input ->
-                    BufferedReader(InputStreamReader(input, Charsets.UTF_8)).readText()
-                } ?: throw IllegalStateException("open input stream failed")
-                applyMetadataJson(text)
-                showStatus(R.string.more_import_success, isSuccess = true)
-            } catch (ce: kotlinx.coroutines.CancellationException) {
+                if (view != null) showStatus(R.string.more_backup_working)
+                val text = withContext(Dispatchers.IO) {
+                    val input = appContext.contentResolver.openInputStream(uri)
+                        ?: throw IOException("open input stream failed")
+                    BackupStreamIo.readUtf8(input, maxBackupBytes)
+                }
+                manager.importAll(text).getOrThrow()
+                if (view != null) showStatus(R.string.more_import_success, isSuccess = true)
+            } catch (ce: CancellationException) {
                 throw ce
             } catch (t: Throwable) {
-                showStatus(R.string.more_import_failed, isError = true)
+                if (view != null) {
+                    val messageRes = if (t is BackupTooLargeException) {
+                        R.string.more_backup_too_large
+                    } else {
+                        R.string.more_import_failed
+                    }
+                    showStatus(messageRes, isError = true)
+                }
+            } finally {
+                endBackupOperation()
             }
         }
     }
 
-    private suspend fun buildMetadataJson(): String {
-        return jsonBackupManager.exportAll()
+    private fun beginBackupOperation(): Boolean {
+        if (backupOperationInProgress) {
+            showStatus(R.string.more_backup_busy, isError = true)
+            return false
+        }
+        backupOperationInProgress = true
+        return true
     }
 
-    private suspend fun applyMetadataJson(text: String) {
-        val result = jsonBackupManager.importAll(text)
-        result.getOrThrow()
+    private fun endBackupOperation() {
+        backupOperationInProgress = false
+    }
+
+    internal companion object {
+        /**
+         * 当前生产默认不设上限，避免在用户确认前排除合法旧备份；
+         * 提案值为 [BackupStreamIo.PROPOSED_MAX_BYTES]（20 MiB），确认后修改此处即可启用。
+         */
+        internal var maxBackupBytes: Long = Long.MAX_VALUE
     }
 
     private fun showStatus(messageRes: Int, isSuccess: Boolean = false, isError: Boolean = false) {
