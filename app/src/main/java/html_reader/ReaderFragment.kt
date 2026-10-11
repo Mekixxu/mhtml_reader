@@ -35,7 +35,9 @@ import core.reader.model.OpenRequest
 import core.reader.model.OpenState
 import core.reader.model.ReaderTab
 import core.reader.usecase.InferFileTypeUseCase
+import core.reader.pdf.PdfContentState
 import core.reader.pdf.PdfReaderController
+import core.reader.pdf.PdfRenderKey
 import core.reader.pdf.impl.AndroidPdfReaderController
 import core.reader.web.BlockingResourceWebViewClient
 import core.reader.web.MeasuringWebView
@@ -52,6 +54,7 @@ import android.util.Base64
 import java.io.ByteArrayOutputStream
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -75,6 +78,11 @@ class ReaderFragment : Fragment() {
     private var opening = false
     private var pdfPageCount = 0
     private var currentPdfPageIndex = 0
+    private val pdfContentState = PdfContentState()
+    private var pdfLoadJob: Job? = null
+    private var pdfRenderJob: Job? = null
+    private var activePdfTabId: String? = null
+    private var pdfRenderRequestToken = 0L
     private val mhtmlFallbackRetriedTabIds = mutableSetOf<String>()
     private var activeWebRenderProfile: WebViewConfigurator.RenderProfile = WebViewConfigurator.RenderProfile.DEFAULT
 
@@ -182,14 +190,12 @@ class ReaderFragment : Fragment() {
 
         viewLifecycleOwner.lifecycleScope.launch {
             pdfReaderController.observePageChanges().collect { pageIndex ->
+                val tabId = activePdfTabId ?: return@collect
+                if (tabId != selectedTabId) return@collect
+                if (tabs.none { it.tabId == tabId && it.fileType == FileType.PDF }) return@collect
                 currentPdfPageIndex = pageIndex
                 updatePdfPageControlState()
-                renderCurrentPdfPage()
-                val tab = tabs.firstOrNull { it.tabId == selectedTabId && it.fileType == FileType.PDF } ?: return@collect
-                if (pdfPageCount > 0) {
-                    val progress = (pageIndex.toFloat() / pdfPageCount.toFloat()).coerceIn(0f, 1f)
-                    historyRepository.updateProgress(tab.sourcePathRaw, progress, pageIndex)
-                }
+                schedulePdfPageRender(tabId, pageIndex, pdfContentState.generation, force = false)
             }
         }
 
@@ -315,61 +321,73 @@ class ReaderFragment : Fragment() {
     }
 
     private fun loadSelectedTabContent() {
+        val generation = pdfContentState.beginContentLoad()
+        pdfLoadJob?.cancel()
+        pdfLoadJob = null
+        pdfRenderJob?.cancel()
+        pdfRenderJob = null
+        activePdfTabId = null
+
         val tab = tabs.firstOrNull { it.tabId == selectedTabId }
         if (tab == null) {
-            pdfPageCount = 0
-            currentPdfPageIndex = 0
-            pdfPreviewImage.setImageDrawable(null)
+            resetPdfPreview()
             webPreview.loadUrl("about:blank")
             webPreview.visibility = View.GONE
             webProgressTracker?.stopTracking()
             webProgressTracker = null
-            updatePdfPageControlState()
             return
         }
         if (tab.fileType == FileType.PDF) {
-            loadSelectedPdfTab(tab)
+            loadSelectedPdfTab(tab, generation)
             return
         }
         loadSelectedWebTab(tab)
     }
 
-    private fun loadSelectedPdfTab(tab: ReaderTab) {
+    private fun loadSelectedPdfTab(tab: ReaderTab, generation: Long) {
         webPreview.visibility = View.GONE
         webPreview.loadUrl("about:blank")
         webProgressTracker?.stopTracking()
         webProgressTracker = null
         pdfPreviewImage.visibility = View.VISIBLE
         pdfControls.visibility = View.VISIBLE
-        
+
         val cachePath = tab.cacheFilePath
         if (cachePath.isNullOrBlank()) {
-            pdfPageCount = 0
-            currentPdfPageIndex = 0
-            updatePdfPageControlState()
+            resetPdfPreview()
             return
         }
         val file = File(cachePath)
         if (!file.exists() || !file.isFile) {
-            pdfPageCount = 0
-            currentPdfPageIndex = 0
-            updatePdfPageControlState()
+            resetPdfPreview()
             return
         }
-        viewLifecycleOwner.lifecycleScope.launch {
+        val controller = pdfReaderController
+        val tabId = tab.tabId
+        val lastKnownPageIndex = tab.lastKnownPageIndex
+        pdfLoadJob = viewLifecycleOwner.lifecycleScope.launch {
             try {
-                pdfReaderController.open(file)
-                pdfPageCount = pdfReaderController.getPageCount()
-                val initialPage = if (tab.lastKnownPageIndex >= 0) tab.lastKnownPageIndex else 0
-                pdfReaderController.goToPage(initialPage.coerceIn(0, (pdfPageCount - 1).coerceAtLeast(0)))
+                controller.open(file)
+                if (!isCurrentPdfContent(tabId, generation)) return@launch
+                val pageCount = controller.getPageCount()
+                if (!isCurrentPdfContent(tabId, generation)) return@launch
+                pdfPageCount = pageCount
+                val initialPage = if (lastKnownPageIndex >= 0) lastKnownPageIndex else 0
+                val safeInitial = initialPage.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
+                controller.goToPage(safeInitial)
+                if (!isCurrentPdfContent(tabId, generation)) return@launch
+                activePdfTabId = tabId
+                currentPdfPageIndex = safeInitial
                 updatePdfPageControlState()
+                // 同页码的 StateFlow 不会重复发射，首次渲染必须显式触发
+                schedulePdfPageRender(tabId, safeInitial, generation, force = true)
+            } catch (ce: CancellationException) {
+                throw ce
             } catch (e: Exception) {
-                val msg = e.message ?: e.javaClass.simpleName
-                reportPdfOpenError(msg)
-                pdfPreviewImage.setImageDrawable(null)
-                pdfPageCount = 0
-                currentPdfPageIndex = 0
-                updatePdfPageControlState()
+                if (isCurrentPdfContent(tabId, generation)) {
+                    resetPdfPreview()
+                    reportPdfOpenError(e.message ?: e.javaClass.simpleName)
+                }
             }
         }
     }
@@ -377,8 +395,7 @@ class ReaderFragment : Fragment() {
     private fun loadSelectedWebTab(tab: ReaderTab) {
         pdfPageCount = 0
         currentPdfPageIndex = 0
-        updatePdfPageControlState()
-        pdfPreviewImage.setImageDrawable(null)
+        resetPdfPreview()
         pdfPreviewImage.visibility = View.GONE
         pdfControls.visibility = View.GONE
         webPreview.visibility = View.VISIBLE
@@ -487,21 +504,72 @@ class ReaderFragment : Fragment() {
         webPreview.reload()
     }
 
-    private suspend fun renderCurrentPdfPage() {
-        if (pdfPageCount <= 0) {
-            return
-        }
+    private fun schedulePdfPageRender(tabId: String, pageIndex: Int, generation: Long, force: Boolean) {
+        if (view == null || !isCurrentPdfContent(tabId, generation)) return
+        val key = PdfRenderKey(tabId, pageIndex)
+        if (!pdfContentState.shouldSchedule(key, force)) return
         val width = if (pdfPreviewImage.width > 0) {
             pdfPreviewImage.width
         } else {
             resources.displayMetrics.widthPixels - 24
         }
-        val previousBitmap = (pdfPreviewImage.drawable as? BitmapDrawable)?.bitmap
-        val bitmap = pdfReaderController.renderPage(currentPdfPageIndex, width)
-        pdfPreviewImage.setImageBitmap(bitmap)
-        if (previousBitmap != null && previousBitmap !== bitmap && !previousBitmap.isRecycled) {
-            previousBitmap.recycle()
+        val controller = pdfReaderController
+        val requestToken = ++pdfRenderRequestToken
+        pdfRenderJob?.cancel()
+        pdfContentState.markPending(key)
+        pdfRenderJob = viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                val bitmap = controller.renderPage(pageIndex, width)
+                if (!isCurrentPdfContent(tabId, generation) || pageIndex != currentPdfPageIndex) {
+                    if (!bitmap.isRecycled) bitmap.recycle()
+                    return@launch
+                }
+                val previous = (pdfPreviewImage.drawable as? BitmapDrawable)?.bitmap
+                pdfPreviewImage.setImageBitmap(bitmap)
+                if (previous != null && previous !== bitmap && !previous.isRecycled) {
+                    previous.recycle()
+                }
+                pdfContentState.markApplied(key)
+                recordPdfProgress(tabId, pageIndex)
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (e: Exception) {
+                if (isCurrentPdfContent(tabId, generation) && pageIndex == currentPdfPageIndex) {
+                    reportPdfOpenError(e.message ?: e.javaClass.simpleName)
+                }
+            } finally {
+                if (requestToken == pdfRenderRequestToken) {
+                    pdfContentState.clearPending()
+                }
+            }
         }
+    }
+
+    private suspend fun recordPdfProgress(tabId: String, pageIndex: Int) {
+        val tab = tabs.firstOrNull { it.tabId == tabId && it.fileType == FileType.PDF } ?: return
+        if (tabId != selectedTabId || pdfPageCount <= 0) return
+        val denominator = (pdfPageCount - 1).coerceAtLeast(1)
+        val progress = (pageIndex.toFloat() / denominator).coerceIn(0f, 1f)
+        historyRepository.updateProgress(tab.sourcePathRaw, progress, pageIndex)
+    }
+
+    private fun isCurrentPdfContent(tabId: String, generation: Long): Boolean =
+        pdfContentState.isCurrent(generation) &&
+            selectedTabId == tabId &&
+            view != null &&
+            tabs.any { it.tabId == tabId && it.fileType == FileType.PDF }
+
+    private fun resetPdfPreview() {
+        pdfPageCount = 0
+        currentPdfPageIndex = 0
+        clearPdfPreviewImage()
+        updatePdfPageControlState()
+    }
+
+    private fun clearPdfPreviewImage() {
+        val bitmap = (pdfPreviewImage.drawable as? BitmapDrawable)?.bitmap
+        pdfPreviewImage.setImageDrawable(null)
+        if (bitmap != null && !bitmap.isRecycled) bitmap.recycle()
     }
 
     private fun updatePdfPageControlState() {
@@ -718,9 +786,19 @@ class ReaderFragment : Fragment() {
     }
 
     override fun onDestroyView() {
-        // 捕获旧 controller 实例，避免视图重建后的新 controller 被旧清理任务误关；
-        // 清理跑在 ReaderRuntime 的应用级 scope 上，不依赖已销毁的 viewLifecycleScope。
+        pdfLoadJob?.cancel()
+        pdfLoadJob = null
+        pdfRenderJob?.cancel()
+        pdfRenderJob = null
+        pdfRenderRequestToken += 1
+        pdfContentState.invalidate()
+        activePdfTabId = null
+        if (::pdfPreviewImage.isInitialized) {
+            clearPdfPreviewImage()
+        }
         if (::pdfReaderController.isInitialized) {
+            // 捕获旧 controller 实例，避免视图重建后的新 controller 被旧清理任务误关；
+            // 清理跑在 ReaderRuntime 的应用级 scope 上，不依赖已销毁的 viewLifecycleScope。
             ReaderRuntime.closePdfController(pdfReaderController)
         }
         webProgressTracker?.stopTracking()

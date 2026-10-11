@@ -7,6 +7,9 @@ import android.os.ParcelFileDescriptor
 import core.common.DispatcherProvider
 import core.reader.pdf.PdfReaderController
 import java.io.File
+import kotlin.coroutines.coroutineContext
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.sync.Mutex
@@ -78,12 +81,19 @@ class AndroidPdfReaderController(
                     bitmap.eraseColor(Color.WHITE)
                     try {
                         page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                        bitmap
                     } catch (t: Throwable) {
                         // render 失败时调用方不会收到该 bitmap，必须在此回收
                         bitmap.recycle()
                         throw t
                     }
+                    try {
+                        coroutineContext.ensureActive()
+                    } catch (ce: CancellationException) {
+                        // 取消时 bitmap 不会交给调用方，必须回收
+                        bitmap.recycle()
+                        throw ce
+                    }
+                    bitmap
                 }
             }
         }
