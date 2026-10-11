@@ -42,7 +42,7 @@
 - 工程形态：Android 多模块（`app` + `core-*` + `feature-*`），模块注册见 `settings.gradle.kts`。
 - 源码组织：**软拆分** —— 业务源码统一位于 `core/` 目录树，各模块通过 `sourceSets.main.java.setSrcDirs(...)` 将 `core/` 下子目录“虚拟映射”进模块参与编译（详见 1.4）。修改任何 `core/` 代码前，务必先确认目标目录归属哪个模块、是否参与编译。
 - 运行方式：`app` 为 UI 壳与导航入口，主要业务实现位于 `core/` 目录。
-- 当前依赖装配：存在 Runtime 装配对象（如 `CoreRuntime`、`FilesRuntime`、`ReaderRuntime`）进行依赖组织；`core/di`、`core/*/di` 下的 Hilt `@Module` 多数未参与编译接线，改动 DI 前先确认生效路径。
+- 当前依赖装配：存在 Runtime 装配对象（如 `CoreRuntime`、`FilesRuntime`、`ReaderRuntime`）进行依赖组织；`core/di`、`core/*/di` 下的 Hilt `@Module` 已随模块编译，但未聚合进 Hilt 组件、运行时未接线（见 1.4），改动 DI 前先确认生效路径。
 
 ### 1.4 源码组织与模块映射（软拆分机制，强制阅读）
 
@@ -117,15 +117,28 @@
 - JDK 17
 - Android SDK Platform 36 + Build-Tools 36.1.0
 - Gradle 使用 Wrapper（`gradle-8.10-bin.zip`）
-- JDK：项目以 **JDK 17** 为构建基线（`sourceCompatibility/targetCompatibility/jvmTarget=17`）。机器上同时装有 JDK 17 与 JDK 21，构建时请显式指定 `JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64`（AGP 8.5.2 不支持在 JDK 21 下编译资源，`mergeDebugResources` 会报 `ParsedResource` 提取失败）。
+- JDK：项目以 **JDK 17** 为构建基线（`sourceCompatibility/targetCompatibility/jvmTarget=17`）。机器上同时装有 JDK 17 与 JDK 21，构建时请显式指定 JDK 17（AGP 8.5.2 在 JDK 21 下编译资源可能报 `mergeDebugResources`/`ParsedResource` 提取失败）。
+  - Windows PowerShell（已实测路径）：`$env:JAVA_HOME = "C:\Program Files\Java\jdk-17"; $env:Path = "$env:JAVA_HOME\bin;$env:Path"`
+  - Linux/macOS：`export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64`
 
-### 3.2 常用命令（Windows / 项目根目录）
+### 3.2 常用命令（项目根目录）
 
-```bash
+Windows（PowerShell / CMD）：
+
+```bat
 .\gradlew.bat :app:assembleDebug
 .\gradlew.bat :app:installDebug
 .\gradlew.bat test
 .\gradlew.bat connectedAndroidTest
+```
+
+Linux/macOS：
+
+```bash
+./gradlew :app:assembleDebug
+./gradlew :app:installDebug
+./gradlew test
+./gradlew connectedAndroidTest
 ```
 
 ### 3.2.1 测试基础设施（2026-09-21 更新）
@@ -134,7 +147,7 @@
 - `app/src/test/java`：Robolectric 单元测试（`FilesSortHelperTest`、`FilesFtpCodecTest`、`FilesNetworkGatewayTest`、`TransferCacheCleanerTest`、`CacheEvictorTest`、`MoveUseCaseTest`、`HistoryDaoTest`、`DefaultReaderTabManagerTest`、`BlockingResourceWebViewClientTest`、`FilesStartupHandlerTest`、`BackupImportTransactionTest`）。
   - `app/src/test/resources/robolectric.properties` 固定 `sdk=35` 与测试用 `Application`；`testOptions.unitTests.isIncludeAndroidResources = true` 已开启（避免走 `HtmlReaderApp` 的 WorkManager 初始化）。
 - `app/src/androidTest/java`：设备端冒烟测试（`AppSmokeTest`），验证 app 冷启动不崩，需连接模拟器/真机。
-- 本地运行：`./gradlew :core-base:testDebugUnitTest`、`:app:testDebugUnitTest`、`:app:connectedDebugAndroidTest`。
+- 本地运行：Linux/macOS 使用 `./gradlew :core-base:testDebugUnitTest`、`:app:testDebugUnitTest`、`:app:connectedDebugAndroidTest`；Windows 使用对应的 `:core-base:testDebugUnitTest`、`:app:testDebugUnitTest`、`:app:connectedDebugAndroidTest` bat 命令。
 
 ### 3.3 构建与运行注意事项
 
@@ -164,7 +177,7 @@
 - `app/src/main/java/html_reader/HomeFragment.kt`：首页入口
 - `app/src/main/java/html_reader/FilesFragment.kt`：文件浏览/操作页（薄壳，仅 UI 绑定与事件转发）
   - `app/src/main/java/html_reader/FilesFragmentEntryDialogs.kt`：文件条目长按菜单、收藏/详情/诊断/重命名/删除对话框
-  - `app/src/main/java/html_reader/FilesFragmentLocalBrowse.kt`：本地目录加载、过滤排序、标题刷新
+  - `app/src/main/java/html_reader/FilesFragmentLocalBrowse.kt`：本地目录加载、过滤排序、搜索匹配
   - `app/src/main/java/html_reader/FilesFragmentSession.kt`：目录会话恢复与切换
   - `app/src/main/java/html_reader/FilesFragmentPermission.kt`：存储权限请求
   - `app/src/main/java/html_reader/files/FilesRemoteController.kt`：FTP/SMB 浏览、上传下载与远程文件操作
@@ -189,7 +202,7 @@
 
 - `core/common` `[C → core-base]`：DispatcherProvider、AppError、HashUtils 等公共基础
 - `core/vfs/model` `[C → core-base]`：VfsPath、VfsEntry 模型
-- `core/vfs/impl`、`core/vfs/local` `[C → core-storage]`：虚拟文件系统抽象与本地实现
+- `core-storage/src/main/java/core/vfs`、`core/vfs/impl`、`core/vfs/local` `[C → core-storage]`：VFS 抽象、解析与本地实现
 - `core/database` `[C → core-data]`：Room 数据库、DAO、实体、迁移（`Migration1To2`、`MIGRATION_2_3`、`MIGRATION_3_4` 均已注册）
 - `core/data/repo` `[C → core-data]`：仓储实现（收藏/历史/网络配置/标题缓存）
 - `core/security` `[C → core-data]`：`CredentialCipher` Android Keystore 凭据加解密
@@ -198,7 +211,7 @@
 - `core/domain` `[C → core-domain]`：领域模型与用例（目录列表/标题/历史保留）
 - `core/title` `[C → core-domain]`：标题提取能力（HTML/PDF）
 - `core/backup` `[C → core-domain]`：JSON 导入导出
-- `core/di` `[C → core-domain]`：核心 DI 装配（已接线，运行时尚未完全启用）
+- `core/di` `[C → core-domain]`：核心 DI 装配（已编译；未聚合进 Hilt 组件，运行时未启用）
 - `core/network` `[C → core-domain]`：网络配置用例与连接测试
 - `core/settings` `[C → core-domain]`：应用设置与 DataStore
 - `core/maintenance` `[C → core-domain]`：维护管理器（Hilt 路径已编译）
@@ -219,6 +232,8 @@
 - `reviews/claude_sonnet4_2026-08-16.md`：2026-08-16 全项目代码审查报告（21 条问题清单）。
 - `reviews/review_plan_2026-08-16.md`：升级执行计划（剩余任务 T1-T9、优先级、验收标准、构建命令），供后续开发按序实施。
 - `reviews/opencode_2026-09-21.md`：2026-09-21 全量审查报告与改进计划（P0/P1/P2 清单、批次 A/B/D 已完成记录、批次 C 待决策项）。
+- `reviews/opencode_2026-09-26.md`：2026-09-26 批次修复复核报告（批次 E 与用户回报问题修复记录）。
+- `reviews/execution_plan_2026-10-11.md`：2026-10-11 项目审查与分批修复执行计划（F01-F18 问题清单、T00-T16 任务卡）。
 
 ---
 

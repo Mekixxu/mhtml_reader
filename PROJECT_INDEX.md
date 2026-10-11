@@ -13,7 +13,7 @@
 - `core-base/`：基础核心模块 Gradle 配置
 - `core-data/`：数据核心模块 Gradle 配置
 - `core-domain/`：领域核心模块 Gradle 配置
-- `core-storage/`：存储核心模块（`core/vfs` 抽象与本地实现的唯一生效位置）
+- `core-storage/`：存储核心模块（VFS 接口与本地实现的唯一生效位置）
 - `feature-files/`：文件功能模块 Gradle 配置
 - `feature-reader/`：阅读器功能模块 Gradle 配置
 - `gradle/`：Gradle Wrapper 与构建支持文件
@@ -36,7 +36,7 @@
 - `MoreFragment.kt`：设置、网络配置、导入导出等
 - `TabsOverviewFragment.kt`：阅读标签总览
 - `FoldersOverviewFragment.kt`：目录会话总览
-- `app/src/main/java/html_reader/files/`：Files 页面拆分后的辅助组件（FTP/SMB 网关、传输、标题刷新、模型）
+- `app/src/main/java/html_reader/files/`：Files 页面拆分后的辅助组件（FTP/SMB 网关、传输、列表辅助与模型）
 
 ## 5. 运行时装配索引
 
@@ -51,15 +51,15 @@
 - `core/data/repo/`：收藏/历史/网络配置/标题缓存仓库
 - `core/domain/`：展示模型与领域用例
 - `core/files/`：目录会话、目录观察、扩展名策略
-- `core/fileops/`：复制/移动/删除/重命名/建目录等操作用例
+- `core/fileops/`：复制/移动/删除/重命名/建目录等操作用例（复制/移动当前无 App UI 入口）
 - `core/reader/`：阅读器标签管理、进度保存、PDF/Web 适配
-- `core/title/`：HTML/PDF 标题提取与路由
+- `core/title/`：HTML/PDF 标题提取与路由（本地列表已停用标题展示/提取）
 - `core/cache/`：缓存打开、淘汰、标签缓存登记、孤儿清理
 - `core/network/`：网络配置模型、校验、连接测试用例
 - `core/favorites/`：收藏树模型与操作用例
 - `core/settings/`：应用设置模型与 DataStore
 - `core/session/`：目录会话持久化
-- `core/vfs/`：虚拟文件系统抽象与本地实现
+- `core/vfs/`：VFS 模型、接口与本地实现（模型在 `core/vfs/model`；接口在 `core-storage/src/main/java/core/vfs`）
 - `core/work/`：维护任务 worker 与调度器
 - `core/backup/`：导入导出模型与 JSON 备份管理
 - `core/maintenance/`：维护任务统一管理
@@ -75,7 +75,8 @@
   - `core/database/dao/`
   - `core/database/entity/`
 - 文件系统与解析：
-  - `core/vfs/IFileSystem.kt`
+  - `core-storage/src/main/java/core/vfs/IFileSystem.kt`
+  - `core-storage/src/main/java/core/vfs/FileSystemResolver.kt`
   - `core/vfs/impl/DefaultFileSystemResolver.kt`
   - `core/vfs/local/LocalFileSystem.kt`
 - 阅读能力：
