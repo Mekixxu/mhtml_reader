@@ -4,13 +4,36 @@ import android.content.Context
 import core.cache.CacheOpenManager
 import core.cache.TabCacheRegistry
 import core.data.repo.HistoryRepository
+import core.reader.pdf.PdfReaderController
 import core.reader.tab.DefaultReaderTabManager
 import core.reader.vm.ReaderViewModel
 import core.vfs.local.LocalFileSystem
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 object ReaderRuntime {
     @Volatile
     private var holder: Holder? = null
+
+    /**
+     * 应用级 PDF 控制器清理入口：Fragment 视图销毁后仍能完成 renderer/descriptor 关闭。
+     */
+    private val pdfCleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    fun closePdfController(controller: PdfReaderController): Job =
+        pdfCleanupScope.launch {
+            try {
+                controller.close()
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (_: Throwable) {
+                // 关闭失败不再阻塞后续清理，资源引用已由 controller 自己置空
+            }
+        }
 
     fun viewModel(context: Context): ReaderViewModel = ensure(context).readerViewModel
 

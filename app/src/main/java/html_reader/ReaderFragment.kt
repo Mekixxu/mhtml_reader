@@ -51,10 +51,7 @@ import java.util.Locale
 import android.util.Base64
 import java.io.ByteArrayOutputStream
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -71,7 +68,6 @@ class ReaderFragment : Fragment() {
     private lateinit var pdfReaderController: PdfReaderController
     private lateinit var historyRepository: HistoryRepository
     private var webProgressTracker: WebViewProgressTracker? = null
-    private var pdfCloseJob: Job? = null
 
     private val tabs = mutableListOf<ReaderTab>()
     private var selectedTabId: String? = null
@@ -722,11 +718,10 @@ class ReaderFragment : Fragment() {
     }
 
     override fun onDestroyView() {
-        // viewLifecycleOwner.lifecycleScope 在 onDestroyView 时已进入销毁流程，
-        // 不能再向其提交任务，否则 pdfReaderController.close() 不会执行。
-        pdfCloseJob?.cancel()
-        pdfCloseJob = CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
-            runCatching { pdfReaderController.close() }
+        // 捕获旧 controller 实例，避免视图重建后的新 controller 被旧清理任务误关；
+        // 清理跑在 ReaderRuntime 的应用级 scope 上，不依赖已销毁的 viewLifecycleScope。
+        if (::pdfReaderController.isInitialized) {
+            ReaderRuntime.closePdfController(pdfReaderController)
         }
         webProgressTracker?.stopTracking()
         webProgressTracker = null
