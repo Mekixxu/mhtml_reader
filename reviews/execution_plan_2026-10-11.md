@@ -359,15 +359,16 @@ try {
 - 后方向：真正 provider 子项定位或明确不支持，错误上抛；标题状态单一消费者/代次、受控 worker 队列、仅必要字节提取。
 - 禁止为“消除休眠代码”直接删除这些能力。只有确认重新接线才执行对应重构。
 
-### F18 中：当前自动测试基线不通过
+### F18 中：当前自动测试基线不通过（T00B 已修复）
 
 - 类型/维度：测试平台保真、隔离与生命周期；维护性。
 - 位置：`app/src/test/resources/robolectric.properties`、`HistoryDaoTest`、`DefaultReaderTabManagerTest`、`FolderPositionNavigationTest`、`TabsOverviewSelectionTest`。
 - 本轮证据：app 84 项中 7 项失败；3 项在 `ShadowLegacySQLiteConnection` 报 `ON CONFLICT ... DO UPDATE` 的 `near "ON": syntax error`；另 4 项报 `Illegal connection pointer`。
-- 机制：当前配置仅固定 sdk/Application，没有明确 SQLite mode；legacy 后端不支持实际使用的 UPSERT。连接指针失效原因尚未完整复现，源码中测试未成对销毁 Activity、Runtime holder 跨测试存活是需要验证的隔离线索，不把它写成已证实唯一根因。
+- 机制：当前配置仅固定 sdk/Application，没有明确 SQLite mode；Robolectric 4.14.1 在 Windows 上默认 LEGACY，后端不支持 Room UPSERT。T00B 在 Linux 强制 LEGACY 后完整复现 7 项失败；4 项连接指针用例单独运行也失败，因此根因是 LEGACY 后端的连接/线程模型，不是跨测试污染；显式 NATIVE 后恢复。
 - 前：仅 `sdk=35`、`application=android.app.Application`。
-- 后方向：在库/平台支持时给 DAO 测试使用 `@SQLiteMode(SQLiteMode.Mode.NATIVE)`；每个 ActivityController 在 finally/After 中 pause/stop/destroy，测试 fixture 明确关闭并清理 Runtime 所有者和数据库。
+- 后方向：已在 `app/src/test/resources/robolectric.properties` 显式 `sqliteMode=NATIVE`（见 5.2.1）；ActivityController 成对清理 / Runtime fixture 清理属于后续测试卫生改进，本轮未证明是 F18 的必要条件。
 - 禁止删除 UPSERT 原子更新或改回 get+REPLACE 来兼容测试的旧 SQLite。
+- 状态（2026-10-11 T00B）：✅ 已修复，详见 5.2.1；未删除 UPSERT SQL，未弱化进度保留断言。
 
 ## 第三阶段：风险矩阵
 
@@ -589,7 +590,7 @@ $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 - 功能批次输出：`app/build/outputs/apk/debug/MHTMLReader_v<实际版本>_debug.apk`。
 - 设备测试需真实连接：`.\gradlew.bat :app:connectedDebugAndroidTest`。未连接不能报通过。
 
-### 5.2 本轮验证记录
+### 5.2 T00B 修复前验证记录
 
 - `java -version`、`.\gradlew.bat --version`：通过。
 - 执行 `.\gradlew.bat :core-base:testDebugUnitTest :app:testDebugUnitTest`：core-base 20/20 通过；app 84 项，77 通过、7 失败，整体 BUILD FAILED。历史报告的 99 例不是本轮结果。
@@ -597,6 +598,17 @@ $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 - 4 项连接指针失败：`FolderPositionNavigationTest` 的 `scrollPosition_isRestoredAfterOpenFileAndReturn`、`reopenLocalFolderCard_resumesNestedDirectory`、`openFileThenReturnToFolders_restoresNestedDirectory`，以及 `TabsOverviewSelectionTest.tabsOverview_highlightsCurrentTabNotTopItem`。
 - 原始本轮报告在 `app/build/reports/tests/testDebugUnitTest/index.html` 和 `app/build/test-results/testDebugUnitTest/`，它们是构建生成物，不提交、不作为永久交接依赖；错误已摘录到 F18/T00B。
 - PDF/WebView 真机、网络服务器端到端、lint、APK：本轮未验证；本轮仅文档，无须 APK。
+
+### 5.2.1 T00B 执行记录（2026-10-11 修复会话）
+
+- 环境：Linux x86_64、JDK 17、Gradle 8.10、Robolectric 4.14.1、`sdk=35`（Robolectric 依赖使用本机缓存）。
+- 根因复现：强制 `robolectric.sqliteMode=LEGACY`（Robolectric 4.14.1 在 Windows 的默认值）后，F18 的 7 项失败全部复现：3 项为 `ON CONFLICT ... DO UPDATE` 语法错误，4 项为 `Illegal connection pointer`。4 项连接指针用例单独运行同样失败，排除跨测试污染。
+- 修复：`app/src/test/resources/robolectric.properties` 显式声明 `sqliteMode=NATIVE`，并注释说明原因。Robolectric 自带 native runtime 覆盖 Windows x86_64、Linux x86_64、macOS x86_64/aarch64。
+- 验证：
+  - `app` 92 项 + `core-base` 20 项 = 112 项，连续两次运行 0 失败。
+  - 4 项连接指针用例在修复后单独运行通过。
+  - 即使把测试 JVM 的默认值显式覆盖为 `LEGACY`，包级 `sqliteMode=NATIVE` 仍生效，全套 112 项通过。
+- 结论：F18 关闭；未改动 Room UPSERT SQL，未删除或弱化测试；本轮为测试配置改动，不改变应用行为，不递增版本、不生成 APK。
 
 ### 5.3 每任务的完成标准
 
@@ -611,7 +623,7 @@ $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 | 任务 | 当前状态 | Commit/版本/验收 |
 |---|---|---|
 | T00 文档同步 | ✅ 已完成 | `1dac33b`；同步 `CLAUDE.md`/`PROJECT_INDEX.md`/`spec.md`/`ui_spec.md`/本计划；仅文档，无测试/APK；执行基线 `157724c` / `1.0.47(48)` |
-| T00B 测试基线 | 待执行 | 本轮 app 84 项中 7 失败，详见 5.2 |
+| T00B 测试基线 | ✅ 已完成 | `27df5cc`；`sqliteMode=NATIVE`；app 92 + core-base 20 = 112 项连续两次通过；测试配置变更，无版本号/APK |
 | T01 本地浏览代次 | 待执行 | — |
 | T02 PDF 所有权 | 待执行/需复核 | — |
 | T03 PDF 内容代次 | 待执行/需复核 | — |
