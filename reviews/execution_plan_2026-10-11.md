@@ -2,7 +2,7 @@
 
 > 面向较低阶 LLM；本文件是执行说明，不代表已实施修复。
 > 编写基线：`221e71e`（应用 `1.0.44 / 45`，本文 F/T 问题行号仍对应此基线）。
-> 当前执行基线：`1677b52`（应用 `1.0.49 / 50`，T02 实现完成待复核）；该分支已包含 `7eadef9`（网络/会话名去重）、`e492352`（缓存淘汰类型化错误）、`157724c`（下载复用与 `.part` 清理）、T01 本地浏览代次防护以及 T02 PDF 控制器串行化，执行每个任务前必须按当前代码重新核对。
+> 当前执行基线：`08b7672`（应用 `1.0.50 / 51`，T03 实现完成待复核）；该分支已包含 `7eadef9`（网络/会话名去重）、`e492352`（缓存淘汰类型化错误）、`157724c`（下载复用与 `.part` 清理）、T01 本地浏览代次防护、T02 PDF 控制器串行化以及 T03 PDF 内容代次，执行每个任务前必须按当前代码重新核对。
 > 数据库：v4。
 > 方法：项目文档核对、实际编译/装配路径追踪、关键生产源码与已有测试静态审查。不是逐文件形式化审计。
 > 已阅读：`CLAUDE.md`、`PROJECT_INDEX.md`、`spec.md`、`ui_spec.md`、最近复核报告 `reviews/opencode_2026-09-26.md`。
@@ -447,6 +447,7 @@ T03 依赖 T02；T06B 依赖 T05/T06A；T10 依赖 T09。其他任务可以独�
 - 自动验收：首次第 0 页可见；A0→B0显示 B；A慢→B快只显示 B；关闭时晚到 Bitmap 回收；坏 PDF 不终止整个页面；保存进度属于渲染的 tab。
 - 手工：第一页、恢复第 N 页、快速连续翻页、旋转、关闭正在加载标签。
 - 必须保留 `mhtml_layout_fallback_reload` 行为，不趁此拆掉 WebView 兼容配置。
+- 状态（2026-10-11）：实现完成，待高阶复核与设备验收，详见 5.2.4。
 
 ### T04：Web 恢复与最后进度持久化（F04，P1）
 
@@ -628,6 +629,14 @@ $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 - 未验证/需复核：Robolectric 无法生成可用 PdfDocument，因此缺少真实 PDF open/render 集成测试；设备验收（快速打开两个 PDF、旋转、离开/回来、PDF→MHTML、descriptor 是否增长）仍需人工或高阶复核。
 - 复核重点：`ReaderRuntime.closePdfController` 应用级 scope 的生命周期是否可接受；Mutex 在长耗时的 page.render 期间是否会造成预期外的关闭等待。
 
+### 5.2.4 T03 执行记录（2026-10-11 修复会话）
+
+- 实现：新增 `PdfContentState` / `PdfRenderKey`；`ReaderFragment` 每次选择内容递增 generation 并取消旧 `pdfLoadJob` / `pdfRenderJob`；open 完成后显式触发初始页渲染，不再依赖 `MutableStateFlow(0)` 的重复发射；渲染键包含 tabId + pageIndex，因此 A0→B0 会重新渲染并丢弃 A 的晚到 Bitmap；旧代次、旧 tab、已切页、视图销毁后的异步结果统一回收，不写 UI / 进度。
+- 回收：`AndroidPdfReaderController.renderPage` 在取消时先回收 bitmap 再抛 `CancellationException`，避免“render 完成但结果无人接收”的中间态泄漏。
+- 自动验收：`PdfContentStateTest` 覆盖代次失效、pending/applied 去重与 force、A0→B0 必须重渲染；实际设备上的 A 慢 B 快、晚到 Bitmap、坏 PDF 不终止页面仍待验证。
+- 验证：`app` 104 项 + `core-base` 20 项 = 124 项，0 失败；`:app:assembleDebug` 通过，产物 `MHTMLReader_v1.0.50_debug.apk`；版本 `1.0.50 / 51`。
+- 未验证/需复核：Robolectric 无法生成真实 PDF 页面，本轮无法用单测覆盖 ReaderFragment 与真实 renderer 的端到端交互；需要真机验证“首次打开第 0 页、恢复第 N 页、快速连续翻页、旋转、关闭加载中的标签”。
+
 ### 5.3 每任务的完成标准
 
 1. 先有能表达目标缺陷的测试或设备复现步骤，再改生产代码。
@@ -644,7 +653,7 @@ $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 | T00B 测试基线 | ✅ 已完成 | `27df5cc`；`sqliteMode=NATIVE`；app 92 + core-base 20 = 112 项连续两次通过；测试配置变更，无版本号/APK |
 | T01 本地浏览代次 | ✅ 已完成 | `50063b6`；v1.0.48(49)；app 96 + core-base 20 = 116 项通过；APK `MHTMLReader_v1.0.48_debug.apk` |
 | T02 PDF 所有权 | ✅ 实现完成/待复核 | `1677b52`；v1.0.49(50)；app 101 + core-base 20 = 121 项通过；APK `MHTMLReader_v1.0.49_debug.apk`；真实 PDF 与设备验收待补 |
-| T03 PDF 内容代次 | 待执行/需复核 | — |
+| T03 PDF 内容代次 | ✅ 实现完成/待复核 | `08b7672`；v1.0.50(51)；app 104 + core-base 20 = 124 项通过；APK `MHTMLReader_v1.0.50_debug.apk`；真实 PDF 与设备验收待补 |
 | T04 Web 进度 | 待执行 | — |
 | T05 备份 IO | 待执行/上限待确认 | — |
 | T06A 备份往返 | 待执行 | — |
