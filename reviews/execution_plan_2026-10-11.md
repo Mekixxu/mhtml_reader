@@ -2,7 +2,7 @@
 
 > 面向较低阶 LLM；本文件是执行说明，不代表已实施修复。
 > 编写基线：`221e71e`（应用 `1.0.44 / 45`，本文 F/T 问题行号仍对应此基线）。
-> 当前执行基线：`50063b6`（应用 `1.0.48 / 49`，T01 完成后）；该分支已包含 `7eadef9`（网络/会话名去重）、`e492352`（缓存淘汰类型化错误）、`157724c`（下载复用与 `.part` 清理）以及 T01 本地浏览代次防护，执行每个任务前必须按当前代码重新核对。
+> 当前执行基线：`1677b52`（应用 `1.0.49 / 50`，T02 实现完成待复核）；该分支已包含 `7eadef9`（网络/会话名去重）、`e492352`（缓存淘汰类型化错误）、`157724c`（下载复用与 `.part` 清理）、T01 本地浏览代次防护以及 T02 PDF 控制器串行化，执行每个任务前必须按当前代码重新核对。
 > 数据库：v4。
 > 方法：项目文档核对、实际编译/装配路径追踪、关键生产源码与已有测试静态审查。不是逐文件形式化审计。
 > 已阅读：`CLAUDE.md`、`PROJECT_INDEX.md`、`spec.md`、`ui_spec.md`、最近复核报告 `reviews/opencode_2026-09-26.md`。
@@ -436,6 +436,7 @@ T03 依赖 T02；T06B 依赖 T05/T06A；T10 依赖 T09。其他任务可以独�
 - 自动验收：open/render/close 被串行；损坏 PDF 的 descriptor 不泄漏；重复 close 幂等；旧销毁任务仅关闭旧实例；渲染失败释放新 Bitmap。
 - 设备验收：快速打开两个 PDF、旋转、离开/回来、PDF→MHTML，无 “current page open” 异常或 descriptor 增长。
 - 停止条件：无法明确 renderer 是否拥有 descriptor 的关闭语义时，先核对目标 SDK API 文档，不用双重关闭假设替代验证。
+- 状态（2026-10-11）：实现完成，待高阶复核与设备验收，详见 5.2.3。
 
 ### T03：PDF 初始渲染和内容代次（F03，P0，需复核）
 
@@ -618,6 +619,15 @@ $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 - 版本：`1.0.48 / 49`（功能批次按规则递增）。
 - 手工验收待执行：大目录快速进入/返回、本地/FTP/SMB 切换时路径标签、列表和按钮保持同源。
 
+### 5.2.3 T02 执行记录（2026-10-11 修复会话）
+
+- 实现：`AndroidPdfReaderController` 使用单一 Mutex 串行化 open/render/goToPage/getPageCount/close；`PdfRenderer` 构造失败时显式关闭尚未转移所有权的 descriptor；`page.render` 失败时回收新 Bitmap；`closeInternal` 先置空字段，再在 finally 中分别关闭 renderer 与 descriptor。
+- 生命周期：`ReaderFragment.onDestroyView()` 捕获当前 controller 实例，提交到 `ReaderRuntime.closePdfController()` 的应用级清理 scope，避免旧清理误关视图重建后的新 controller，也避免为每次销毁创建未管理的独立 SupervisorJob。
+- 自动验收覆盖：`AndroidPdfReaderControllerTest` 验证重复 close 幂等、未 open 时 render 抛错、损坏 PDF open 失败后可继续 close；`ReaderRuntimePdfCleanupTest` 验证清理只作用于传入实例、单个 close 失败不影响后续清理。
+- 验证：`app` 101 项 + `core-base` 20 项 = 121 项，0 失败；`:app:assembleDebug` 通过，产物 `MHTMLReader_v1.0.49_debug.apk`；版本 `1.0.49 / 50`。
+- 未验证/需复核：Robolectric 无法生成可用 PdfDocument，因此缺少真实 PDF open/render 集成测试；设备验收（快速打开两个 PDF、旋转、离开/回来、PDF→MHTML、descriptor 是否增长）仍需人工或高阶复核。
+- 复核重点：`ReaderRuntime.closePdfController` 应用级 scope 的生命周期是否可接受；Mutex 在长耗时的 page.render 期间是否会造成预期外的关闭等待。
+
 ### 5.3 每任务的完成标准
 
 1. 先有能表达目标缺陷的测试或设备复现步骤，再改生产代码。
@@ -633,7 +643,7 @@ $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 | T00 文档同步 | ✅ 已完成 | `1dac33b`；同步 `CLAUDE.md`/`PROJECT_INDEX.md`/`spec.md`/`ui_spec.md`/本计划；仅文档，无测试/APK；执行基线 `157724c` / `1.0.47(48)` |
 | T00B 测试基线 | ✅ 已完成 | `27df5cc`；`sqliteMode=NATIVE`；app 92 + core-base 20 = 112 项连续两次通过；测试配置变更，无版本号/APK |
 | T01 本地浏览代次 | ✅ 已完成 | `50063b6`；v1.0.48(49)；app 96 + core-base 20 = 116 项通过；APK `MHTMLReader_v1.0.48_debug.apk` |
-| T02 PDF 所有权 | 待执行/需复核 | — |
+| T02 PDF 所有权 | ✅ 实现完成/待复核 | `1677b52`；v1.0.49(50)；app 101 + core-base 20 = 121 项通过；APK `MHTMLReader_v1.0.49_debug.apk`；真实 PDF 与设备验收待补 |
 | T03 PDF 内容代次 | 待执行/需复核 | — |
 | T04 Web 进度 | 待执行 | — |
 | T05 备份 IO | 待执行/上限待确认 | — |
