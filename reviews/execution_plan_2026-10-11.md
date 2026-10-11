@@ -2,7 +2,7 @@
 
 > 面向较低阶 LLM；本文件是执行说明，不代表已实施修复。
 > 编写基线：`221e71e`（应用 `1.0.44 / 45`，本文 F/T 问题行号仍对应此基线）。
-> 当前执行基线：`157724c`（应用 `1.0.47 / 48`，2026-10-11 分支统一后）；该提交已包含 `7eadef9`（网络/会话名去重）、`e492352`（缓存淘汰类型化错误）、`157724c`（下载复用与 `.part` 清理）三项本地修复，执行每个任务前必须按当前代码重新核对。
+> 当前执行基线：`50063b6`（应用 `1.0.48 / 49`，T01 完成后）；该分支已包含 `7eadef9`（网络/会话名去重）、`e492352`（缓存淘汰类型化错误）、`157724c`（下载复用与 `.part` 清理）以及 T01 本地浏览代次防护，执行每个任务前必须按当前代码重新核对。
 > 数据库：v4。
 > 方法：项目文档核对、实际编译/装配路径追踪、关键生产源码与已有测试静态审查。不是逐文件形式化审计。
 > 已阅读：`CLAUDE.md`、`PROJECT_INDEX.md`、`spec.md`、`ui_spec.md`、最近复核报告 `reviews/opencode_2026-09-26.md`。
@@ -610,6 +610,14 @@ $env:Path = "$env:JAVA_HOME\bin;$env:Path"
   - 即使把测试 JVM 的默认值显式覆盖为 `LEGACY`，包级 `sqliteMode=NATIVE` 仍生效，全套 112 项通过。
 - 结论：F18 关闭；未改动 Room UPSERT SQL，未删除或弱化测试；本轮为测试配置改动，不改变应用行为，不递增版本、不生成 APK。
 
+### 5.2.2 T01 执行记录（2026-10-11 修复会话）
+
+- 实现：新增 `FilesBrowseRequestGuard` / `LocalBrowseRequest`；`FilesFragment.loadEntries()` 每次调用先取消旧 `localLoadJob` 并递增代次，捕获 source/session/directory 快照；IO 返回后校验代次、来源、会话、目录，未通过则丢弃；`onDestroyView()` 取消未完成加载。
+- 自动验收：`FilesBrowseRequestTest` 覆盖代次失效与 source/session/directory 匹配；`FilesLocalBrowseGenerationTest` 覆盖 A 慢 B 快最终只显示 B、本地 → FTP 后旧本地结果不覆盖远端模式。
+- 验证：`app` 96 项 + `core-base` 20 项 = 116 项，0 失败；`:app:assembleDebug` 通过，产物 `MHTMLReader_v1.0.48_debug.apk`。
+- 版本：`1.0.48 / 49`（功能批次按规则递增）。
+- 手工验收待执行：大目录快速进入/返回、本地/FTP/SMB 切换时路径标签、列表和按钮保持同源。
+
 ### 5.3 每任务的完成标准
 
 1. 先有能表达目标缺陷的测试或设备复现步骤，再改生产代码。
@@ -624,7 +632,7 @@ $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 |---|---|---|
 | T00 文档同步 | ✅ 已完成 | `1dac33b`；同步 `CLAUDE.md`/`PROJECT_INDEX.md`/`spec.md`/`ui_spec.md`/本计划；仅文档，无测试/APK；执行基线 `157724c` / `1.0.47(48)` |
 | T00B 测试基线 | ✅ 已完成 | `27df5cc`；`sqliteMode=NATIVE`；app 92 + core-base 20 = 112 项连续两次通过；测试配置变更，无版本号/APK |
-| T01 本地浏览代次 | 待执行 | — |
+| T01 本地浏览代次 | ✅ 已完成 | `50063b6`；v1.0.48(49)；app 96 + core-base 20 = 116 项通过；APK `MHTMLReader_v1.0.48_debug.apk` |
 | T02 PDF 所有权 | 待执行/需复核 | — |
 | T03 PDF 内容代次 | 待执行/需复核 | — |
 | T04 Web 进度 | 待执行 | — |
