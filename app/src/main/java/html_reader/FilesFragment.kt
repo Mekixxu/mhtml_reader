@@ -25,6 +25,7 @@ import androidx.lifecycle.LifecycleCoroutineScope
 import androidx.lifecycle.lifecycleScope
 import com.html_reader.files.BrowseSource
 import com.html_reader.files.BrowserEntry
+import com.html_reader.files.FilesBrowseRequestGuard
 import com.html_reader.files.FilesEntryMetaBuilder
 import com.html_reader.files.FilesErrorFormatter
 import com.html_reader.files.FilesRemoteController
@@ -57,6 +58,7 @@ import java.io.File
 import java.text.DateFormat
 import java.util.Date
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
@@ -92,6 +94,8 @@ class FilesFragment : Fragment(), FilesRemoteHost {
     internal var initialSafTreeUri: String? = null
     internal var currentNetworkLabel: String? = null
     internal var browseSource: BrowseSource = BrowseSource.LOCAL
+    internal var localLoadJob: Job? = null
+    internal val filesBrowseRequestGuard = FilesBrowseRequestGuard()
     internal lateinit var remoteController: FilesRemoteController
     internal var currentNameTextSizeSp: Float = 16f
     internal val supportedExtensions = setOf("mht", "mhtml", "pdf")
@@ -417,6 +421,13 @@ class FilesFragment : Fragment(), FilesRemoteHost {
         // 离开页面（进入阅读器/切到其他页）时持久化目录与列表滚动位置
         saveScrollState()
         persistCurrentDir()
+    }
+
+    override fun onDestroyView() {
+        // 取消未完成的本地目录加载，避免视图销毁后旧请求回写 UI
+        localLoadJob?.cancel()
+        localLoadJob = null
+        super.onDestroyView()
     }
 
     fun navigateUp(): Boolean {

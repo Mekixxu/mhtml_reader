@@ -6,7 +6,9 @@ import com.html_reader.files.BrowseSource
 import com.html_reader.files.BrowserEntry
 import com.html_reader.files.FilesFtpCodec
 import com.html_reader.files.FilesLocalEntries
+import com.html_reader.files.LocalBrowseRequest
 import com.html_reader.files.FilesSortHelper
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -23,7 +25,12 @@ internal fun FilesFragment.formatSize(bytes: Long): String {
 }
 
 internal fun FilesFragment.loadEntries() {
+    // 每次加载都使旧本地请求失效：source/session/path 任一变化后，旧 IO 结果不得回写 UI。
+    localLoadJob?.cancel()
+    localLoadJob = null
     remoteController.cancelRemoteLoad()
+    val browseToken = filesBrowseRequestGuard.begin()
+
     if (browseSource == BrowseSource.FTP) {
         // 远程加载开始时先隐藏空态，加载完成后由 renderEntries 按结果决定
         emptyLabel.visibility = View.GONE
@@ -40,19 +47,46 @@ internal fun FilesFragment.loadEntries() {
     }
     val dir = currentDirFile()
     currentDirLabel.text = buildCurrentDirText(dir)
-    viewLifecycleOwner.lifecycleScope.launch {
-        val displayable = withContext(Dispatchers.IO) {
-            val listed = dir.listFiles()?.toList().orEmpty()
-            FilesLocalEntries.mapDisplayableEntries(listed, supportedExtensions)
+    val request = LocalBrowseRequest(
+        generation = browseToken,
+        sessionId = currentSessionId,
+        source = browseSource,
+        directory = dir
+    )
+    localLoadJob = viewLifecycleOwner.lifecycleScope.launch {
+        try {
+            val displayable = withContext(Dispatchers.IO) {
+                val listed = dir.listFiles()?.toList().orEmpty()
+                FilesLocalEntries.mapDisplayableEntries(listed, supportedExtensions)
+            }
+            if (view == null || !isCurrentLocalBrowseRequest(request)) return@launch
+            applyLocalBrowseEntries(displayable)
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (t: Throwable) {
+            if (view != null && isCurrentLocalBrowseRequest(request)) {
+                updateStatus(getString(R.string.files_status_invalid_start_path), isError = true)
+            }
         }
-        allEntries.clear()
-        allEntries.addAll(displayable)
-        setLocalActionButtonsEnabled(true)
-        actionCreateButton.text = getString(R.string.action_new_folder)
-        renderEntries()
-        restoreScrollState()
     }
 }
+
+private fun FilesFragment.applyLocalBrowseEntries(displayable: List<BrowserEntry>) {
+    allEntries.clear()
+    allEntries.addAll(displayable)
+    setLocalActionButtonsEnabled(true)
+    actionCreateButton.text = getString(R.string.action_new_folder)
+    renderEntries()
+    restoreScrollState()
+}
+
+private fun FilesFragment.isCurrentLocalBrowseRequest(request: LocalBrowseRequest): Boolean =
+    filesBrowseRequestGuard.isCurrent(request.generation) &&
+        request.matches(
+            source = browseSource,
+            sessionId = currentSessionId,
+            directory = currentDir
+        )
 
 internal fun FilesFragment.renderEntries() {
     val query = queryInput.text?.toString()?.trim().orEmpty().lowercase(Locale.getDefault())
