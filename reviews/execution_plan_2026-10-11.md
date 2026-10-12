@@ -2,7 +2,7 @@
 
 > 面向较低阶 LLM；本文件是执行说明，不代表已实施修复。
 > 编写基线：`221e71e`（应用 `1.0.44 / 45`，本文 F/T 问题行号仍对应此基线）。
-> 当前执行基线：`f0d617c`（应用 `1.0.51 / 52`，T05 实现完成、上限待确认）；该分支还包含 T01/T02/T03 的本地修复，执行每个任务前必须按当前代码重新核对。
+> 当前执行基线：`93e47ed`（应用 `1.0.52 / 53`，T06A 已完成）；T05 上限仍待用户确认；执行每个任务前必须按当前代码重新核对。
 > 数据库：v4。
 > 方法：项目文档核对、实际编译/装配路径追踪、关键生产源码与已有测试静态审查。不是逐文件形式化审计。
 > 已阅读：`CLAUDE.md`、`PROJECT_INDEX.md`、`spec.md`、`ui_spec.md`、最近复核报告 `reviews/opencode_2026-09-26.md`。
@@ -184,6 +184,7 @@ if (dto.path.isNotBlank()) {
 ```
 
 这是局部示意；必须与原有 idMap、目录层级顺序一致。DTO 新增 `encoding: String = "Auto"` 保持旧 JSON 可读；不能偷偷更改 schemaVersion 拒绝所有旧备份。
+- 状态（2026-10-11 T06A）：✅ 已修复，详见 5.2.6；未改网络会话 ID 策略。
 
 ### F07 高：替换网络配置后存量会话绑定失效，导入输入校验不足
 
@@ -472,6 +473,7 @@ T03 依赖 T02；T06B 依赖 T05/T06A；T10 依赖 T09。其他任务可以独�
 - 步骤：区分空 path 收藏容器与非空 path 目录收藏；所有 FOLDER 共用 oldId→newId 映射；保留 path/sourceType，适用时保留 createdAt；编码字段缺失默认 Auto。
 - 自动验收：本地/SMB/FTP 目录收藏、嵌套收藏夹、文件收藏导出再导入语义相同；GBK 配置不回 Auto；旧 schema=1 备份可读；网络密码导出仍为空；任意失败仍回滚全部表。
 - 不要在此改网络会话的 ID 策略，该项交给 T06B。
+- 状态（2026-10-11）：已完成，详见 5.2.6。
 
 ### T06B：导入验证与网络会话引用策略（F07，P0，需复核）
 
@@ -646,6 +648,15 @@ $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 - 验证：`:app:assembleDebug` 通过，产物 `MHTMLReader_v1.0.51_debug.apk`；版本 `1.0.51 / 52`。
 - 待确认/手工验证：最终上限数值需用户确认；慢 SAF provider、大 JSON、拒绝覆盖确认、操作中离开页面的真机行为仍需人工验证。
 
+### 5.2.6 T06A 执行记录（2026-10-11 修复会话）
+
+- 实现：`JsonBackupManager.importFavorites` 对所有 FOLDER 统一使用 `restoreFavorite`；`path` 为空的 FOLDER 恢复为收藏夹容器，`path` 非空的 FOLDER 恢复为目录收藏，保留 `path` / `sourceType` / `createdAt`；文件收藏同样保留原字段。
+- 仓库：`FavoritesRepository.restoreFavorite` 作为备份恢复入口，统一剥离 URL 密码，不做路径去重，避免破坏备份中的父子关系。
+- 编码：`NetworkConfigDto` 新增 `encoding: String = "Auto"`；导出写入真实 encoding，导入缺省值回 Auto；旧 schema=1 JSON 可直接读取。
+- 自动验收：`BackupRoundTripTest` 覆盖本地/SMB/FTP 目录收藏 + 嵌套文件收藏往返、GBK 配置往返、导出不包含明文密码、旧备份缺 encoding 默认 Auto；`BackupImportTransactionTest` 原有回滚测试继续通过。
+- 验证：`app` 113 项 + `core-base` 20 项 = 133 项，0 失败；`:app:assembleDebug` 通过，产物 `MHTMLReader_v1.0.52_debug.apk`；版本 `1.0.52 / 53`。
+- 边界：网络会话与新网络配置 ID 的引用映射仍留给 T06B，本轮未改动。
+
 ### 5.3 每任务的完成标准
 
 1. 先有能表达目标缺陷的测试或设备复现步骤，再改生产代码。
@@ -665,7 +676,7 @@ $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 | T03 PDF 内容代次 | ✅ 实现完成/待复核 | `08b7672`；v1.0.50(51)；app 104 + core-base 20 = 124 项通过；APK `MHTMLReader_v1.0.50_debug.apk`；真实 PDF 与设备验收待补 |
 | T04 Web 进度 | 待执行 | — |
 | T05 备份 IO | ✅ 实现完成/上限待确认 | `f0d617c`；v1.0.51(52)；app 110 + core-base 20 = 130 项通过；APK `MHTMLReader_v1.0.51_debug.apk`；生产上限待用户确认 |
-| T06A 备份往返 | 待执行 | — |
+| T06A 备份往返 | ✅ 已完成 | `93e47ed`；v1.0.52(53)；app 113 + core-base 20 = 133 项通过；APK `MHTMLReader_v1.0.52_debug.apk` |
 | T06B 会话绑定 | 待执行/方案需复核 | — |
 | T07 传输取消 | 待执行 | — |
 | T08 重命名防护 | 待执行 | — |
