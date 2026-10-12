@@ -1,10 +1,12 @@
 package core.data.repo
 
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import core.common.DispatcherProvider
 import core.database.dao.NetworkConfigDao
 import core.database.entity.NetworkConfigEntity
 import core.security.CredentialCipher
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
@@ -64,7 +66,17 @@ class NetworkConfigRepository(
     /**
      * 一次性迁移：把历史明文密码（无 enc:v1: 前缀）重加密写回。幂等。
      */
-    suspend fun migrateLegacyPlaintextIfNeeded() = withContext(dispatcherProvider.io) {
+    suspend fun migrateLegacyPlaintextIfNeeded() =
+        migrateLegacyPlaintextIfNeeded(
+            isEncrypted = credentialCipher::isEncrypted,
+            encrypt = { credentialCipher.encrypt(it) }
+        )
+
+    @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
+    suspend fun migrateLegacyPlaintextIfNeeded(
+        isEncrypted: (String) -> Boolean,
+        encrypt: suspend (String) -> String
+    ) = withContext(dispatcherProvider.io) {
         var offset = 0
         val pageSize = 100
         while (true) {
@@ -72,9 +84,25 @@ class NetworkConfigRepository(
             if (page.isEmpty()) break
             page.forEach { entity ->
                 val stored = entity.password
-                if (stored.isNotEmpty() && !credentialCipher.isEncrypted(stored)) {
-                    dao.update(entity.copy(password = credentialCipher.encrypt(stored)))
-                    Log.d(TAG, "credential_migrated id=${entity.id} host=${entity.host}")
+                if (stored.isEmpty() || isEncrypted(stored)) return@forEach
+                try {
+                    val encrypted = encrypt(stored)
+                    val updated = dao.updatePasswordIfUnchanged(
+                        id = entity.id,
+                        expectedStored = stored,
+                        encrypted = encrypted
+                    )
+                    if (updated > 0) {
+                        Log.d(TAG, "credential_migrated id=${entity.id}")
+                    } else {
+                        // 读取后用户已改密码/行已变化：不重试，等待下次幂等迁移。
+                        Log.d(TAG, "credential_migration_skipped id=${entity.id}")
+                    }
+                } catch (ce: CancellationException) {
+                    throw ce
+                } catch (error: Throwable) {
+                    // 只记录类别与 ID，不输出凭据或完整行。
+                    Log.w(TAG, "credential_migration_failed id=${entity.id} err=${error.javaClass.simpleName}")
                 }
             }
             offset += page.size

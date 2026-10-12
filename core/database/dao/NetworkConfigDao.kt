@@ -12,6 +12,12 @@ interface NetworkConfigDao {
     suspend fun update(entity: NetworkConfigEntity)
     @Query("DELETE FROM network_configs WHERE id = :id")
     suspend fun delete(id: Long)
+
+    /**
+     * 仅当 password 仍等于迁移读取到的旧值时更新 password，避免覆盖用户新密码或其他列。
+     */
+    @Query("UPDATE network_configs SET password = :encrypted WHERE id = :id AND password = :expectedStored")
+    suspend fun updatePasswordIfUnchanged(id: Long, expectedStored: String, encrypted: String): Int
     @Query("SELECT * FROM network_configs LIMIT :limit OFFSET :offset")
     fun observeAll(limit: Int = 100, offset: Int = 0): Flow<List<NetworkConfigEntity>>
     @Query("SELECT * FROM network_configs LIMIT :limit OFFSET :offset")
