@@ -18,32 +18,28 @@ object FilesTransferGateway {
     private const val BUFFER_SIZE = 64 * 1024
 
     /**
-     * 已存在且大小与远端一致的下载目标可直接复用，避免同文件反复打开重复下载。
-     * expectedBytes 未知（<=0）时不复用，保守重新下载。
+     * 下载中转身份键：不同服务器/端口/账号/编码不能共用同一个目标文件。
+     * 不包含密码，避免凭据进入文件名或日志。
      */
-    fun findReusableTarget(target: File, expectedBytes: Long): File? {
-        if (expectedBytes <= 0L || !target.isFile) return null
-        return if (target.length() == expectedBytes) target else null
-    }
+    internal fun transferIdentityKey(
+        protocol: String,
+        config: NetworkConfigEntity,
+        remotePath: String
+    ): String = "$protocol:${config.host}:${config.port}:${config.username}:${config.encoding}:$remotePath"
 
     suspend fun downloadFtpToLocal(
         cacheDir: File,
         config: NetworkConfigEntity,
         remotePath: String,
         displayName: String,
-        charset: String,
-        expectedBytes: Long = 0L
+        charset: String
     ): File = withContext(Dispatchers.IO) {
         runCatching {
             val targetDir = cacheDir.resolve("ftp_open")
-            // 唯一键包含配置身份，避免不同服务器的同路径文件互相覆盖
+            // 没有可信远端版本，禁止按长度复用；每次走原子下载。
             val target = FilesNetworkGateway.createUniqueCacheFile(
-                targetDir, displayName, "ftp:${config.id}:${config.host}:$remotePath"
+                targetDir, displayName, transferIdentityKey("ftp", config, remotePath)
             )
-            findReusableTarget(target, expectedBytes)?.let { reusable ->
-                Log.d(TAG, "download_ftp_reused host=${config.host} path=$remotePath")
-                return@runCatching reusable
-            }
             val url = URL(FilesNetworkGateway.buildFtpUrl(config, remotePath, "i", charset))
             val elapsed = measureTimeMillis {
                 writeAtomically(target) { output ->
@@ -59,19 +55,14 @@ object FilesTransferGateway {
         cacheDir: File,
         config: NetworkConfigEntity,
         remotePath: String,
-        displayName: String,
-        expectedBytes: Long = 0L
+        displayName: String
     ): File = withContext(Dispatchers.IO) {
         runCatching {
             val targetDir = cacheDir.resolve("smb_open")
-            // 唯一键包含配置身份，避免不同服务器的同路径文件互相覆盖
+            // 没有可信远端版本，禁止按长度复用；每次走原子下载。
             val target = FilesNetworkGateway.createUniqueCacheFile(
-                targetDir, displayName, "smb:${config.id}:${config.host}:$remotePath"
+                targetDir, displayName, transferIdentityKey("smb", config, remotePath)
             )
-            findReusableTarget(target, expectedBytes)?.let { reusable ->
-                Log.d(TAG, "download_smb_reused host=${config.host} path=$remotePath")
-                return@runCatching reusable
-            }
             val source = SmbFile(FilesNetworkGateway.buildSmbFileUrl(config, remotePath), FilesSmbGateway.smbContext(config))
             val elapsed = measureTimeMillis {
                 writeAtomically(target) { output ->

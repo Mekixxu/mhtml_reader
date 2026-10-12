@@ -1,12 +1,8 @@
 package com.html_reader
 
-import com.html_reader.files.FilesTransferGateway
 import java.io.File
 import kotlinx.coroutines.runBlocking
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -57,15 +53,4 @@ class TransferCacheCleanerTest {
         assertTrue(freshTarget.exists())
     }
 
-    @Test
-    fun findReusableTarget_matchesOnlyExistingFileWithExpectedSize() {
-        val dir = tempFolder.newFolder("ftp_open")
-        val target = File(dir, "doc_abc.mhtml").apply { writeText("12345") }
-
-        assertSame(target, FilesTransferGateway.findReusableTarget(target, expectedBytes = 5L))
-        assertNull("大小不一致应重新下载", FilesTransferGateway.findReusableTarget(target, expectedBytes = 6L))
-        assertNull("远端大小未知应重新下载", FilesTransferGateway.findReusableTarget(target, expectedBytes = 0L))
-        assertNull("目标不存在应重新下载", FilesTransferGateway.findReusableTarget(File(dir, "missing.mhtml"), 5L))
-        assertEquals(5L, target.length())
-    }
 }

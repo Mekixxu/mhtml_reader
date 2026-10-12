@@ -93,7 +93,9 @@ class DefaultReaderTabManager(
             copyFailure = t
         }
         copyFailure?.let { t ->
-            emit(OpenState.Error(AppError.IoError(t.message ?: "copy to cache failed", t)))
+            // 保留 CacheOpenManager 的类型化 AppError，UI 才能命中具体文案；普通异常才包装 IoError。
+            val error = t as? AppError ?: AppError.IoError(t.message ?: "copy to cache failed", t)
+            emit(OpenState.Error(error))
             return@flow
         }
 
