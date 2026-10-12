@@ -93,7 +93,8 @@
 
 ## 8. 建议使用方式
 
-- 最新审查交接：`reviews/review_next_plan_2026-10-12.md`（执行复核、N01-N05B 下一阶段任务与会话映射方案）；原始 F01-F18/T00-T16 任务卡见 `reviews/execution_plan_2026-10-11.md`。
+- 最新审查交接：`reviews/review_answers_504583f_2026-10-12.md`（新提交复核、问题逐项答复、V01-V03 与会话迁移批准契约）；问题原文见 `reviews/questions_2026-10-12.md`。
+- 前轮记录：`reviews/review_next_plan_2026-10-12.md`；原始 F01-F18/T00-T16 任务卡见 `reviews/execution_plan_2026-10-11.md`，状态和下一轮顺序以最新答复为准。
 - 查找页面入口：优先从 `app/src/main/java/html_reader/` 对应 Fragment 入手
 - 查找业务逻辑：按能力进入 `core/<能力名>/` 查看 `domain/usecase` 与 `repo`
 - 查找数据落库：从 `core/database/` 的实体与 DAO 反向追踪到 repository
