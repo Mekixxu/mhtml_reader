@@ -258,6 +258,7 @@ emit(OpenState.Error(error))
 - 视图销毁：继续捕获旧 controller 实例，交给已管理应用级 cleanup scope；不能闭包读取新字段误关新 controller。
 - 停止：无法证明 close/open 顺序时，只提交测试与方案给高阶复核，不把异步 close 塞进所有分支。
 - 设备必验：真实单页/多页/损坏 PDF，旋转与快速切换；记录设备/API，检查图片、进度、FD 和内存趋势。无设备保持“实现待设备验收”。
+- 状态（2026-10-12）：实现完成（R3 unclaimed Bitmap finally + R4 close/open 有序链），commit `f3c31fd`，版本 `1.0.57 / 58`；close 链顺序已有单测。**待高阶复核**：取消窗口专项测试、fake controller UI 流程、真实 PDF 与设备验收仍未补，不能标记最终完成。
 
 ### N04 / P1：备份取消边界
 
@@ -355,7 +356,7 @@ $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 |---|---|---|
 | N01 关闭不可靠复用 + 错误类型 | ✅ 已完成 | `5e0d052`；v1.0.55(56)；app 124 + core-base 20 = 144 项通过；APK `MHTMLReader_v1.0.55_debug.apk`；FTP/SMB 实机同长度更新待验收 |
 | N02 收藏图线性导入 | ✅ 已完成 | `80c578a`；v1.0.56(57)；app 130 + core-base 20 = 150 项通过；APK `MHTMLReader_v1.0.56_debug.apk`；20k 访问计数与 300 节点 Room 导入已覆盖 |
-| N03 PDF 所有权与退出闭环 | 待执行/需复核 | 见 N03 任务卡 |
+| N03 PDF 所有权与退出闭环 | 实现完成/需复核/设备待验 | `f3c31fd`；v1.0.57(58)；app 131 + core-base 20 = 151 项通过；APK `MHTMLReader_v1.0.57_debug.apk`；取消窗口专项测试与真实 PDF 设备验收待补 |
 | N04 备份取消边界 | 待执行 | 见 N04 任务卡 |
 | N05A 会话引用统一 | 待执行/需复核 | 见 N05A 任务卡 |
 | N05B 导入与重映射同事务 | 待执行/需复核 | 依赖 N05A/N02 |
