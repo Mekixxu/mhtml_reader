@@ -452,10 +452,10 @@ class MoreFragment : Fragment() {
 
     internal companion object {
         /**
-         * 当前生产默认不设上限，避免在用户确认前排除合法旧备份；
-         * 提案值为 [BackupStreamIo.PROPOSED_MAX_BYTES]（20 MiB），确认后修改此处即可启用。
+         * 用户已确认的导入上限：20 MiB。
+         * 测试可覆盖为更小值；生产默认使用 [BackupStreamIo.PROPOSED_MAX_BYTES]。
          */
-        internal var maxBackupBytes: Long = Long.MAX_VALUE
+        internal var maxBackupBytes: Long = BackupStreamIo.PROPOSED_MAX_BYTES
     }
 
     private fun showStatus(messageRes: Int, isSuccess: Boolean = false, isError: Boolean = false) {
