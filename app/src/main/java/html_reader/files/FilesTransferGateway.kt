@@ -6,16 +6,26 @@ import android.provider.OpenableColumns
 import android.util.Log
 import core.database.entity.NetworkConfigEntity
 import jcifs.smb.SmbFile
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
+import java.io.InputStream
+import java.io.OutputStream
 import java.net.URL
+import kotlin.coroutines.coroutineContext
 import kotlin.system.measureTimeMillis
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 
 object FilesTransferGateway {
     private const val TAG = "FilesTransferGateway"
     private const val BUFFER_SIZE = 64 * 1024
+    internal const val FTP_CONNECT_TIMEOUT_MS = 10_000
+    internal const val FTP_READ_TIMEOUT_MS = 30_000
+    internal const val SMB_CONNECT_TIMEOUT_MS = 10_000
+    internal const val SMB_READ_TIMEOUT_MS = 30_000
 
     /**
      * 下载中转身份键：不同服务器/端口/账号/编码不能共用同一个目标文件。
@@ -34,21 +44,30 @@ object FilesTransferGateway {
         displayName: String,
         charset: String
     ): File = withContext(Dispatchers.IO) {
-        runCatching {
+        try {
             val targetDir = cacheDir.resolve("ftp_open")
             // 没有可信远端版本，禁止按长度复用；每次走原子下载。
             val target = FilesNetworkGateway.createUniqueCacheFile(
                 targetDir, displayName, transferIdentityKey("ftp", config, remotePath)
             )
-            val url = URL(FilesNetworkGateway.buildFtpUrl(config, remotePath, "i", charset))
+            val connection = URL(FilesNetworkGateway.buildFtpUrl(config, remotePath, "i", charset))
+                .openConnection()
+                .apply {
+                    connectTimeout = FTP_CONNECT_TIMEOUT_MS
+                    readTimeout = FTP_READ_TIMEOUT_MS
+                }
             val elapsed = measureTimeMillis {
                 writeAtomically(target) { output ->
-                    url.openStream().use { input -> input.copyTo(output, BUFFER_SIZE) }
+                    connection.getInputStream().use { input ->
+                        copyCancellable(input, output)
+                    }
                 }
             }
             Log.d(TAG, "download_ftp_done host=${config.host} path=$remotePath elapsedMs=$elapsed")
             target
-        }.getOrElse { throw mapTransferError(it) }
+        } catch (t: Throwable) {
+            throw mapTransferError(t)
+        }
     }
 
     suspend fun downloadSmbToLocal(
@@ -57,21 +76,29 @@ object FilesTransferGateway {
         remotePath: String,
         displayName: String
     ): File = withContext(Dispatchers.IO) {
-        runCatching {
+        try {
             val targetDir = cacheDir.resolve("smb_open")
             // 没有可信远端版本，禁止按长度复用；每次走原子下载。
             val target = FilesNetworkGateway.createUniqueCacheFile(
                 targetDir, displayName, transferIdentityKey("smb", config, remotePath)
             )
             val source = SmbFile(FilesNetworkGateway.buildSmbFileUrl(config, remotePath), FilesSmbGateway.smbContext(config))
+                .apply {
+                    connectTimeout = SMB_CONNECT_TIMEOUT_MS
+                    readTimeout = SMB_READ_TIMEOUT_MS
+                }
             val elapsed = measureTimeMillis {
                 writeAtomically(target) { output ->
-                    source.inputStream.use { input -> input.copyTo(output, BUFFER_SIZE) }
+                    source.inputStream.use { input ->
+                        copyCancellable(input, output)
+                    }
                 }
             }
             Log.d(TAG, "download_smb_done host=${config.host} path=$remotePath elapsedMs=$elapsed")
             target
-        }.getOrElse { throw mapTransferError(it) }
+        } catch (t: Throwable) {
+            throw mapTransferError(t)
+        }
     }
 
     suspend fun uploadToFtp(
@@ -81,23 +108,29 @@ object FilesTransferGateway {
         currentPath: String,
         charset: String
     ) = withContext(Dispatchers.IO) {
-        runCatching {
+        try {
             val fileName = resolveUploadFileName(contentResolver, uri)
             val targetPath = FilesNetworkGateway.joinFtpPath(currentPath, fileName)
             val targetUrl = URL(FilesNetworkGateway.buildFtpUrl(config, targetPath, "i", charset))
-            val connection = targetUrl.openConnection().apply { doOutput = true }
+            val connection = targetUrl.openConnection().apply {
+                doOutput = true
+                connectTimeout = FTP_CONNECT_TIMEOUT_MS
+                readTimeout = FTP_READ_TIMEOUT_MS
+            }
             val elapsed = measureTimeMillis {
                 contentResolver.openInputStream(uri).use { input ->
                     if (input == null) {
                         throw FilesTransferException.InputUnavailable()
                     }
                     connection.getOutputStream().use { output ->
-                        input.copyTo(output, BUFFER_SIZE)
+                        copyCancellable(input, output)
                     }
                 }
             }
             Log.d(TAG, "upload_ftp_done host=${config.host} path=$targetPath elapsedMs=$elapsed")
-        }.getOrElse { throw mapTransferError(it) }
+        } catch (t: Throwable) {
+            throw mapTransferError(t)
+        }
     }
 
     suspend fun uploadToSmb(
@@ -106,40 +139,66 @@ object FilesTransferGateway {
         config: NetworkConfigEntity,
         currentPath: String
     ) = withContext(Dispatchers.IO) {
-        runCatching {
+        try {
             val fileName = resolveUploadFileName(contentResolver, uri)
             val targetPath = FilesNetworkGateway.joinSmbPath(currentPath, fileName)
             val target = SmbFile(FilesNetworkGateway.buildSmbFileUrl(config, targetPath), FilesSmbGateway.smbContext(config))
+                .apply {
+                    connectTimeout = SMB_CONNECT_TIMEOUT_MS
+                    readTimeout = SMB_READ_TIMEOUT_MS
+                }
             val elapsed = measureTimeMillis {
                 contentResolver.openInputStream(uri).use { input ->
                     if (input == null) {
                         throw FilesTransferException.InputUnavailable()
                     }
                     target.outputStream.use { output ->
-                        input.copyTo(output, BUFFER_SIZE)
+                        copyCancellable(input, output)
                     }
                 }
             }
             Log.d(TAG, "upload_smb_done host=${config.host} path=$targetPath elapsedMs=$elapsed")
-        }.getOrElse { throw mapTransferError(it) }
+        } catch (t: Throwable) {
+            throw mapTransferError(t)
+        }
     }
 
     /**
-     * 先写随机 .part 临时文件，再原子改名覆盖目标，避免并发/中断产生半截文件。
+     * 分块流式拷贝，每个块前后检查协程取消。阻塞中的 read 不会被 ensureActive
+     * 强行唤醒，但会由 FTP/SMB 的超时与流关闭负责退出。
      */
-    private fun writeAtomically(target: File, write: (java.io.OutputStream) -> Unit) {
+    internal suspend fun copyCancellable(input: InputStream, output: OutputStream) {
+        val buffer = ByteArray(BUFFER_SIZE)
+        while (true) {
+            coroutineContext.ensureActive()
+            val count = input.read(buffer)
+            if (count < 0) break
+            coroutineContext.ensureActive()
+            output.write(buffer, 0, count)
+        }
+    }
+
+    /**
+     * 先写随机 .part 临时文件，再检查取消并原子改名覆盖目标。
+     * 失败/取消时 finally 删除临时文件，不改动已有目标。
+     */
+    internal suspend fun writeAtomically(target: File, write: suspend (OutputStream) -> Unit) {
         val temp = File(target.parentFile, "${target.name}.part-${java.util.UUID.randomUUID()}")
         try {
-            FileOutputStream(temp).use(write)
+            FileOutputStream(temp).use { output -> write(output) }
+            coroutineContext.ensureActive()
             if (!temp.renameTo(target)) {
-                throw java.io.IOException("Atomic rename failed: ${target.name}")
+                throw IOException("Atomic rename failed: ${target.name}")
             }
         } finally {
             if (temp.exists()) temp.delete()
         }
     }
 
-    private fun mapTransferError(error: Throwable): Throwable {
+    internal fun mapTransferError(error: Throwable): Throwable {
+        if (error is CancellationException) {
+            return error
+        }
         if (error is FilesTransferException) {
             return error
         }

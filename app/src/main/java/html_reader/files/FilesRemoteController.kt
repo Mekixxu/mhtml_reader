@@ -259,7 +259,11 @@ class FilesRemoteController(
         path: String
     ): List<BrowserEntry> = withContext(Dispatchers.IO) {
         val url = URL(FilesNetworkGateway.buildFtpUrl(config, path, "d", ftpEffectiveCharset(config)))
-        val lines = url.openStream().bufferedReader(Charsets.ISO_8859_1).use { it.readLines() }
+        val connection = url.openConnection().apply {
+            connectTimeout = FilesTransferGateway.FTP_CONNECT_TIMEOUT_MS
+            readTimeout = FilesTransferGateway.FTP_READ_TIMEOUT_MS
+        }
+        val lines = connection.getInputStream().bufferedReader(Charsets.ISO_8859_1).use { it.readLines() }
         val parseResult = FilesFtpCodec.parseEntries(
             lines = lines,
             path = path,
