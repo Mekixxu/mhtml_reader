@@ -2,7 +2,7 @@
 
 > 面向较低阶 LLM；本文件是执行说明，不代表已实施修复。
 > 编写基线：`221e71e`（应用 `1.0.44 / 45`，本文 F/T 问题行号仍对应此基线）。
-> 当前执行基线：`93e47ed`（应用 `1.0.52 / 53`，T06A 已完成）；T05 上限仍待用户确认；执行每个任务前必须按当前代码重新核对。
+> 当前执行基线：`12234a2`（应用 `1.0.53 / 54`，T05 上限已确认启用、T06A 已完成）；执行每个任务前必须按当前代码重新核对。
 > 数据库：v4。
 > 方法：项目文档核对、实际编译/装配路径追踪、关键生产源码与已有测试静态审查。不是逐文件形式化审计。
 > 已阅读：`CLAUDE.md`、`PROJECT_INDEX.md`、`spec.md`、`ui_spec.md`、最近复核报告 `reviews/opencode_2026-09-26.md`。
@@ -465,7 +465,7 @@ T03 依赖 T02；T06B 依赖 T05/T06A；T10 依赖 T09。其他任务可以独�
 - 建议上限先提交提案，例如 20 MiB；用户未确认前只做可注入限量能力与测试，不擅自把合法旧备份排除。
 - 自动验收：超限在任何 DAO 清库前失败；输入错误/取消流关闭；输出失败不提示成功；读取期间主线程可继续事件处理。
 - 手工：慢 SAF provider、大 JSON、拒绝覆盖确认、操作时离开页面。
-- 状态（2026-10-11）：实现完成；生产默认上限保持不限制（`Long.MAX_VALUE`），待用户确认后再启用提案值 20 MiB；详见 5.2.5。
+- 状态（2026-10-12）：✅ 已完成；用户确认上限 20 MiB 并已启用，详见 5.2.5。
 
 ### T06A：备份目录收藏与编码往返（F06，P0）
 
@@ -643,10 +643,10 @@ $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 ### 5.2.5 T05 执行记录（2026-10-11 修复会话）
 
 - 实现：新增 `BackupStreamIo`，按实际读取字节数限流，成功/失败/取消都会关闭输入流；`MoreFragment` 的导入/导出改为 `ContentResolver` 打开流后在 `Dispatchers.IO` 读写，导入前增加覆盖确认，并用 `backupOperationInProgress` 避免并发操作。
-- 限额：`maxBackupBytes` 可注入；生产默认暂为 `Long.MAX_VALUE`，避免在用户确认前排除合法旧备份；提案值为 20 MiB（`BackupStreamIo.PROPOSED_MAX_BYTES`）。超限时在任何 DAO 清库前失败，文案为 `more_backup_too_large`。
+- 限额（2026-10-12 更新）：用户确认 20 MiB；`MoreFragment.maxBackupBytes` 已启用 `BackupStreamIo.PROPOSED_MAX_BYTES`。超限时在任何 DAO 清库前失败，文案为 `more_backup_too_large`。
 - 自动验收：`BackupStreamIoTest` 覆盖正常读写、超限失败、按字节而非字符计数、超过缓冲区、写出失败仍关闭流；`app` 110 项 + `core-base` 20 项 = 130 项，0 失败。
 - 验证：`:app:assembleDebug` 通过，产物 `MHTMLReader_v1.0.51_debug.apk`；版本 `1.0.51 / 52`。
-- 待确认/手工验证：最终上限数值需用户确认；慢 SAF provider、大 JSON、拒绝覆盖确认、操作中离开页面的真机行为仍需人工验证。
+- 手工验证：慢 SAF provider、大 JSON、拒绝覆盖确认、操作中离开页面的真机行为仍需人工验证。
 
 ### 5.2.6 T06A 执行记录（2026-10-11 修复会话）
 
@@ -675,7 +675,7 @@ $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 | T02 PDF 所有权 | ✅ 实现完成/待复核 | `1677b52`；v1.0.49(50)；app 101 + core-base 20 = 121 项通过；APK `MHTMLReader_v1.0.49_debug.apk`；真实 PDF 与设备验收待补 |
 | T03 PDF 内容代次 | ✅ 实现完成/待复核 | `08b7672`；v1.0.50(51)；app 104 + core-base 20 = 124 项通过；APK `MHTMLReader_v1.0.50_debug.apk`；真实 PDF 与设备验收待补 |
 | T04 Web 进度 | 待执行 | — |
-| T05 备份 IO | ✅ 实现完成/上限待确认 | `f0d617c`；v1.0.51(52)；app 110 + core-base 20 = 130 项通过；APK `MHTMLReader_v1.0.51_debug.apk`；生产上限待用户确认 |
+| T05 备份 IO | ✅ 已完成 | `f0d617c` + `12234a2`；v1.0.53(54)；app 113 + core-base 20 = 133 项通过；APK `MHTMLReader_v1.0.53_debug.apk`；20 MiB 上限已启用 |
 | T06A 备份往返 | ✅ 已完成 | `93e47ed`；v1.0.52(53)；app 113 + core-base 20 = 133 项通过；APK `MHTMLReader_v1.0.52_debug.apk` |
 | T06B 会话绑定 | 待执行/方案需复核 | — |
 | T07 传输取消 | 待执行 | — |
