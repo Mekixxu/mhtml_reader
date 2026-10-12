@@ -13,6 +13,7 @@ import core.database.entity.enums.FavoriteType
 import core.database.entity.enums.fromSafeFileType
 import core.database.entity.enums.fromSafeNetworkProtocol
 import core.database.entity.enums.fromSafeSourceType
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.decodeFromString
@@ -69,6 +70,9 @@ class JsonBackupManager(
                 )
             }
 
+            // 所有校验必须在清库前完成，非法备份不得触发任何 DAO 清空
+            validateBundle(bundle)
+
             // 清库 + 导入整体在一个事务中，中途失败回滚，避免半清空
             transactionRunner.run {
                 if (clearBeforeImport) {
@@ -123,8 +127,62 @@ class JsonBackupManager(
             }
 
             Result.success(Unit)
+        } catch (ce: CancellationException) {
+            throw ce
         } catch (e: Exception) {
             Result.failure(e)
+        }
+    }
+
+    private fun validateBundle(bundle: ExportBundle) {
+        require(bundle.favorites.size <= MAX_RECORDS_PER_TABLE) { "Too many favorites" }
+        require(bundle.history.size <= MAX_RECORDS_PER_TABLE) { "Too many history records" }
+        require(bundle.networkConfigs.size <= MAX_RECORDS_PER_TABLE) { "Too many network configs" }
+        require(bundle.titleCache.size <= MAX_RECORDS_PER_TABLE) { "Too many title cache records" }
+
+        val favoriteIds = mutableSetOf<Long>()
+        bundle.favorites.forEach { dto ->
+            require(dto.type == FavoriteType.FOLDER.name || dto.type == FavoriteType.FILE.name) {
+                "Unknown favorite type: ${dto.type}"
+            }
+            require(runCatching { core.database.entity.enums.SourceType.valueOf(dto.sourceType) }.isSuccess) {
+                "Unknown sourceType: ${dto.sourceType}"
+            }
+            require(dto.name.length <= MAX_STRING_LENGTH) { "Favorite name too long" }
+            require(dto.path.length <= MAX_STRING_LENGTH) { "Favorite path too long" }
+            require(dto.createdAt >= 0L) { "Favorite createdAt invalid" }
+            dto.id?.let { id ->
+                require(id > 0L) { "Favorite id must be positive" }
+                require(favoriteIds.add(id)) { "Duplicate favorite id: $id" }
+            }
+            require(dto.parentId == null || dto.parentId > 0L) { "Favorite parentId invalid" }
+        }
+
+        bundle.history.forEach { dto ->
+            require(dto.progress.isFinite() && dto.progress in 0f..1f) { "Invalid history progress" }
+            require(dto.pageIndex >= -1) { "Invalid history pageIndex" }
+            require(runCatching { core.database.entity.enums.FileType.valueOf(dto.fileType) }.isSuccess) {
+                "Unknown fileType: ${dto.fileType}"
+            }
+            require(dto.path.length <= MAX_STRING_LENGTH) { "History path too long" }
+            require(dto.title.length <= MAX_STRING_LENGTH) { "History title too long" }
+            require(dto.lastAccess >= 0L) { "History lastAccess invalid" }
+        }
+
+        bundle.networkConfigs.forEach { dto ->
+            require(dto.protocol == "SMB" || dto.protocol == "FTP") { "Unknown network protocol" }
+            require(dto.port in 1..65535) { "Invalid network port" }
+            require(dto.host.isNotBlank()) { "Network host is blank" }
+            require(dto.name.length <= MAX_STRING_LENGTH) { "Network name too long" }
+            require(dto.host.length <= MAX_STRING_LENGTH) { "Network host too long" }
+            require(dto.username.length <= MAX_STRING_LENGTH) { "Network username too long" }
+            require(dto.password.length <= MAX_STRING_LENGTH) { "Network password too long" }
+            require(dto.defaultPath.length <= MAX_STRING_LENGTH) { "Network defaultPath too long" }
+        }
+
+        bundle.titleCache.forEach { dto ->
+            require(dto.path.length <= MAX_STRING_LENGTH) { "Title cache path too long" }
+            require(dto.title.length <= MAX_STRING_LENGTH) { "Title cache title too long" }
         }
     }
 
@@ -248,5 +306,10 @@ class JsonBackupManager(
         lastModified = lastModified,
         updatedAt = updatedAt
     )
+
+    private companion object {
+        const val MAX_RECORDS_PER_TABLE = 100_000
+        const val MAX_STRING_LENGTH = 16_384
+    }
 }
 
