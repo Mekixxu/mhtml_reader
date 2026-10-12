@@ -103,7 +103,8 @@ class JsonBackupManager(
                             port = dto.port,
                             username = dto.username,
                             password = dto.password, // 明文警告，仅 v1.0
-                            defaultPath = dto.defaultPath
+                            defaultPath = dto.defaultPath,
+                            encoding = dto.encoding.ifBlank { "Auto" }
                         )
                     )
                 }
@@ -145,7 +146,7 @@ class JsonBackupManager(
                 val dto = iter.next()
                 val oldId = dto.id
                 if (oldId == null) {
-                    favoritesRepo.addFolder(parentId = null, name = dto.name)
+                    restoreFavorite(dto, FavoriteType.FOLDER, parentId = null)
                     iter.remove()
                     progressMade = true
                     continue
@@ -159,7 +160,7 @@ class JsonBackupManager(
                 // 如果 dto 有 parentId，但 parent 还没导入，则跳过，等待下轮
                 if (dto.parentId != null && newParentId == null) continue
 
-                val newId = favoritesRepo.addFolder(parentId = newParentId, name = dto.name)
+                val newId = restoreFavorite(dto, FavoriteType.FOLDER, newParentId)
                 idMap[oldId] = newId
                 iter.remove()
                 progressMade = true
@@ -169,23 +170,34 @@ class JsonBackupManager(
         // 若仍有 pending，说明存在断裂/循环 parentId；将它们挂到 root 以保证不丢数据
         pending.forEach { dto ->
             val oldId = dto.id
-            val newId = favoritesRepo.addFolder(parentId = null, name = dto.name)
+            val newId = restoreFavorite(dto, FavoriteType.FOLDER, parentId = null)
             if (oldId != null) idMap[oldId] = newId
         }
         pending.clear()
 
-        // 导入 files：按 parentId 映射，否则挂 root
+        // 导入 files：按 parentId 映射，否则挂 root；保留原 path/sourceType/createdAt
         fileDtos.forEach { dto ->
             val newParentId = dto.parentId?.let { idMap[it] }
-            favoritesRepo.addFile(
-                parentId = newParentId,
-                name = dto.name,
-                // 安全：导入的路径同样剥离密码，避免旧备份把凭据带回库
-                path = UrlCredentialSanitizer.stripPassword(dto.path),
-                sourceType = fromSafeSourceType(dto.sourceType)
-            )
+            restoreFavorite(dto, FavoriteType.FILE, newParentId)
         }
     }
+
+    /**
+     * FOLDER 通过 path 是否为空区分“收藏夹容器”和“目录收藏”：
+     * - path 为空：addFolder 语义的容器；
+     * - path 非空：addDirectory 语义的目录收藏，必须保留 path/sourceType。
+     */
+    private suspend fun restoreFavorite(dto: FavoriteDto, type: FavoriteType, parentId: Long?): Long =
+        favoritesRepo.restoreFavorite(
+            core.database.entity.FavoriteEntity(
+                parentId = parentId,
+                name = dto.name,
+                type = type,
+                path = dto.path,
+                sourceType = fromSafeSourceType(dto.sourceType),
+                createdAt = dto.createdAt
+            )
+        )
 
     suspend fun clearEverything() = withContext(Dispatchers.IO) {
         // 直接清表是最稳定最快的方式（尤其 favorites 有外键 cascade 时）
@@ -225,7 +237,9 @@ class JsonBackupManager(
         username = username,
         // 安全：导出元数据时不再写入明文密码；导入侧会把缺失密码写为空。
         password = "",
-        defaultPath = defaultPath
+        defaultPath = defaultPath,
+        // 保留 GBK 等非 UTF-8 配置；旧备份缺失时由 DTO 默认值补 Auto。
+        encoding = encoding
     )
 
     private fun core.database.entity.TitleCacheEntity.toDto() = TitleCacheDto(

@@ -46,7 +46,11 @@ data class NetworkConfigDto(
      * 明文密码警告：仅v1.0，生产必须加密！
      */
     val password: String,
-    val defaultPath: String
+    val defaultPath: String,
+    /**
+     * 旧备份可能没有该字段，缺省按 Auto 处理；保留 GBK 等非 UTF-8 配置。
+     */
+    val encoding: String = "Auto"
 )
 
 @Serializable

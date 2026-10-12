@@ -39,6 +39,15 @@ class FavoritesRepository(
         )
     }
 
+    /**
+     * 备份恢复入口：保留传入的 type/path/sourceType/createdAt，并统一剥离 URL 密码。
+     * 与 addFolder/addDirectory 不同，这里不做路径去重，避免打破备份中的原有父子关系。
+     */
+    suspend fun restoreFavorite(entity: FavoriteEntity): Long {
+        val safePath = UrlCredentialSanitizer.stripPassword(entity.path)
+        return dao.insert(entity.copy(id = 0L, path = safePath))
+    }
+
     // 安全：写入口统一剥离 URL 密码，任何调用方都不可能把明文凭据存入收藏
     suspend fun addFile(parentId: Long?, name: String, path: String, sourceType: SourceType): Long {
         val safePath = UrlCredentialSanitizer.stripPassword(path)
