@@ -5,6 +5,7 @@ import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.LifecycleCoroutineScope
 import com.html_reader.R
+import core.common.EntryNameValidator
 import core.database.entity.NetworkConfigEntity
 import core.database.entity.enums.NetworkProtocol
 import kotlinx.coroutines.CancellationException
@@ -183,6 +184,10 @@ class FilesRemoteController(
     }
 
     fun createSmbFolder(name: String) {
+        if (!EntryNameValidator.isValidSmb(name)) {
+            host.updateStatus(host.string(R.string.files_error_invalid_name), isError = true)
+            return
+        }
         val config = smbConfig ?: return
         runNetworkSmbOperation {
             FilesSmbGateway.createFolder(config, smbCurrentPath, name)
@@ -190,6 +195,10 @@ class FilesRemoteController(
     }
 
     fun renameSmbEntry(entry: BrowserEntry, newName: String) {
+        if (!EntryNameValidator.isValidSmb(newName)) {
+            host.updateStatus(host.string(R.string.files_error_invalid_name), isError = true)
+            return
+        }
         val config = smbConfig ?: return
         runNetworkSmbOperation {
             FilesSmbGateway.renameEntry(config, entry, newName)

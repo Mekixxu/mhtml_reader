@@ -48,6 +48,8 @@
     <string name="common_copy">Copy</string>
     <string name="files_error_document_unreadable">Selected document is not readable</string>
     <string name="files_error_permission_denied">Permission denied while accessing remote target</string>
+    <string name="files_error_invalid_name">Invalid file or folder name</string>
+    <string name="files_error_name_conflict">A file or folder with this name already exists</string>
     <string name="files_status_ftp_loading">Loading FTP directory…</string>
     <string name="files_status_ftp_downloading">Downloading FTP file…</string>
     <string name="files_status_ftp_uploading">Uploading file to FTP…</string>

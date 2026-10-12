@@ -10,6 +10,7 @@ sealed class AppError(msg: String? = null, cause: Throwable? = null) : Throwable
     object InvalidUri : AppError("Invalid URI")
     object UnsupportedOperation : AppError("Unsupported Operation")
     object Conflict : AppError("Conflict")
+    object InvalidName : AppError("Invalid name")
     object CacheLimitExceeded : AppError("File exceeds cache capacity")
     object CacheBusy : AppError("Cache is held by active tabs; close some tabs and retry")
     data class IoError(val detail: String? = null, val t: Throwable? = null) : AppError(detail, t)

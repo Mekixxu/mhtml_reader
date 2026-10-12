@@ -1,5 +1,6 @@
 package com.html_reader.files
 
+import core.common.AppError
 import core.fileops.model.FileOpRequest
 import core.fileops.model.FileOpState
 import core.fileops.usecase.ExecuteFileOpUseCase
@@ -20,7 +21,7 @@ object FilesOperationRunner {
         onStarted: () -> Unit,
         onProgress: (FilesOpProgress) -> Unit,
         onSuccessPath: (VfsPath?) -> Unit,
-        onError: (String) -> Unit
+        onError: (AppError) -> Unit
     ) {
         try {
             useCase.execute(request).collect { state ->
@@ -36,14 +37,14 @@ object FilesOperationRunner {
                         }
                     }
                     is FileOpState.Success -> onSuccessPath(state.resultPath)
-                    is FileOpState.Error -> onError(state.error.message ?: state.error.javaClass.simpleName)
+                    is FileOpState.Error -> onError(state.error)
                 }
             }
         } catch (e: CancellationException) {
             // 取消是生命周期正常行为，必须重抛，由调用方决定是否清理 UI
             throw e
         } catch (t: Throwable) {
-            onError(t.message ?: t.javaClass.simpleName)
+            onError(AppError.IoError(t.message ?: t.javaClass.simpleName, t))
         }
     }
 }

@@ -47,8 +47,10 @@ class ExecuteFileOpUseCase(
             }
         } catch (e: CancellationException) {
             throw e
-        } catch (e: Exception) {
-            emit(FileOpState.Error(core.common.AppError.IoError(e.message, e)))
+        } catch (e: Throwable) {
+            val error = e as? core.common.AppError
+                ?: core.common.AppError.IoError(e.message, e)
+            emit(FileOpState.Error(error))
         }
     }
 }

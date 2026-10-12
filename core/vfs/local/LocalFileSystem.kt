@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import core.common.AppError
 import core.common.DispatcherProvider
+import core.common.EntryNameValidator
 import core.vfs.IFileSystem
 import core.vfs.model.VfsEntry
 import core.vfs.model.VfsPath
@@ -203,12 +204,22 @@ class LocalFileSystem(
 
     override suspend fun rename(from: VfsPath, toName: String): Result<VfsPath> =
         withContext(dispatcherProvider.io) {
+            if (!EntryNameValidator.isValid(toName)) {
+                return@withContext Result.failure(AppError.InvalidName)
+            }
             try {
                 when (from) {
                     is VfsPath.LocalFile -> {
                         val oldFile = File(from.filePath)
                         val parent = oldFile.parentFile ?: return@withContext Result.failure(AppError.NotFound)
                         val newFile = File(parent, toName)
+                        if (newFile.exists()) {
+                            return@withContext if (oldFile.canonicalFile == newFile.canonicalFile) {
+                                Result.success(VfsPath.LocalFile(oldFile.absolutePath))
+                            } else {
+                                Result.failure(AppError.Conflict)
+                            }
+                        }
                         if (oldFile.renameTo(newFile)) Result.success(VfsPath.LocalFile(newFile.absolutePath))
                         else Result.failure(AppError.IoError("Rename failed"))
                     }

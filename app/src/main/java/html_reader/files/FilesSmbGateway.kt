@@ -62,6 +62,10 @@ object FilesSmbGateway {
                 if (entry.isDirectory) FilesNetworkGateway.buildSmbDirUrl(config, newPath) else FilesNetworkGateway.buildSmbFileUrl(config, newPath),
                 smbContext(config)
             )
+            // 不与本地路径共用 exists+rename 的原子性承诺；这里只负责不主动覆盖已有目标。
+            if (to.exists()) {
+                throw FilesTransferException.Unknown(IllegalStateException("Target already exists"))
+            }
             from.renameTo(to)
         }
     }

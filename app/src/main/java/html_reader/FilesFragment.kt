@@ -39,6 +39,7 @@ import com.html_reader.files.FilesStatusUiHelper
 import com.html_reader.files.NetworkErrorTexts
 import com.html_reader.files.FilesUiBinder
 import com.html_reader.files.isSamePathAs
+import core.common.AppError
 import core.common.DefaultDispatcherProvider
 import core.data.repo.FavoritesRepository
 import core.data.repo.NetworkConfigRepository
@@ -498,6 +499,14 @@ class FilesFragment : Fragment(), FilesRemoteHost {
         return selected
     }
 
+    private fun resolveFileOpErrorMessage(error: AppError): String = when (error) {
+        AppError.InvalidName -> getString(R.string.files_error_invalid_name)
+        AppError.Conflict -> getString(R.string.files_error_name_conflict)
+        AppError.UnsupportedOperation -> getString(R.string.files_status_action_not_supported)
+        AppError.PermissionDenied -> getString(R.string.files_error_permission_denied)
+        else -> error.message ?: error.javaClass.simpleName
+    }
+
     internal fun runOperation(request: FileOpRequest) {
         if (!tryAcquireOperationLock()) {
             updateStatus(getString(R.string.files_status_operation_in_progress), isError = true)
@@ -520,8 +529,8 @@ class FilesFragment : Fragment(), FilesRemoteHost {
                         updateStatus(getString(R.string.files_status_done), isError = false)
                         selectResultPath(resultPath)
                     },
-                    onError = { message ->
-                        updateStatus(message, isError = true)
+                    onError = { error ->
+                        updateStatus(resolveFileOpErrorMessage(error), isError = true)
                     }
                 )
             } catch (ce: CancellationException) {
