@@ -200,7 +200,7 @@ Linux/macOS：
 
 > `[C → 模块]` = 参与该模块编译；`[O]` = 孤儿目录（暂不编译，见 1.4）。修改前先确认归属。
 
-- `core/common` `[C → core-base]`：DispatcherProvider、AppError、HashUtils 等公共基础
+- `core/common` `[C → core-base]`：DispatcherProvider、AppError、HashUtils、EntryNameValidator 等公共基础
 - `core/vfs/model` `[C → core-base]`：VfsPath、VfsEntry 模型
 - `core-storage/src/main/java/core/vfs`、`core/vfs/impl`、`core/vfs/local` `[C → core-storage]`：VFS 抽象、解析与本地实现
 - `core/database` `[C → core-data]`：Room 数据库、DAO、实体、迁移（`Migration1To2`、`MIGRATION_2_3`、`MIGRATION_3_4` 均已注册）
@@ -210,7 +210,7 @@ Linux/macOS：
 - `core/cache` `[C → core-domain]`：缓存打开、淘汰与清理
 - `core/domain` `[C → core-domain]`：领域模型与用例（目录列表/标题/历史保留）
 - `core/title` `[C → core-domain]`：标题提取能力（HTML/PDF）
-- `core/backup` `[C → core-domain]`：JSON 导入导出
+- `core/backup` `[C → core-domain]`：JSON 导入导出、收藏导入顺序规划（FavoriteImportPlanner）
 - `core/di` `[C → core-domain]`：核心 DI 装配（已编译；未聚合进 Hilt 组件，运行时未启用）
 - `core/network` `[C → core-domain]`：网络配置用例与连接测试
 - `core/settings` `[C → core-domain]`：应用设置与 DataStore

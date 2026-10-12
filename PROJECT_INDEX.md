@@ -46,7 +46,7 @@
 
 ## 6. core 核心目录索引
 
-- `core/common/`：通用模型与结果封装（错误、Outcome、调度器等）
+- `core/common/`：通用模型与结果封装（错误、Outcome、调度器、名称校验等）
 - `core/database/`：Room 数据库、DAO、实体、迁移与模块注入
 - `core/data/repo/`：收藏/历史/网络配置/标题缓存仓库
 - `core/domain/`：展示模型与领域用例
@@ -61,7 +61,7 @@
 - `core/session/`：目录会话持久化
 - `core/vfs/`：VFS 模型、接口与本地实现（模型在 `core/vfs/model`；接口在 `core-storage/src/main/java/core/vfs`）
 - `core/work/`：维护任务 worker 与调度器
-- `core/backup/`：导入导出模型与 JSON 备份管理
+- `core/backup/`：导入导出模型、JSON 备份管理与收藏导入规划
 - `core/maintenance/`：维护任务统一管理
 
 ## 7. 关键文件快速索引
