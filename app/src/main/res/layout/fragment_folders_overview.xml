@@ -47,6 +47,7 @@
 
             <Button
                 android:id="@+id/folders_open"
+                style="@style/Widget.MHTMLReader.Button.Primary"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_marginHorizontal="@dimen/home_spacing_xsmall"

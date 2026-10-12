@@ -29,7 +29,7 @@
   - `compileSdk = 36`
   - `targetSdk = 36`
   - `minSdk = 30`
-- 版本号：`versionName = 1.0.61` / `versionCode = 62`（见 `app/build.gradle.kts`）
+- 版本号：`versionName = 1.0.62` / `versionCode = 63`（见 `app/build.gradle.kts`）
 - 核心依赖（关键版本）：
   - AndroidX（AppCompat `1.7.0`、Lifecycle `2.8.4`、WorkManager `2.9.1`、WebKit `1.11.0`、Room `2.6.1`）
   - Hilt `2.52`
@@ -187,6 +187,9 @@ Linux/macOS：
 - `app/src/main/java/html_reader/MoreFragment.kt`：更多/设置页
 - `app/src/main/java/html_reader/TabsOverviewFragment.kt`：阅读标签总览
 - `app/src/main/java/html_reader/FoldersOverviewFragment.kt`：目录会话总览
+- `app/src/main/res/values/themes.xml`、`values/colors.xml`、`values-night/colors.xml`：Material 3 蓝绿色浅深色主题与主次按钮样式
+- `app/src/main/res/layout/fragment_home.xml`、`fragment_files.xml`：首页信息层级、文件搜索与目录路径展示
+- `app/src/test/java/com/html_reader/ModernUiThemeTest.kt`：浅深色布局加载、文字对比度、导航与大字体触摸目标回归
 
 ### 4.3 Runtime 与核心入口
 
@@ -237,6 +240,7 @@ Linux/macOS：
 - `reviews/review_next_plan_2026-10-12.md`：首轮执行复核及滚动记录（R1-R6、140 项历史实测、N01-N05B）；状态以最新二次复核为准。
 - `reviews/questions_2026-10-12.md`：执行 agent 的问题原文，供逐项追踪答复。
 - `reviews/review_answers_504583f_2026-10-12.md`：最新二次复核与全部问题答复（S1-S6、171 项实测、V01-V03 任务卡、N05A/N05B 批准契约）；下一轮入口。
+- `reviews/ui_refresh_2026-10-12.md`：1.0.62 UI 现代化交付（Material 3、178 项测试、APK 和设备视觉验收清单）；不替代业务修复计划。
 
 ---
 

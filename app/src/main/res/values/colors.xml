@@ -1,15 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Brand Colors: A modern, trustworthy deep blue-indigo theme -->
-    <color name="colorPrimary">#2563EB</color>
-    <color name="colorPrimaryDark">#1D4ED8</color>
-    <color name="colorAccent">#3B82F6</color>
+    <color name="colorPrimary">#006A68</color>
+    <color name="colorPrimaryDark">#004F4E</color>
+    <color name="colorAccent">#006A68</color>
+    <color name="colorPrimaryContainer">#CDEDEA</color>
+    <color name="textOnPrimaryContainer">#004846</color>
     
     <!-- UI Surface Colors -->
-    <color name="colorBackground">#F8FAFC</color>
+    <color name="colorBackground">#F4F7F7</color>
     <color name="colorSurface">#FFFFFF</color>
-    <color name="colorSurfaceHighlight">#F1F5F9</color>
-    <color name="colorStroke">#E2E8F0</color>
+    <color name="colorSurfaceHighlight">#EAF1F0</color>
+    <color name="colorStroke">#D9E3E1</color>
 
     <!-- State Colors -->
     <color name="colorSuccess">#10B981</color>
@@ -20,8 +22,8 @@
     <color name="colorStrokeDisabled">#4094A3B8</color>
 
     <!-- Text Colors -->
-    <color name="textPrimary">#1E293B</color>
-    <color name="textSecondary">#64748B</color>
-    <color name="textTertiary">#94A3B8</color>
+    <color name="textPrimary">#182C2B</color>
+    <color name="textSecondary">#516765</color>
+    <color name="textTertiary">#687C7A</color>
     <color name="textOnPrimary">#FFFFFF</color>
 </resources>

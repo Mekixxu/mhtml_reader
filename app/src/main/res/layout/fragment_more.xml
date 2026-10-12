@@ -29,6 +29,7 @@
 
             <Button
                 android:id="@+id/more_network_add"
+                style="@style/Widget.MHTMLReader.Button.Primary"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_marginEnd="@dimen/home_spacing_xsmall"

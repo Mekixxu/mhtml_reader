@@ -1,17 +1,40 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Layout updated to v2 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:padding="@dimen/home_page_padding">
 
-    <EditText
-        android:id="@+id/files_query_input"
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="16dp"
+        android:text="@string/ui_files_title"
+        android:textColor="@color/textPrimary"
+        android:textSize="26sp"
+        android:fontFamily="sans-serif-medium" />
+
+    <com.google.android.material.textfield.TextInputLayout
+        style="@style/Widget.Material3.TextInputLayout.FilledBox"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:hint="@string/files_search_hint"
-        android:inputType="text" />
+        app:boxCornerRadiusTopStart="20dp"
+        app:boxCornerRadiusTopEnd="20dp"
+        app:boxCornerRadiusBottomStart="20dp"
+        app:boxCornerRadiusBottomEnd="20dp"
+        app:boxBackgroundColor="@color/colorSurfaceHighlight"
+        app:endIconMode="clear_text">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/files_query_input"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="text"
+            android:maxLines="1" />
+    </com.google.android.material.textfield.TextInputLayout>
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -38,6 +61,10 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
+        android:background="@drawable/home_item_bg"
+        android:padding="12dp"
+        android:maxLines="2"
+        android:ellipsize="middle"
         android:textColor="?attr/colorPrimary"
         android:textAppearance="?android:attr/textAppearanceSmall" />
 
@@ -56,6 +83,7 @@
 
         <Button
             android:id="@+id/files_action_create"
+            style="@style/Widget.MHTMLReader.Button.Primary"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
@@ -96,6 +124,8 @@
         android:layout_height="0dp"
         android:layout_marginTop="8dp"
         android:layout_weight="1"
+        android:divider="@android:color/transparent"
+        android:dividerHeight="8dp"
         android:fastScrollAlwaysVisible="true"
         android:fastScrollEnabled="true"
         android:scrollbarStyle="outsideOverlay"

@@ -14,8 +14,12 @@
 
     <com.google.android.material.bottomnavigation.BottomNavigationView
         android:id="@+id/main_bottom_nav"
+        style="@style/Widget.MHTMLReader.BottomNavigation"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:background="@color/colorSurface"
+        android:elevation="0dp"
+        app:itemHorizontalTranslationEnabled="false"
         app:itemIconTint="@color/bottom_nav_item_tint"
         app:itemTextColor="@color/bottom_nav_item_tint"
         app:labelVisibilityMode="labeled"

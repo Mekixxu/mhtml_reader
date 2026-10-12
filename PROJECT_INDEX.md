@@ -25,6 +25,8 @@
 - 主页面入口：`app/src/main/java/html_reader/MainActivity.kt`
 - 主导航布局：`app/src/main/res/layout/activity_main.xml`
 - 底部导航菜单：`app/src/main/res/menu/main_bottom_nav_menu.xml`
+- 视觉主题：`app/src/main/res/values/themes.xml`（Material 3）、`values/colors.xml` 与 `values-night/colors.xml`
+- UI 回归：`app/src/test/java/com/html_reader/ModernUiThemeTest.kt`
 
 ## 4. app 模块页面索引
 
