@@ -81,6 +81,7 @@ class ReaderFragment : Fragment() {
     private val pdfContentState = PdfContentState()
     private var pdfLoadJob: Job? = null
     private var pdfRenderJob: Job? = null
+    private var pdfExitJob: Job? = null
     private var activePdfTabId: String? = null
     private var pdfRenderRequestToken = 0L
     private val mhtmlFallbackRetriedTabIds = mutableSetOf<String>()
@@ -330,6 +331,7 @@ class ReaderFragment : Fragment() {
 
         val tab = tabs.firstOrNull { it.tabId == selectedTabId }
         if (tab == null) {
+            schedulePdfControllerExit()
             resetPdfPreview()
             webPreview.loadUrl("about:blank")
             webPreview.visibility = View.GONE
@@ -354,11 +356,13 @@ class ReaderFragment : Fragment() {
 
         val cachePath = tab.cacheFilePath
         if (cachePath.isNullOrBlank()) {
+            schedulePdfControllerExit()
             resetPdfPreview()
             return
         }
         val file = File(cachePath)
         if (!file.exists() || !file.isFile) {
+            schedulePdfControllerExit()
             resetPdfPreview()
             return
         }
@@ -367,6 +371,8 @@ class ReaderFragment : Fragment() {
         val lastKnownPageIndex = tab.lastKnownPageIndex
         pdfLoadJob = viewLifecycleOwner.lifecycleScope.launch {
             try {
+                awaitPdfControllerExit()
+                if (!isCurrentPdfContent(tabId, generation)) return@launch
                 controller.open(file)
                 if (!isCurrentPdfContent(tabId, generation)) return@launch
                 val pageCount = controller.getPageCount()
@@ -393,6 +399,7 @@ class ReaderFragment : Fragment() {
     }
 
     private fun loadSelectedWebTab(tab: ReaderTab) {
+        schedulePdfControllerExit()
         pdfPageCount = 0
         currentPdfPageIndex = 0
         resetPdfPreview()
@@ -558,6 +565,15 @@ class ReaderFragment : Fragment() {
             selectedTabId == tabId &&
             view != null &&
             tabs.any { it.tabId == tabId && it.fileType == FileType.PDF }
+
+    private fun schedulePdfControllerExit() {
+        if (!::pdfReaderController.isInitialized) return
+        pdfExitJob = ReaderRuntime.closePdfControllerAfter(pdfExitJob, pdfReaderController)
+    }
+
+    private suspend fun awaitPdfControllerExit() {
+        pdfExitJob?.join()
+    }
 
     private fun resetPdfPreview() {
         pdfPageCount = 0
@@ -797,9 +813,8 @@ class ReaderFragment : Fragment() {
             clearPdfPreviewImage()
         }
         if (::pdfReaderController.isInitialized) {
-            // 捕获旧 controller 实例，避免视图重建后的新 controller 被旧清理任务误关；
-            // 清理跑在 ReaderRuntime 的应用级 scope 上，不依赖已销毁的 viewLifecycleScope。
-            ReaderRuntime.closePdfController(pdfReaderController)
+            // 捕获旧 controller 实例，并串行等待此前的退出任务，避免迟到 close 关闭新 PDF。
+            schedulePdfControllerExit()
         }
         webProgressTracker?.stopTracking()
         webProgressTracker = null

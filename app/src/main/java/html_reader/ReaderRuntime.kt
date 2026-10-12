@@ -25,8 +25,16 @@ object ReaderRuntime {
     private val pdfCleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     fun closePdfController(controller: PdfReaderController): Job =
+        closePdfControllerAfter(previous = null, controller = controller)
+
+    /**
+     * 串行化关闭链：等待 previous 完成后再关闭 controller。
+     * 供内容切换时保证 close 一定早于下一次 open，避免迟到 close 关闭新 PDF。
+     */
+    fun closePdfControllerAfter(previous: Job?, controller: PdfReaderController): Job =
         pdfCleanupScope.launch {
             try {
+                previous?.join()
                 controller.close()
             } catch (ce: CancellationException) {
                 throw ce

@@ -7,9 +7,6 @@ import android.os.ParcelFileDescriptor
 import core.common.DispatcherProvider
 import core.reader.pdf.PdfReaderController
 import java.io.File
-import kotlin.coroutines.coroutineContext
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.sync.Mutex
@@ -64,39 +61,46 @@ class AndroidPdfReaderController(
         mutex.withLock { renderer?.pageCount ?: 0 }
     }
 
-    override suspend fun renderPage(pageIndex: Int, targetWidthPx: Int): Bitmap =
-        withContext(dispatcherProvider.io) {
-            mutex.withLock {
-                val localRenderer = renderer ?: throw IllegalStateException("PDF not opened")
-                val count = localRenderer.pageCount
-                if (count <= 0) {
-                    return@withLock Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
-                }
-                val safePage = pageIndex.coerceIn(0, count - 1)
-                localRenderer.openPage(safePage).use { page ->
-                    val width = targetWidthPx.coerceAtLeast(1)
-                    val scale = width.toFloat() / page.width.toFloat().coerceAtLeast(1f)
-                    val height = (page.height * scale).toInt().coerceAtLeast(1)
-                    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                    bitmap.eraseColor(Color.WHITE)
-                    try {
-                        page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                    } catch (t: Throwable) {
-                        // render 失败时调用方不会收到该 bitmap，必须在此回收
-                        bitmap.recycle()
-                        throw t
-                    }
-                    try {
-                        coroutineContext.ensureActive()
-                    } catch (ce: CancellationException) {
-                        // 取消时 bitmap 不会交给调用方，必须回收
-                        bitmap.recycle()
-                        throw ce
-                    }
-                    bitmap
+    override suspend fun renderPage(pageIndex: Int, targetWidthPx: Int): Bitmap {
+        var unclaimed: Bitmap? = null
+        try {
+            val rendered = withContext(dispatcherProvider.io) {
+                mutex.withLock {
+                    // 在销毁边界前先登记未交付资源；若 withContext 因取消丢弃返回值，finally 负责回收。
+                    renderLocked(pageIndex, targetWidthPx).also { unclaimed = it }
                 }
             }
+            unclaimed = null
+            return rendered
+        } finally {
+            val pending = unclaimed
+            if (pending != null && !pending.isRecycled) pending.recycle()
         }
+    }
+
+    private fun renderLocked(pageIndex: Int, targetWidthPx: Int): Bitmap {
+        val localRenderer = renderer ?: throw IllegalStateException("PDF not opened")
+        val count = localRenderer.pageCount
+        if (count <= 0) {
+            return Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
+        }
+        val safePage = pageIndex.coerceIn(0, count - 1)
+        localRenderer.openPage(safePage).use { page ->
+            val width = targetWidthPx.coerceAtLeast(1)
+            val scale = width.toFloat() / page.width.toFloat().coerceAtLeast(1f)
+            val height = (page.height * scale).toInt().coerceAtLeast(1)
+            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            bitmap.eraseColor(Color.WHITE)
+            try {
+                page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+            } catch (t: Throwable) {
+                // render 失败时调用方不会收到该 bitmap，必须在此回收
+                bitmap.recycle()
+                throw t
+            }
+            return bitmap
+        }
+    }
 
     override suspend fun close() {
         withContext(dispatcherProvider.io) {

@@ -27,6 +27,19 @@ class ReaderRuntimePdfCleanupTest {
     }
 
     @Test
+    fun closePdfControllerAfter_waitsForPreviousClose() = runBlocking {
+        val order = mutableListOf<String>()
+        val first = RecordingPdfReaderController(onClose = { order += "first" })
+        val second = RecordingPdfReaderController(onClose = { order += "second" })
+
+        val firstJob = ReaderRuntime.closePdfController(first)
+        val secondJob = ReaderRuntime.closePdfControllerAfter(firstJob, second)
+        secondJob.join()
+
+        assertEquals(listOf("first", "second"), order)
+    }
+
+    @Test
     fun closePdfController_survivesCloseFailure() = runBlocking {
         val failing = RecordingPdfReaderController(failOnClose = true)
         val normal = RecordingPdfReaderController()
@@ -39,7 +52,8 @@ class ReaderRuntimePdfCleanupTest {
     }
 
     private class RecordingPdfReaderController(
-        private val failOnClose: Boolean = false
+        private val failOnClose: Boolean = false,
+        private val onClose: (() -> Unit)? = null
     ) : PdfReaderController {
         var closeCount = 0
             private set
@@ -55,6 +69,7 @@ class ReaderRuntimePdfCleanupTest {
 
         override suspend fun close() {
             closeCount += 1
+            onClose?.invoke()
             if (failOnClose) throw IllegalStateException("close failed")
         }
 
