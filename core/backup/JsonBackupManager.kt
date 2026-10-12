@@ -13,8 +13,10 @@ import core.database.entity.enums.FavoriteType
 import core.database.entity.enums.fromSafeFileType
 import core.database.entity.enums.fromSafeNetworkProtocol
 import core.database.entity.enums.fromSafeSourceType
+import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -190,51 +192,17 @@ class JsonBackupManager(
         val folderDtos = favorites.filter { it.type == FavoriteType.FOLDER.name }
         val fileDtos = favorites.filter { it.type == FavoriteType.FILE.name }
 
-        // oldId -> newId
         val idMap = mutableMapOf<Long, Long>()
-
-        // 分层导入 folders：循环多轮，直到不再插入（避免依赖排序）
-        val pending = folderDtos.toMutableList()
-        var progressMade: Boolean
-
-        do {
-            progressMade = false
-            val iter = pending.iterator()
-            while (iter.hasNext()) {
-                val dto = iter.next()
-                val oldId = dto.id
-                if (oldId == null) {
-                    restoreFavorite(dto, FavoriteType.FOLDER, parentId = null)
-                    iter.remove()
-                    progressMade = true
-                    continue
-                }
-
-                val newParentId: Long? = when (val oldParent = dto.parentId) {
-                    null -> null
-                    else -> idMap[oldParent] // 若 parent 尚未创建则为 null（本轮不处理）
-                }
-
-                // 如果 dto 有 parentId，但 parent 还没导入，则跳过，等待下轮
-                if (dto.parentId != null && newParentId == null) continue
-
-                val newId = restoreFavorite(dto, FavoriteType.FOLDER, newParentId)
-                idMap[oldId] = newId
-                iter.remove()
-                progressMade = true
-            }
-        } while (progressMade)
-
-        // 若仍有 pending，说明存在断裂/循环 parentId；将它们挂到 root 以保证不丢数据
-        pending.forEach { dto ->
-            val oldId = dto.id
-            val newId = restoreFavorite(dto, FavoriteType.FOLDER, parentId = null)
-            if (oldId != null) idMap[oldId] = newId
+        val plan = FavoriteImportPlanner().plan(folderDtos)
+        plan.nodes.forEach { node ->
+            coroutineContext.ensureActive()
+            val parentNewId = node.parentOldId?.let { idMap[it] }
+            val newId = restoreFavorite(node.dto, FavoriteType.FOLDER, parentNewId)
+            node.dto.id?.let { idMap[it] = newId }
         }
-        pending.clear()
 
-        // 导入 files：按 parentId 映射，否则挂 root；保留原 path/sourceType/createdAt
         fileDtos.forEach { dto ->
+            coroutineContext.ensureActive()
             val newParentId = dto.parentId?.let { idMap[it] }
             restoreFavorite(dto, FavoriteType.FILE, newParentId)
         }

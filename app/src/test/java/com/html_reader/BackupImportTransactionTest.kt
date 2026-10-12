@@ -18,6 +18,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -91,6 +92,36 @@ class BackupImportTransactionTest {
         val favorites = favoritesRepo.getAll()
         assertTrue(favorites.any { it.name == "keep-me" })
         assertFalse(favorites.any { it.name == "seed" })
+    }
+
+    @Test
+    fun reverseDeepFolderChain_importsWithCorrectParents() = runBlocking {
+        val count = 300
+        val foldersJson = buildString {
+            append("[")
+            for (i in count downTo 1) {
+                if (i != count) append(",")
+                val parent = if (i == 1) "null" else "\"${i - 1}\""
+                append("""{"id":$i,"parentId":$parent,"name":"n$i","type":"FOLDER","path":"","sourceType":"LOCAL","createdAt":$i}""")
+            }
+            append("]")
+        }
+        val payload = """{"schemaVersion":1,"exportedAt":1,"favorites":$foldersJson,"history":[],"networkConfigs":[],"titleCache":[]}"""
+
+        val result = manager.importAll(payload)
+
+        assertTrue(result.isSuccess)
+        val favorites = favoritesRepo.getAll()
+        assertEquals(count, favorites.size)
+        val byName = favorites.associateBy { it.name }
+        for (i in 1..count) {
+            val current = byName.getValue("n$i")
+            if (i == 1) {
+                assertNull(current.parentId)
+            } else {
+                assertEquals(byName.getValue("n${i - 1}").id, current.parentId)
+            }
+        }
     }
 
     private companion object {
