@@ -27,8 +27,8 @@ android {
         applicationId = "com.html_reader"
         minSdk = 30
         targetSdk = 36
-        versionCode = 61
-        versionName = "1.0.60"
+        versionCode = 62
+        versionName = "1.0.61"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
