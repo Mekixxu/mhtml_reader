@@ -242,6 +242,7 @@ Linux/macOS：
 - `reviews/review_answers_504583f_2026-10-12.md`：最新二次复核与全部问题答复（S1-S6、171 项实测、V01-V03 任务卡、N05A/N05B 批准契约）；下一轮入口。
 - `reviews/ui_refresh_2026-10-12.md`：1.0.62 UI 现代化交付（Material 3、178 项测试、APK 和设备视觉验收清单）；不替代业务修复计划。
 
+- `reviews/ui_density_plan_2026-10-13.md`: Home/Files density plan (D01-D03); pending implementation.
 ---
 
 ## 5. 文档维护规则
