@@ -323,15 +323,17 @@ class ReaderFragment : Fragment() {
 
     private fun loadSelectedTabContent() {
         val generation = pdfContentState.beginContentLoad()
-        pdfLoadJob?.cancel()
+        val previousLoad = pdfLoadJob
+        val previousRender = pdfRenderJob
+        previousLoad?.cancel()
         pdfLoadJob = null
-        pdfRenderJob?.cancel()
+        previousRender?.cancel()
         pdfRenderJob = null
         activePdfTabId = null
+        val exitJob = schedulePdfControllerExit(previousLoad, previousRender)
 
         val tab = tabs.firstOrNull { it.tabId == selectedTabId }
         if (tab == null) {
-            schedulePdfControllerExit()
             resetPdfPreview()
             webPreview.loadUrl("about:blank")
             webPreview.visibility = View.GONE
@@ -340,13 +342,13 @@ class ReaderFragment : Fragment() {
             return
         }
         if (tab.fileType == FileType.PDF) {
-            loadSelectedPdfTab(tab, generation)
+            loadSelectedPdfTab(tab, generation, exitJob)
             return
         }
         loadSelectedWebTab(tab)
     }
 
-    private fun loadSelectedPdfTab(tab: ReaderTab, generation: Long) {
+    private fun loadSelectedPdfTab(tab: ReaderTab, generation: Long, exitJob: Job?) {
         webPreview.visibility = View.GONE
         webPreview.loadUrl("about:blank")
         webProgressTracker?.stopTracking()
@@ -356,13 +358,11 @@ class ReaderFragment : Fragment() {
 
         val cachePath = tab.cacheFilePath
         if (cachePath.isNullOrBlank()) {
-            schedulePdfControllerExit()
             resetPdfPreview()
             return
         }
         val file = File(cachePath)
         if (!file.exists() || !file.isFile) {
-            schedulePdfControllerExit()
             resetPdfPreview()
             return
         }
@@ -371,7 +371,7 @@ class ReaderFragment : Fragment() {
         val lastKnownPageIndex = tab.lastKnownPageIndex
         pdfLoadJob = viewLifecycleOwner.lifecycleScope.launch {
             try {
-                awaitPdfControllerExit()
+                exitJob?.join()
                 if (!isCurrentPdfContent(tabId, generation)) return@launch
                 controller.open(file)
                 if (!isCurrentPdfContent(tabId, generation)) return@launch
@@ -399,7 +399,6 @@ class ReaderFragment : Fragment() {
     }
 
     private fun loadSelectedWebTab(tab: ReaderTab) {
-        schedulePdfControllerExit()
         pdfPageCount = 0
         currentPdfPageIndex = 0
         resetPdfPreview()
@@ -566,13 +565,15 @@ class ReaderFragment : Fragment() {
             view != null &&
             tabs.any { it.tabId == tabId && it.fileType == FileType.PDF }
 
-    private fun schedulePdfControllerExit() {
-        if (!::pdfReaderController.isInitialized) return
-        pdfExitJob = ReaderRuntime.closePdfControllerAfter(pdfExitJob, pdfReaderController)
-    }
-
-    private suspend fun awaitPdfControllerExit() {
-        pdfExitJob?.join()
+    private fun schedulePdfControllerExit(previousLoad: Job?, previousRender: Job?): Job? {
+        if (!::pdfReaderController.isInitialized) return pdfExitJob
+        val exitJob = ReaderRuntime.closePdfControllerAfter(
+            previous = pdfExitJob,
+            controller = pdfReaderController,
+            pendingJobs = listOfNotNull(previousLoad, previousRender).distinct()
+        )
+        pdfExitJob = exitJob
+        return exitJob
     }
 
     private fun resetPdfPreview() {
@@ -802,9 +803,11 @@ class ReaderFragment : Fragment() {
     }
 
     override fun onDestroyView() {
-        pdfLoadJob?.cancel()
+        val previousLoad = pdfLoadJob
+        val previousRender = pdfRenderJob
+        previousLoad?.cancel()
         pdfLoadJob = null
-        pdfRenderJob?.cancel()
+        previousRender?.cancel()
         pdfRenderJob = null
         pdfRenderRequestToken += 1
         pdfContentState.invalidate()
@@ -813,8 +816,8 @@ class ReaderFragment : Fragment() {
             clearPdfPreviewImage()
         }
         if (::pdfReaderController.isInitialized) {
-            // 捕获旧 controller 实例，并串行等待此前的退出任务，避免迟到 close 关闭新 PDF。
-            schedulePdfControllerExit()
+            // Fragment 销毁后由应用级任务等待旧 load/render，再关闭捕获的 controller。
+            schedulePdfControllerExit(previousLoad, previousRender)
         }
         webProgressTracker?.stopTracking()
         webProgressTracker = null

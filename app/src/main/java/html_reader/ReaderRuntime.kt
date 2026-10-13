@@ -28,13 +28,18 @@ object ReaderRuntime {
         closePdfControllerAfter(previous = null, controller = controller)
 
     /**
-     * 串行化关闭链：等待 previous 完成后再关闭 controller。
-     * 供内容切换时保证 close 一定早于下一次 open，避免迟到 close 关闭新 PDF。
+     * 等待先前退出及其捕获的内容任务结束，再关闭 controller。
+     * 调用方必须先取消 pendingJobs，并让后续 open 等待此退出任务。
      */
-    fun closePdfControllerAfter(previous: Job?, controller: PdfReaderController): Job =
+    fun closePdfControllerAfter(
+        previous: Job?,
+        controller: PdfReaderController,
+        pendingJobs: List<Job> = emptyList()
+    ): Job =
         pdfCleanupScope.launch {
             try {
                 previous?.join()
+                pendingJobs.forEach { it.join() }
                 controller.close()
             } catch (ce: CancellationException) {
                 throw ce
