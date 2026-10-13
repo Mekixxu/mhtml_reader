@@ -58,6 +58,47 @@ class FilesTransferGatewayTest {
     }
 
     @Test
+    fun copyCancellable_checksCancellationAfterReadBeforeWrite() = runBlocking {
+        val jobRef = AtomicReference<Job?>()
+        val input = object : ByteArrayInputStream(byteArrayOf(1)) {
+            override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                buffer[offset] = 1
+                jobRef.get()?.cancel()
+                return 1
+            }
+        }
+        val output = ByteArrayOutputStream()
+        val job = launch(Dispatchers.Default, start = CoroutineStart.LAZY) {
+            FilesTransferGateway.copyCancellable(input, output)
+        }
+        jobRef.set(job)
+        job.start()
+        job.join()
+
+        assertTrue(job.isCancelled)
+        assertEquals(0, output.size())
+    }
+
+    @Test
+    fun copyCancellable_checksCancellationAtEof() = runBlocking {
+        val jobRef = AtomicReference<Job?>()
+        val input = object : ByteArrayInputStream(byteArrayOf()) {
+            override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                jobRef.get()?.cancel()
+                return -1
+            }
+        }
+        val job = launch(Dispatchers.Default, start = CoroutineStart.LAZY) {
+            FilesTransferGateway.copyCancellable(input, ByteArrayOutputStream())
+        }
+        jobRef.set(job)
+        job.start()
+        job.join()
+
+        assertTrue(job.isCancelled)
+    }
+
+    @Test
     fun writeAtomically_failureDeletesTempAndKeepsTarget() = runBlocking {
         val dir = tempFolder.newFolder("atomic-fail")
         val target = File(dir, "doc.mhtml").apply { writeText("old") }
@@ -68,6 +109,47 @@ class FilesTransferGatewayTest {
 
         assertTrue(error is IOException)
         assertEquals("old", target.readText())
+        assertFalse(dir.listFiles()?.any { it.name.contains(".part-") } ?: true)
+    }
+
+    @Test
+    fun writeAtomically_cancellationBeforeCommitKeepsOldTargetAndDeletesPart() = runBlocking {
+        val dir = tempFolder.newFolder("atomic-cancel-before")
+        val target = File(dir, "doc.mhtml").apply { writeText("old") }
+        val jobRef = AtomicReference<Job?>()
+        val job = launch(Dispatchers.Default, start = CoroutineStart.LAZY) {
+            FilesTransferGateway.writeAtomically(target) { output ->
+                output.write("new".toByteArray())
+                jobRef.get()?.cancel()
+            }
+        }
+        jobRef.set(job)
+        job.start()
+        job.join()
+
+        assertTrue(job.isCancelled)
+        assertEquals("old", target.readText())
+        assertFalse(dir.listFiles()?.any { it.name.contains(".part-") } ?: true)
+    }
+
+    @Test
+    fun writeAtomically_cancellationAfterCommitKeepsCompleteNewTarget() = runBlocking {
+        val dir = tempFolder.newFolder("atomic-cancel-after")
+        val target = File(dir, "doc.mhtml").apply { writeText("old") }
+        val jobRef = AtomicReference<Job?>()
+        val job = launch(Dispatchers.Default, start = CoroutineStart.LAZY) {
+            FilesTransferGateway.writeAtomically(
+                target = target,
+                write = { it.write("new".toByteArray()) },
+                afterCommit = { jobRef.get()?.cancel() }
+            )
+        }
+        jobRef.set(job)
+        job.start()
+        job.join()
+
+        assertTrue(job.isCancelled)
+        assertEquals("new", target.readText())
         assertFalse(dir.listFiles()?.any { it.name.contains(".part-") } ?: true)
     }
 

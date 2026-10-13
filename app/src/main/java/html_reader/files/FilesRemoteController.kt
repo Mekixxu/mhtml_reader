@@ -154,13 +154,14 @@ class FilesRemoteController(
             uploadingStatus = host.string(R.string.files_status_ftp_uploading),
             uploadedStatus = host.string(R.string.files_status_ftp_uploaded),
             resolveConfig = { ftpConfig },
-            uploader = { config ->
+            uploader = { config, attempt ->
                 FilesTransferGateway.uploadToFtp(
                     contentResolver = host.hostContext.contentResolver,
                     uri = uri,
                     config = config,
                     currentPath = ftpCurrentPath,
-                    charset = ftpEffectiveCharset(config)
+                    charset = ftpEffectiveCharset(config),
+                    attempt = attempt
                 )
             }
         )
@@ -172,12 +173,13 @@ class FilesRemoteController(
             uploadingStatus = host.string(R.string.files_status_smb_uploading),
             uploadedStatus = host.string(R.string.files_status_smb_uploaded),
             resolveConfig = { smbConfig },
-            uploader = { config ->
+            uploader = { config, attempt ->
                 FilesTransferGateway.uploadToSmb(
                     contentResolver = host.hostContext.contentResolver,
                     uri = uri,
                     config = config,
-                    currentPath = smbCurrentPath
+                    currentPath = smbCurrentPath,
+                    attempt = attempt
                 )
             }
         )
@@ -316,9 +318,10 @@ class FilesRemoteController(
         uploadingStatus: String,
         uploadedStatus: String,
         resolveConfig: () -> NetworkConfigEntity?,
-        uploader: suspend (NetworkConfigEntity) -> Unit
+        uploader: suspend (NetworkConfigEntity, FilesUploadAttempt) -> Unit
     ) {
         val config = resolveConfig() ?: return
+        val attempt = FilesPendingUploadStore(host.hostContext).newAttempt()
         if (!host.tryAcquireOperationLock()) {
             host.updateStatus(host.string(R.string.files_status_operation_in_progress), isError = true)
             return
@@ -326,10 +329,13 @@ class FilesRemoteController(
         host.updateStatus(uploadingStatus, isError = false)
         host.hostLifecycleScope.launch {
             try {
-                uploader(config)
+                uploader(config, attempt)
                 host.updateStatus(uploadedStatus, isError = false)
                 host.reloadEntriesAfterRemoteMutation()
             } catch (ce: CancellationException) {
+                if (attempt.remoteWriteMayHaveStarted && host.isAttached()) {
+                    host.updateStatus(host.string(R.string.files_status_upload_may_be_partial), isError = true)
+                }
                 throw ce
             } catch (error: Throwable) {
                 host.updateStatus(host.formatNetworkError(error, protocol), isError = true)

@@ -9,9 +9,15 @@ import android.widget.Toast
 import com.html_reader.R
 
 object FilesStatusUiHelper {
-    fun bindErrorClick(context: Context, statusView: TextView, value: String) {
+    fun bindErrorClick(
+        context: Context,
+        statusView: TextView,
+        value: String,
+        acknowledgeLabel: String? = null,
+        onAcknowledge: (() -> Unit)? = null
+    ) {
         statusView.setOnClickListener {
-            AlertDialog.Builder(context)
+            val dialog = AlertDialog.Builder(context)
                 .setTitle(R.string.common_error_details_title)
                 .setMessage(value)
                 .setPositiveButton(android.R.string.ok, null)
@@ -20,7 +26,10 @@ object FilesStatusUiHelper {
                     clipboard.setPrimaryClip(ClipData.newPlainText(context.getString(R.string.common_error_details_title), value))
                     Toast.makeText(context, R.string.common_copied_to_clipboard, Toast.LENGTH_SHORT).show()
                 }
-                .show()
+            if (onAcknowledge != null && !acknowledgeLabel.isNullOrBlank()) {
+                dialog.setNegativeButton(acknowledgeLabel) { _, _ -> onAcknowledge() }
+            }
+            dialog.show()
         }
     }
 

@@ -34,6 +34,7 @@ import com.html_reader.files.FilesNavigateUpHelper
 import com.html_reader.files.FilesOperationRunner
 import com.html_reader.files.FilesOperationUiBinder
 import com.html_reader.files.FilesPathHelper
+import com.html_reader.files.FilesPendingUploadStore
 import com.html_reader.files.FilesScrollStateStore
 import com.html_reader.files.FilesStatusUiHelper
 import com.html_reader.files.NetworkErrorTexts
@@ -88,6 +89,7 @@ class FilesFragment : Fragment(), FilesRemoteHost {
     internal var currentDir: File? = null
     internal var selectedEntry: BrowserEntry? = null
     internal var operationRunning = false
+    private var pendingUploadStore: FilesPendingUploadStore? = null
     internal var currentSessionId: Long? = null
     internal var initialNetworkConfigId: Long? = null
     internal var requestedNetworkEntry: Boolean = false
@@ -125,6 +127,7 @@ class FilesFragment : Fragment(), FilesRemoteHost {
         private const val SORT_INDEX_MODIFIED_DESC = 2
         private const val SORT_INDEX_SIZE_DESC = 3
         private const val SORT_INDEX_SIZE_ASC = 4
+        private const val MAX_PENDING_UPLOADS_IN_STATUS = 3
 
         fun newInstance(networkConfigId: Long): FilesFragment {
             return FilesFragment().apply {
@@ -167,6 +170,7 @@ class FilesFragment : Fragment(), FilesRemoteHost {
     ): View = inflater.inflate(R.layout.fragment_files, container, false)
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        pendingUploadStore = FilesPendingUploadStore(requireContext().applicationContext)
         val ui = FilesUiBinder.bind(view)
         queryInput = ui.queryInput
         sortSpinner = ui.sortSpinner
@@ -334,7 +338,7 @@ class FilesFragment : Fragment(), FilesRemoteHost {
             }
         }
 
-        operationStatusLabel.text = getString(R.string.files_status_idle)
+        updateStatus(getString(R.string.files_status_idle), isError = false)
         restoreQueryText()
         restoreSessionAndLoad()
         ensureStoragePermissionIfNeeded()
@@ -428,6 +432,7 @@ class FilesFragment : Fragment(), FilesRemoteHost {
         // 取消未完成的本地目录加载，避免视图销毁后旧请求回写 UI
         localLoadJob?.cancel()
         localLoadJob = null
+        pendingUploadStore = null
         super.onDestroyView()
     }
 
@@ -618,15 +623,53 @@ class FilesFragment : Fragment(), FilesRemoteHost {
 
     override fun updateStatus(value: String, isError: Boolean) {
         if (view == null) return
-        operationStatusLabel.text = value
+        val store = pendingUploadStore
+        val hasPendingUpload = store?.hasPendingUploads() == true
+        val baseWarning = getString(R.string.files_status_upload_may_be_partial)
+        val warning = if (hasPendingUpload && store != null) {
+            buildPendingUploadWarning(store, baseWarning)
+        } else {
+            null
+        }
+        val displayValue = when {
+            warning == null -> value
+            value == baseWarning -> warning
+            else -> "$value\n$warning"
+        }
+        operationStatusLabel.text = displayValue
         // 语义状态色（含暗色主题变体），避免暗色主题下黑色/ho­lo 色不可见
-        val colorRes = if (isError) R.color.colorError else R.color.textPrimary
+        val colorRes = if (isError || hasPendingUpload) R.color.colorError else R.color.textPrimary
         operationStatusLabel.setTextColor(ContextCompat.getColor(requireContext(), colorRes))
 
-        if (isError) {
-            FilesStatusUiHelper.bindErrorClick(requireContext(), operationStatusLabel, value)
+        if (hasPendingUpload && store != null) {
+            FilesStatusUiHelper.bindErrorClick(
+                context = requireContext(),
+                statusView = operationStatusLabel,
+                value = displayValue,
+                acknowledgeLabel = getString(R.string.files_status_upload_acknowledge),
+                onAcknowledge = {
+                    store.acknowledgePendingUploads()
+                    updateStatus(getString(R.string.files_status_idle), isError = false)
+                }
+            )
+        } else if (isError) {
+            FilesStatusUiHelper.bindErrorClick(requireContext(), operationStatusLabel, displayValue)
         } else {
             FilesStatusUiHelper.clearErrorClick(operationStatusLabel)
+        }
+    }
+
+    private fun buildPendingUploadWarning(store: FilesPendingUploadStore, baseWarning: String): String {
+        val descriptions = store.pendingDescriptions()
+        val details = descriptions.take(MAX_PENDING_UPLOADS_IN_STATUS)
+            .map { getString(R.string.files_status_upload_pending_target, it) }
+        val remaining = descriptions.size - details.size
+        return buildString {
+            append(baseWarning)
+            details.forEach { append('\n').append(it) }
+            if (remaining > 0) {
+                append('\n').append(getString(R.string.files_status_upload_pending_more, remaining))
+            }
         }
     }
 
@@ -711,7 +754,8 @@ class FilesFragment : Fragment(), FilesRemoteHost {
                 smbConnectionFailed = getString(R.string.files_status_smb_connection_failed),
                 defaultMessage = getString(R.string.files_status_invalid_start_path),
                 inputUnavailable = getString(R.string.files_error_document_unreadable),
-                permissionDenied = getString(R.string.files_error_permission_denied)
+                permissionDenied = getString(R.string.files_error_permission_denied),
+                partialUpload = getString(R.string.files_status_upload_may_be_partial)
             )
         )
     }

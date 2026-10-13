@@ -29,7 +29,7 @@
   - `compileSdk = 36`
   - `targetSdk = 36`
   - `minSdk = 30`
-- 版本号：`versionName = 1.0.63` / `versionCode = 64`（见 `app/build.gradle.kts`）
+- 版本号：`versionName = 1.0.64` / `versionCode = 65`（见 `app/build.gradle.kts`）
 - 核心依赖（关键版本）：
   - AndroidX（AppCompat `1.7.0`、Lifecycle `2.8.4`、WorkManager `2.9.1`、WebKit `1.11.0`、Room `2.6.1`）
   - Hilt `2.52`
@@ -239,7 +239,7 @@ Linux/macOS：
 - `reviews/execution_plan_2026-10-11.md`：2026-10-11 项目审查与分批修复执行计划（F01-F18 问题清单、T00-T16 任务卡）。
 - `reviews/review_next_plan_2026-10-12.md`：首轮执行复核及滚动记录（R1-R6、140 项历史实测、N01-N05B）；状态以最新二次复核为准。
 - `reviews/questions_2026-10-12.md`：执行 agent 的问题原文，供逐项追踪答复。
-- `reviews/review_answers_504583f_2026-10-12.md`：最新二次复核与全部问题答复（S1-S6、V01-V03 任务卡、N05A/N05B 批准契约及 2026-10-13 V01 执行记录）；下一轮入口。
+- `reviews/review_answers_504583f_2026-10-12.md`：最新二次复核与全部问题答复（S1-S6、V01-V03 任务卡、N05A/N05B 批准契约及 2026-10-13 V01/V02 执行记录）；下一轮入口。
 - `reviews/ui_refresh_2026-10-12.md`：1.0.62 UI 现代化交付（Material 3、178 项测试、APK 和设备视觉验收清单）；不替代业务修复计划。
 
 - `reviews/ui_density_plan_2026-10-13.md`: Home/Files density plan (D01-D03); pending implementation.

@@ -5,5 +5,6 @@ sealed class FilesTransferException(message: String, cause: Throwable? = null) :
     class AuthFailed(cause: Throwable? = null) : FilesTransferException("Authentication failed", cause)
     class ConnectionFailed(cause: Throwable? = null) : FilesTransferException("Connection failed", cause)
     class PermissionDenied(cause: Throwable? = null) : FilesTransferException("Permission denied", cause)
+    class PartialUpload(cause: Throwable? = null) : FilesTransferException("Remote upload may be incomplete", cause)
     class Unknown(cause: Throwable? = null) : FilesTransferException(cause?.message ?: "Transfer failed", cause)
 }

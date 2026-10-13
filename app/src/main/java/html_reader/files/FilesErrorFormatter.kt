@@ -10,11 +10,15 @@ data class NetworkErrorTexts(
     val smbConnectionFailed: String,
     val defaultMessage: String,
     val inputUnavailable: String = "",
-    val permissionDenied: String = ""
+    val permissionDenied: String = "",
+    val partialUpload: String = ""
 )
 
 object FilesErrorFormatter {
     fun format(error: Throwable, protocol: NetworkProtocol, texts: NetworkErrorTexts): String {
+        if (error is FilesTransferException.PartialUpload) {
+            return texts.partialUpload.ifBlank { texts.defaultMessage }
+        }
         if (error is FilesTransferException.AuthFailed) {
             return if (protocol == NetworkProtocol.FTP) texts.ftpAuthFailed else texts.smbAuthFailed
         }

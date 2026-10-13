@@ -54,6 +54,10 @@
     <string name="files_status_ftp_downloading">Downloading FTP file…</string>
     <string name="files_status_ftp_uploading">Uploading file to FTP…</string>
     <string name="files_status_ftp_uploaded">FTP file uploaded</string>
+    <string name="files_status_upload_may_be_partial">An upload may have partially changed a remote file. Check listed target(s) before retrying.</string>
+    <string name="files_status_upload_pending_target">Remote target: %1$s</string>
+    <string name="files_status_upload_pending_more">%1$d additional unconfirmed upload(s)</string>
+    <string name="files_status_upload_acknowledge">I checked the remote file</string>
     <string name="files_status_ftp_read_only">FTP mode is read-only in current version</string>
     <string name="files_status_ftp_auth_failed">FTP authentication failed</string>
     <string name="files_status_ftp_connection_failed">FTP connection failed</string>
