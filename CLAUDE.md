@@ -5,6 +5,7 @@
 1. 不要分析 `bundle_*.txt` 和 `apply_bundle.py`。  
 2. 先理解需求与现有设计，再实施开发。  
 3. 在得到用户明确允许之前，不要删除任何功能。  
+4. 后续性能改进与漏洞修复集中本地及 SMB/FTP 下载打开 MHTML（2026-10-14 用户确认）；PDF、上传专项暂缓，保留已有功能。其他 feature 优先级或跨备份/收藏契约变更必须先询问用户，不沿旧计划自行决定。
 
 ---
 
@@ -247,6 +248,7 @@ Linux/macOS：
 
 - `reviews/ui_density_plan_2026-10-13.md`：Home/Files 紧凑布局计划（D01-D03）。
 - `reviews/ui_density_execution_2026-10-14.md`：1.0.66 Home/Files 紧凑布局执行记录、测试和设备待验项。
+- `reviews/mhtml_review_plan_2026-10-14.md`：最新复核与 MHTML 主线入口（U1/M1/M2、214 项含2跳过、B01-B04）；覆盖旧 PDF/上传任务优先顺序。
 ---
 
 ## 5. 文档维护规则
