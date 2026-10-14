@@ -14,10 +14,12 @@ import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
+import android.app.AlertDialog
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
@@ -34,6 +36,8 @@ import com.html_reader.files.FilesNavigateUpHelper
 import com.html_reader.files.FilesOperationRunner
 import com.html_reader.files.FilesOperationUiBinder
 import com.html_reader.files.FilesPathHelper
+import com.html_reader.files.FilesListItemResolver
+import com.html_reader.files.FilesNetworkGateway
 import com.html_reader.files.FilesPendingUploadStore
 import com.html_reader.files.FilesScrollStateStore
 import com.html_reader.files.FilesStatusUiHelper
@@ -42,6 +46,7 @@ import com.html_reader.files.FilesUiBinder
 import com.html_reader.files.isSamePathAs
 import core.common.AppError
 import core.common.DefaultDispatcherProvider
+import core.common.UrlCredentialSanitizer
 import core.data.repo.FavoritesRepository
 import core.data.repo.NetworkConfigRepository
 import core.database.entity.enums.FileType
@@ -70,6 +75,8 @@ class FilesFragment : Fragment(), FilesRemoteHost {
     private lateinit var fontSizeSpinner: Spinner
     internal lateinit var currentDirLabel: TextView
     internal lateinit var operationStatusLabel: TextView
+    internal lateinit var displayOptionsButton: Button
+    internal lateinit var displayOptionsPanel: LinearLayout
     internal lateinit var operationProgress: ProgressBar
     internal lateinit var actionUpButton: Button
     internal lateinit var actionCreateButton: Button
@@ -98,6 +105,7 @@ class FilesFragment : Fragment(), FilesRemoteHost {
     internal var currentNetworkLabel: String? = null
     internal var browseSource: BrowseSource = BrowseSource.LOCAL
     internal var localLoadJob: Job? = null
+    internal var scrollRestoreGeneration: Long = 0L
     internal val filesBrowseRequestGuard = FilesBrowseRequestGuard()
     internal lateinit var remoteController: FilesRemoteController
     internal var currentNameTextSizeSp: Float = 16f
@@ -128,6 +136,8 @@ class FilesFragment : Fragment(), FilesRemoteHost {
         private const val SORT_INDEX_SIZE_DESC = 3
         private const val SORT_INDEX_SIZE_ASC = 4
         private const val MAX_PENDING_UPLOADS_IN_STATUS = 3
+        private const val FILES_PARENT_HEADER_COUNT = 1
+        private const val LARGE_FONT_WRAP_SCALE = 1.5f
 
         fun newInstance(networkConfigId: Long): FilesFragment {
             return FilesFragment().apply {
@@ -171,17 +181,24 @@ class FilesFragment : Fragment(), FilesRemoteHost {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         pendingUploadStore = FilesPendingUploadStore(requireContext().applicationContext)
-        val ui = FilesUiBinder.bind(view)
+        val filesList = view.findViewById<android.widget.ListView>(R.id.files_list)
+        val parentHeader = LayoutInflater.from(requireContext())
+            .inflate(R.layout.item_files_parent, filesList, false)
+        filesList.addHeaderView(parentHeader, null, false)
+        val ui = FilesUiBinder.bind(view, parentHeader)
         queryInput = ui.queryInput
         sortSpinner = ui.sortSpinner
         fontSizeSpinner = ui.fontSizeSpinner
         currentDirLabel = ui.currentDirLabel
+        displayOptionsButton = ui.displayOptionsButton
+        displayOptionsPanel = ui.displayOptionsPanel
         operationStatusLabel = ui.operationStatusLabel
         operationProgress = ui.operationProgress
         actionUpButton = ui.actionUpButton
         actionCreateButton = ui.actionCreateButton
         emptyLabel = ui.emptyLabel
         listView = ui.listView
+        actionUpButton.setOnClickListener { navigateUp() }
 
         adapter = object : ArrayAdapter<BrowserEntry>(requireContext(), R.layout.item_files_entry, displayedEntries) {
             override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
@@ -210,6 +227,7 @@ class FilesFragment : Fragment(), FilesRemoteHost {
 
         initDependencies()
         initOpenArguments()
+        updateUpNavigationEnabled()
 
         sortSpinner.adapter = ArrayAdapter(
             requireContext(),
@@ -226,6 +244,7 @@ class FilesFragment : Fragment(), FilesRemoteHost {
         sortSpinner.setSelection(2, false)
         sortSpinner.setOnItemSelectedListener(object : android.widget.AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                scrollRestoreGeneration++
                 renderEntries()
                 val sessionId = currentSessionId
                 if (sessionId != null) {
@@ -254,6 +273,7 @@ class FilesFragment : Fragment(), FilesRemoteHost {
             override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
                 applyNameTextSize(position)
                 writeFontSizeIndex(position)
+                scrollRestoreGeneration++
                 adapter.notifyDataSetChanged()
             }
 
@@ -265,12 +285,33 @@ class FilesFragment : Fragment(), FilesRemoteHost {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
             override fun afterTextChanged(s: Editable?) {
                 saveQueryText(s?.toString().orEmpty())
+                scrollRestoreGeneration++
                 renderEntries()
             }
         })
 
-        listView.onItemClickListener = AdapterView.OnItemClickListener { _, _, position, _ ->
-            val item = displayedEntries.getOrNull(position) ?: return@OnItemClickListener
+        displayOptionsButton.setOnClickListener {
+            val expanded = displayOptionsPanel.visibility != View.VISIBLE
+            displayOptionsPanel.visibility = if (expanded) View.VISIBLE else View.GONE
+            val label = getString(
+                if (expanded) R.string.files_hide_display_options else R.string.files_display_options
+            )
+            displayOptionsButton.text = label
+            displayOptionsButton.contentDescription = label
+        }
+
+        currentDirLabel.setOnClickListener {
+            AlertDialog.Builder(requireContext())
+                .setTitle(R.string.files_current_location_title)
+                .setMessage(UrlCredentialSanitizer.sanitizeText(currentDirLabel.text.toString()))
+                .setPositiveButton(android.R.string.ok, null)
+                .show()
+        }
+        currentDirLabel.contentDescription = getString(R.string.files_current_location_title)
+
+        listView.onItemClickListener = AdapterView.OnItemClickListener { parent, _, position, _ ->
+            val item = parent?.let { FilesListItemResolver.entryAt(it, position) }
+                ?: return@OnItemClickListener
             if (item.isDirectory) {
                 if (browseSource == BrowseSource.FTP) {
                     remoteController.ftpCurrentPath = item.ftpPath ?: remoteController.ftpCurrentPath
@@ -305,14 +346,11 @@ class FilesFragment : Fragment(), FilesRemoteHost {
             }
         }
 
-        listView.onItemLongClickListener = AdapterView.OnItemLongClickListener { _, _, position, _ ->
-            val item = displayedEntries.getOrNull(position) ?: return@OnItemLongClickListener true
+        listView.onItemLongClickListener = AdapterView.OnItemLongClickListener { parent, _, position, _ ->
+            val item = parent?.let { FilesListItemResolver.entryAt(it, position) }
+                ?: return@OnItemLongClickListener true
             showEntryActions(item)
             true
-        }
-
-        actionUpButton.setOnClickListener {
-            navigateUp()
         }
 
         actionCreateButton.setOnClickListener {
@@ -373,10 +411,27 @@ class FilesFragment : Fragment(), FilesRemoteHost {
     }
 
     internal fun restoreScrollState() {
+        val generation = ++scrollRestoreGeneration
         val sessionId = currentSessionId ?: return
         val path = currentBrowsePathForScroll() ?: return
-        val state = FilesScrollStateStore.restore(requireContext(), sessionId, path) ?: return
-        listView.post { listView.setSelectionFromTop(state.position, state.top) }
+        val state = FilesScrollStateStore.restore(
+            context = requireContext(),
+            sessionId = sessionId,
+            path = path,
+            headerCount = FILES_PARENT_HEADER_COUNT
+        ) ?: return
+        val targetList = listView
+        val lastPosition = (targetList.count - 1).coerceAtLeast(0)
+        val position = state.position.coerceIn(0, lastPosition)
+        targetList.post {
+            if (view == null ||
+                listView !== targetList ||
+                currentSessionId != sessionId ||
+                currentBrowsePathForScroll() != path ||
+                scrollRestoreGeneration != generation
+            ) return@post
+            targetList.setSelectionFromTop(position, state.top)
+        }
     }
 
     private fun currentBrowsePathForScroll(): String? = FilesPathHelper.pathForPersist(
@@ -432,6 +487,7 @@ class FilesFragment : Fragment(), FilesRemoteHost {
         // 取消未完成的本地目录加载，避免视图销毁后旧请求回写 UI
         localLoadJob?.cancel()
         localLoadJob = null
+        scrollRestoreGeneration++
         pendingUploadStore = null
         super.onDestroyView()
     }
@@ -489,6 +545,29 @@ class FilesFragment : Fragment(), FilesRemoteHost {
     }
 
     internal fun currentDirFile(): File = currentDir ?: requireContext().filesDir
+
+    private fun updateUpNavigationEnabled(operationEnabled: Boolean = true) {
+        if (!::actionUpButton.isInitialized) return
+        val canNavigateUp = when (browseSource) {
+            BrowseSource.FTP -> {
+                val path = remoteController.ftpCurrentPath
+                FilesNetworkGateway.ftpParentPath(path) != path
+            }
+            BrowseSource.SMB -> {
+                val path = remoteController.smbCurrentPath
+                FilesNetworkGateway.smbParentPath(path) != path
+            }
+            BrowseSource.LOCAL -> currentDirFile().parentFile?.let { parent ->
+                parent.exists() && parent.isDirectory
+            } == true
+        }
+        actionUpButton.isEnabled = operationEnabled && canNavigateUp
+        val label = getString(
+            if (canNavigateUp) R.string.action_up else R.string.files_action_up_root
+        )
+        actionUpButton.text = label
+        actionUpButton.contentDescription = label
+    }
 
     private fun requireLocalSelection(): BrowserEntry? {
         if (browseSource != BrowseSource.LOCAL) {
@@ -612,7 +691,7 @@ class FilesFragment : Fragment(), FilesRemoteHost {
 
     override fun setOperationButtonsEnabled(enabled: Boolean) {
         if (view == null) return
-        actionUpButton.isEnabled = enabled
+        updateUpNavigationEnabled(operationEnabled = enabled)
         actionCreateButton.isEnabled = enabled
     }
 
@@ -635,6 +714,12 @@ class FilesFragment : Fragment(), FilesRemoteHost {
             warning == null -> value
             value == baseWarning -> warning
             else -> "$value\n$warning"
+        }
+        val isIdleWithoutWarning = value == getString(R.string.files_status_idle) && !hasPendingUpload
+        operationStatusLabel.visibility = if (isIdleWithoutWarning) View.GONE else View.VISIBLE
+        if (isIdleWithoutWarning) {
+            FilesStatusUiHelper.clearErrorClick(operationStatusLabel)
+            return
         }
         operationStatusLabel.text = displayValue
         // 语义状态色（含暗色主题变体），避免暗色主题下黑色/ho­lo 色不可见
@@ -689,6 +774,8 @@ class FilesFragment : Fragment(), FilesRemoteHost {
     override fun updateCurrentDirLabel() {
         if (view == null) return
         currentDirLabel.text = buildCurrentDirText(currentDirFile())
+        currentDirLabel.maxLines = if (resources.configuration.fontScale >= LARGE_FONT_WRAP_SCALE) 2 else 1
+        updateUpNavigationEnabled()
     }
 
     override fun prepareRemoteBrowse(createActionLabelRes: Int) {
@@ -696,6 +783,8 @@ class FilesFragment : Fragment(), FilesRemoteHost {
         setLocalActionButtonsEnabled(false)
         actionCreateButton.isEnabled = true
         actionCreateButton.text = getString(createActionLabelRes)
+        actionCreateButton.contentDescription = getString(createActionLabelRes)
+        updateUpNavigationEnabled()
     }
 
     override fun onRemoteEntriesLoaded(entries: List<BrowserEntry>) {

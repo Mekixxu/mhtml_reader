@@ -1,46 +1,99 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Layout updated to v2 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="@dimen/home_page_padding">
-
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="16dp"
-        android:text="@string/ui_files_title"
-        android:textColor="@color/textPrimary"
-        android:textSize="26sp"
-        android:fontFamily="sans-serif-medium" />
-
-    <com.google.android.material.textfield.TextInputLayout
-        style="@style/Widget.Material3.TextInputLayout.FilledBox"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:hint="@string/files_search_hint"
-        app:boxCornerRadiusTopStart="20dp"
-        app:boxCornerRadiusTopEnd="20dp"
-        app:boxCornerRadiusBottomStart="20dp"
-        app:boxCornerRadiusBottomEnd="20dp"
-        app:boxBackgroundColor="@color/colorSurfaceHighlight"
-        app:endIconMode="clear_text">
-
-        <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/files_query_input"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:inputType="text"
-            android:maxLines="1" />
-    </com.google.android.material.textfield.TextInputLayout>
+    android:paddingStart="@dimen/files_density_horizontal_padding"
+    android:paddingTop="@dimen/files_density_vertical_padding"
+    android:paddingEnd="@dimen/files_density_horizontal_padding"
+    android:paddingBottom="@dimen/files_density_vertical_padding">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
         android:orientation="horizontal">
+
+        <com.google.android.material.textfield.TextInputLayout
+            style="@style/Widget.Material3.TextInputLayout.FilledBox"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:hint="@string/files_search_hint"
+            app:boxCornerRadiusTopStart="16dp"
+            app:boxCornerRadiusTopEnd="16dp"
+            app:boxCornerRadiusBottomStart="16dp"
+            app:boxCornerRadiusBottomEnd="16dp"
+            app:boxBackgroundColor="@color/colorSurfaceHighlight"
+            app:endIconMode="clear_text">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/files_query_input"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:contentDescription="@string/files_search_accessibility"
+                android:inputType="text"
+                android:maxLines="1" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <Button
+            android:id="@+id/files_action_create"
+            style="@style/Widget.MHTMLReader.Button.Primary"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:contentDescription="@string/action_new_folder"
+            android:minWidth="48dp"
+            android:minHeight="48dp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:text="@string/action_new_folder" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/files_current_dir"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_vertical"
+            android:layout_weight="1"
+            android:background="@drawable/home_item_bg"
+            android:clickable="true"
+            android:ellipsize="middle"
+            android:focusable="true"
+            android:gravity="center_vertical"
+            android:maxLines="1"
+            android:minHeight="@dimen/files_density_path_min_height"
+            android:paddingStart="8dp"
+            android:paddingTop="6dp"
+            android:paddingEnd="8dp"
+            android:paddingBottom="6dp"
+            android:textColor="?attr/colorPrimary"
+            android:textAppearance="?android:attr/textAppearanceSmall" />
+
+        <Button
+            android:id="@+id/files_display_options"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:minWidth="48dp"
+            android:minHeight="48dp"
+            android:contentDescription="@string/files_display_options"
+            android:text="@string/files_display_options" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/files_display_options_panel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:orientation="horizontal"
+        android:visibility="gone">
 
         <Spinner
             android:id="@+id/files_sort_spinner"
@@ -52,42 +105,7 @@
             android:id="@+id/files_font_size_spinner"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
             android:layout_weight="1" />
-    </LinearLayout>
-
-    <TextView
-        android:id="@+id/files_current_dir"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:background="@drawable/home_item_bg"
-        android:padding="12dp"
-        android:maxLines="2"
-        android:ellipsize="middle"
-        android:textColor="?attr/colorPrimary"
-        android:textAppearance="?android:attr/textAppearanceSmall" />
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:orientation="horizontal">
-
-        <Button
-            android:id="@+id/files_action_up"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/action_up" />
-
-        <Button
-            android:id="@+id/files_action_create"
-            style="@style/Widget.MHTMLReader.Button.Primary"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/action_new_folder" />
     </LinearLayout>
 
     <ProgressBar
@@ -95,7 +113,7 @@
         style="?android:attr/progressBarStyleHorizontal"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
+        android:layout_marginTop="4dp"
         android:max="100"
         android:visibility="gone" />
 
@@ -105,13 +123,14 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp"
         android:textColor="?android:attr/textColorPrimary"
-        android:textAppearance="?android:attr/textAppearanceSmall" />
+        android:textAppearance="?android:attr/textAppearanceSmall"
+        android:visibility="gone" />
 
     <TextView
         android:id="@+id/files_empty_label"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
+        android:layout_marginTop="4dp"
         android:gravity="center"
         android:text="@string/files_empty"
         android:textAppearance="?android:attr/textAppearanceSmall"
@@ -122,10 +141,10 @@
         android:id="@+id/files_list"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_marginTop="8dp"
+        android:layout_marginTop="4dp"
         android:layout_weight="1"
         android:divider="@android:color/transparent"
-        android:dividerHeight="8dp"
+        android:dividerHeight="@dimen/files_density_divider_height"
         android:fastScrollAlwaysVisible="true"
         android:fastScrollEnabled="true"
         android:scrollbarStyle="outsideOverlay"

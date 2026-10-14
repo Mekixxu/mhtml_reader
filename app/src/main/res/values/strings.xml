@@ -6,6 +6,7 @@
     <string name="tab_reader">Tabs</string>
     <string name="tab_more">More</string>
     <string name="files_search_hint">Search in current directory</string>
+    <string name="files_search_accessibility">Browse files. Search in current directory.</string>
     <string name="sort_name_asc">Name ↑</string>
     <string name="sort_name_desc">Name ↓</string>
     <string name="sort_modified_desc">Last Modified ↓</string>
@@ -15,6 +16,10 @@
     <string name="files_font_medium">Font: Medium</string>
     <string name="files_font_large">Font: Large</string>
     <string name="action_up">Up</string>
+    <string name="files_action_up_root">At top level</string>
+    <string name="files_display_options">Display options</string>
+    <string name="files_hide_display_options">Hide display options</string>
+    <string name="files_current_location_title">Current location</string>
     <string name="action_new_folder">New Folder</string>
     <string name="action_upload_file">Upload File</string>
     <string name="action_rename">Rename</string>

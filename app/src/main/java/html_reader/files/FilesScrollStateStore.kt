@@ -4,10 +4,11 @@ import android.content.Context
 import android.content.SharedPreferences
 
 /**
- * 每会话的列表滚动位置持久化（path + position + top）。
+ * 每会话的列表滚动位置持久化（path + position + top + index schema）。
  *
  * - 目录路径本身持久化在 FolderSession.currentPath（Room）；
  *   这里只负责「列表内滚动位置」，使 FTP/SMB 与本地会话一致地恢复浏览位置。
+ * - 固定 parent header 接入后，旧位置在恢复时加 header 数；新记录保存含 header 的 ListView 位置。
  * - 每会话仅保留一条（离开该会话/页面时覆盖写入），避免无限增长。
  * - 写入为 SharedPreferences 异步 apply，主线程开销可忽略。
  */
@@ -16,6 +17,8 @@ object FilesScrollStateStore {
     private const val KEY_PATH_PREFIX = "scroll_path_"
     private const val KEY_POSITION_PREFIX = "scroll_position_"
     private const val KEY_TOP_PREFIX = "scroll_top_"
+    private const val KEY_VERSION_PREFIX = "scroll_version_"
+    private const val CURRENT_VERSION = 1
 
     data class ScrollState(val position: Int, val top: Int)
 
@@ -24,16 +27,19 @@ object FilesScrollStateStore {
             .putString(KEY_PATH_PREFIX + sessionId, path)
             .putInt(KEY_POSITION_PREFIX + sessionId, position)
             .putInt(KEY_TOP_PREFIX + sessionId, top)
+            .putInt(KEY_VERSION_PREFIX + sessionId, CURRENT_VERSION)
             .apply()
     }
 
     /** 会话与路径均匹配时返回上次滚动位置；否则返回 null（列表从顶部开始）。 */
-    fun restore(context: Context, sessionId: Long, path: String): ScrollState? {
+    fun restore(context: Context, sessionId: Long, path: String, headerCount: Int = 0): ScrollState? {
         val prefs = prefs(context)
         if (prefs.getString(KEY_PATH_PREFIX + sessionId, null) != path) return null
         val position = prefs.getInt(KEY_POSITION_PREFIX + sessionId, Int.MIN_VALUE)
         if (position == Int.MIN_VALUE) return null
-        return ScrollState(position, prefs.getInt(KEY_TOP_PREFIX + sessionId, 0))
+        val version = prefs.getInt(KEY_VERSION_PREFIX + sessionId, 0)
+        val migratedPosition = if (version < CURRENT_VERSION) position + headerCount else position
+        return ScrollState(migratedPosition, prefs.getInt(KEY_TOP_PREFIX + sessionId, 0))
     }
 
     fun clear(context: Context, sessionId: Long) {
@@ -41,6 +47,7 @@ object FilesScrollStateStore {
             .remove(KEY_PATH_PREFIX + sessionId)
             .remove(KEY_POSITION_PREFIX + sessionId)
             .remove(KEY_TOP_PREFIX + sessionId)
+            .remove(KEY_VERSION_PREFIX + sessionId)
             .apply()
     }
 

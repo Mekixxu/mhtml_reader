@@ -25,6 +25,7 @@ internal fun FilesFragment.formatSize(bytes: Long): String {
 }
 
 internal fun FilesFragment.loadEntries() {
+    scrollRestoreGeneration++
     // 每次加载都使旧本地请求失效：source/session/path 任一变化后，旧 IO 结果不得回写 UI。
     localLoadJob?.cancel()
     localLoadJob = null
@@ -46,7 +47,7 @@ internal fun FilesFragment.loadEntries() {
         currentDir = requireContext().filesDir.parentFile ?: requireContext().filesDir
     }
     val dir = currentDirFile()
-    currentDirLabel.text = buildCurrentDirText(dir)
+    updateCurrentDirLabel()
     val request = LocalBrowseRequest(
         generation = browseToken,
         sessionId = currentSessionId,
@@ -76,6 +77,7 @@ private fun FilesFragment.applyLocalBrowseEntries(displayable: List<BrowserEntry
     allEntries.addAll(displayable)
     setLocalActionButtonsEnabled(true)
     actionCreateButton.text = getString(R.string.action_new_folder)
+    actionCreateButton.contentDescription = getString(R.string.action_new_folder)
     renderEntries()
     restoreScrollState()
 }

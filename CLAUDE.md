@@ -29,7 +29,7 @@
   - `compileSdk = 36`
   - `targetSdk = 36`
   - `minSdk = 30`
-- 版本号：`versionName = 1.0.64` / `versionCode = 65`（见 `app/build.gradle.kts`）
+- 版本号：`versionName = 1.0.66` / `versionCode = 67`（见 `app/build.gradle.kts`）
 - 核心依赖（关键版本）：
   - AndroidX（AppCompat `1.7.0`、Lifecycle `2.8.4`、WorkManager `2.9.1`、WebKit `1.11.0`、Room `2.6.1`）
   - Hilt `2.52`
@@ -148,6 +148,7 @@ Linux/macOS：
   - `app/src/test/resources/robolectric.properties` 固定 `sdk=35` 与测试用 `Application`；`testOptions.unitTests.isIncludeAndroidResources = true` 已开启（避免走 `HtmlReaderApp` 的 WorkManager 初始化）。
 - `app/src/androidTest/java`：设备端冒烟测试（`AppSmokeTest`），验证 app 冷启动不崩，需连接模拟器/真机。
 - 本地运行：Linux/macOS 使用 `./gradlew :core-base:testDebugUnitTest`、`:app:testDebugUnitTest`、`:app:connectedDebugAndroidTest`；Windows 使用对应的 `:core-base:testDebugUnitTest`、`:app:testDebugUnitTest`、`:app:connectedDebugAndroidTest` bat 命令。
+- Home/Files 紧凑布局专项：`HomeDensityLayoutTest`、`FilesCompactLayoutTest`、`FilesScrollStateStoreTest` 与 `ModernUiThemeTest`。
 
 ### 3.3 构建与运行注意事项
 
@@ -181,6 +182,8 @@ Linux/macOS：
   - `app/src/main/java/html_reader/FilesFragmentSession.kt`：目录会话恢复与切换
   - `app/src/main/java/html_reader/FilesFragmentPermission.kt`：存储权限请求
   - `app/src/main/java/html_reader/files/FilesRemoteController.kt`：FTP/SMB 浏览、上传下载与远程文件操作
+- `app/src/main/java/html_reader/HomeListHeightHelper.kt`：Home 来源列表实际行高测量与快捷入口响应式布局
+- `app/src/main/java/html_reader/files/FilesListItemResolver.kt`：Files ListView header 与文件项索引隔离
 - `app/src/main/java/html_reader/ReaderFragment.kt`：阅读页（WebView + PDF）
 - `app/src/main/java/html_reader/FavoritesFragment.kt`：收藏页
 - `app/src/main/java/html_reader/RecentsFragment.kt`：历史页
@@ -239,10 +242,11 @@ Linux/macOS：
 - `reviews/execution_plan_2026-10-11.md`：2026-10-11 项目审查与分批修复执行计划（F01-F18 问题清单、T00-T16 任务卡）。
 - `reviews/review_next_plan_2026-10-12.md`：首轮执行复核及滚动记录（R1-R6、140 项历史实测、N01-N05B）；状态以最新二次复核为准。
 - `reviews/questions_2026-10-12.md`：执行 agent 的问题原文，供逐项追踪答复。
-- `reviews/review_answers_504583f_2026-10-12.md`：最新二次复核与全部问题答复（S1-S6、V01-V03 任务卡、N05A/N05B 批准契约及 2026-10-13 V01/V02 执行记录）；下一轮入口。
+- `reviews/review_answers_504583f_2026-10-12.md`：最新二次复核与全部问题答复（S1-S6、V01-V03 任务卡、N05A/N05B 批准契约及 2026-10-14 V01-V03 执行记录）；下一轮入口。
 - `reviews/ui_refresh_2026-10-12.md`：1.0.62 UI 现代化交付（Material 3、178 项测试、APK 和设备视觉验收清单）；不替代业务修复计划。
 
-- `reviews/ui_density_plan_2026-10-13.md`: Home/Files density plan (D01-D03); pending implementation.
+- `reviews/ui_density_plan_2026-10-13.md`：Home/Files 紧凑布局计划（D01-D03）。
+- `reviews/ui_density_execution_2026-10-14.md`：1.0.66 Home/Files 紧凑布局执行记录、测试和设备待验项。
 ---
 
 ## 5. 文档维护规则

@@ -11,6 +11,7 @@ import android.view.ViewGroup
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.Spinner
 import android.widget.Toast
@@ -27,9 +28,13 @@ import kotlinx.coroutines.launch
 class HomeFragment : Fragment(R.layout.fragment_home) {
     private lateinit var recentsButton: Button
     private lateinit var favoritesButton: Button
+    private lateinit var actionsContainer: LinearLayout
+    private lateinit var homeRoot: View
     private lateinit var localList: ListView
     private lateinit var sdCardList: ListView
     private lateinit var networkList: ListView
+    private val listHeightControllers = mutableListOf<HomeListHeightController>()
+    private var actionLayoutListener: View.OnLayoutChangeListener? = null
     
     private lateinit var networkConfigRepository: NetworkConfigRepository
     
@@ -46,14 +51,17 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        homeRoot = view
         val context = requireContext()
         networkConfigRepository = FilesRuntime.networkConfigRepository(context)
 
         recentsButton = view.findViewById(R.id.home_recents_button)
         favoritesButton = view.findViewById(R.id.home_favorites_button)
+        actionsContainer = view.findViewById(R.id.home_actions_container)
         localList = view.findViewById(R.id.home_local_list)
         sdCardList = view.findViewById(R.id.home_sd_list)
         networkList = view.findViewById(R.id.home_network_list)
+        bindQuickActionLayout(view)
 
         recentsButton.setOnClickListener {
             (activity as? MainActivity)?.showRecentsPage()
@@ -67,6 +75,7 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         val defaultLocal = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS).absolutePath
         localDirs.add(getString(R.string.home_local_downloads))
         localList.adapter = ArrayAdapter(context, R.layout.item_home_rect, localDirs)
+        listHeightControllers += HomeListHeightController(localList, localList.adapter, maxVisibleRows = 1)
         localList.setOnItemClickListener { _, _, _, _ ->
             (activity as? MainActivity)?.showDirectoryModeWithPath(defaultLocal)
         }
@@ -86,10 +95,11 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
             }
         }
         val addSdCardLabel = getString(R.string.home_sd_add_saf)
-        if (sdCardDirs.isEmpty()) {
-            sdCardDirs.add(addSdCardLabel)
-        }
+        val sdCardRows = HomeSourceEntries.includeSdAuthorizationEntry(sdCardDirs.toList(), addSdCardLabel)
+        sdCardDirs.clear()
+        sdCardDirs.addAll(sdCardRows)
         sdCardList.adapter = ArrayAdapter(context, R.layout.item_home_rect, sdCardDirs)
+        listHeightControllers += HomeListHeightController(sdCardList, sdCardList.adapter, maxVisibleRows = 3)
         sdCardList.setOnItemClickListener { _, _, position, _ ->
             val path = sdCardDirs[position]
             if (path == addSdCardLabel) {
@@ -102,6 +112,7 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         // Initialize Network List
         val netAdapter = ArrayAdapter(context, R.layout.item_home_rect, mutableListOf<String>())
         networkList.adapter = netAdapter
+        listHeightControllers += HomeListHeightController(networkList, netAdapter, maxVisibleRows = 4)
         networkList.setOnItemClickListener { _, _, position, _ ->
             if (position == networkConfigs.size) {
                 // Add new
@@ -130,6 +141,37 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
                 netAdapter.notifyDataSetChanged()
             }
         }
+    }
+
+    override fun onDestroyView() {
+        listHeightControllers.forEach(HomeListHeightController::close)
+        listHeightControllers.clear()
+        actionLayoutListener?.let(homeRoot::removeOnLayoutChangeListener)
+        actionLayoutListener = null
+        super.onDestroyView()
+    }
+
+    private fun bindQuickActionLayout(root: View) {
+        val listener = View.OnLayoutChangeListener { _, left, _, right, _, _, _, _, _ ->
+            updateQuickActionLayout(right - left)
+        }
+        actionLayoutListener = listener
+        root.addOnLayoutChangeListener(listener)
+        root.post { updateQuickActionLayout(root.width) }
+    }
+
+    private fun updateQuickActionLayout(widthPx: Int) {
+        if (!::actionsContainer.isInitialized || widthPx <= 0) return
+        val availableWidth = actionsContainer.width.takeIf { it > 0 }
+            ?: (widthPx - homeRoot.paddingLeft - homeRoot.paddingRight)
+        HomeQuickActionLayoutHelper.apply(
+            container = actionsContainer,
+            recentButton = recentsButton,
+            favoritesButton = favoritesButton,
+            availableWidthPx = availableWidth,
+            density = resources.displayMetrics.density,
+            fontScale = resources.configuration.fontScale
+        )
     }
 
     private fun showAddNetworkDialog() {

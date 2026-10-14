@@ -13,4 +13,19 @@
     <dimen name="home_local_list_height">52dp</dimen>
     <dimen name="home_sd_list_height">112dp</dimen>
     <dimen name="home_network_list_height">172dp</dimen>
+    <dimen name="home_density_horizontal_padding">16dp</dimen>
+    <dimen name="home_density_top_padding">8dp</dimen>
+    <dimen name="home_density_bottom_padding">12dp</dimen>
+    <dimen name="home_density_card_padding">12dp</dimen>
+    <dimen name="home_density_section_spacing">12dp</dimen>
+    <dimen name="home_density_group_spacing">8dp</dimen>
+    <dimen name="home_density_action_min_height">48dp</dimen>
+    <dimen name="home_density_item_min_height">48dp</dimen>
+    <dimen name="home_density_list_initial_height">56dp</dimen>
+    <dimen name="files_density_horizontal_padding">12dp</dimen>
+    <dimen name="files_density_vertical_padding">8dp</dimen>
+    <dimen name="files_density_row_min_height">56dp</dimen>
+    <dimen name="files_density_divider_height">4dp</dimen>
+    <dimen name="files_density_path_min_height">48dp</dimen>
+    <dimen name="files_parent_row_min_height">48dp</dimen>
 </resources>

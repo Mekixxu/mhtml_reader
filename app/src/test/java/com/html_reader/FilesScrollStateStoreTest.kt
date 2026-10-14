@@ -37,6 +37,29 @@ class FilesScrollStateStoreTest {
     }
 
     @Test
+    fun restore_legacyPositionAddsHeaderOnceAndNewPositionDoesNotShift() {
+        val sessionId = 91_234L
+        context.getSharedPreferences(FilesScrollStateStore.PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString("scroll_path_$sessionId", "/legacy")
+            .putInt("scroll_position_$sessionId", 0)
+            .putInt("scroll_top_$sessionId", -8)
+            .remove("scroll_version_$sessionId")
+            .commit()
+
+        assertEquals(
+            FilesScrollStateStore.ScrollState(position = 1, top = -8),
+            FilesScrollStateStore.restore(context, sessionId, "/legacy", headerCount = 1)
+        )
+
+        FilesScrollStateStore.save(context, sessionId, "/legacy", position = 0, top = 0)
+        val expectedHeaderPosition = FilesScrollStateStore.ScrollState(position = 0, top = 0)
+        assertEquals(expectedHeaderPosition, FilesScrollStateStore.restore(context, sessionId, "/legacy", 1))
+        assertEquals(expectedHeaderPosition, FilesScrollStateStore.restore(context, sessionId, "/legacy", 1))
+        FilesScrollStateStore.clear(context, sessionId)
+    }
+
+    @Test
     fun clear_removesState() {
         FilesScrollStateStore.save(context, sessionId = 7L, path = "/deep/remote", position = 12, top = -40)
         FilesScrollStateStore.clear(context, sessionId = 7L)

@@ -26,12 +26,14 @@
 - 主导航布局：`app/src/main/res/layout/activity_main.xml`
 - 底部导航菜单：`app/src/main/res/menu/main_bottom_nav_menu.xml`
 - 视觉主题：`app/src/main/res/values/themes.xml`（Material 3）、`values/colors.xml` 与 `values-night/colors.xml`
-- UI 回归：`app/src/test/java/com/html_reader/ModernUiThemeTest.kt`
+- UI 回归：`ModernUiThemeTest.kt`、`HomeDensityLayoutTest.kt`、`FilesCompactLayoutTest.kt`、`FilesScrollStateStoreTest.kt`
 
 ## 4. app 模块页面索引
 
 - `HomeFragment.kt`：主页入口
+- `HomeListHeightHelper.kt`：首页来源列表动态测高与快捷入口响应式排布
 - `FilesFragment.kt`：文件浏览与文件操作主页面
+- `files/FilesListItemResolver.kt`：解析含固定导航 header 的文件列表位置
 - `ReaderFragment.kt`：阅读器页面（WebView/PDF 协同）
 - `FavoritesFragment.kt`：收藏页面
 - `RecentsFragment.kt`：历史页面
@@ -95,7 +97,8 @@
 
 ## 8. 建议使用方式
 
-- 最新审查交接：`reviews/review_answers_504583f_2026-10-12.md`（新提交复核、问题逐项答复、V01-V03 与会话迁移批准契约；2026-10-13 已记录 V01/V02 执行状态）；问题原文见 `reviews/questions_2026-10-12.md`。
+- 最新审查交接：`reviews/review_answers_504583f_2026-10-12.md`（新提交复核、问题逐项答复、V01-V03 与会话迁移批准契约；2026-10-14 已记录 V01-V03 执行状态）；问题原文见 `reviews/questions_2026-10-12.md`。
+- 最新 UI 交付：`reviews/ui_density_execution_2026-10-14.md`（Home/Files 紧凑布局实现、自动化验证与设备待验项）。
 - 前轮记录：`reviews/review_next_plan_2026-10-12.md`；原始 F01-F18/T00-T16 任务卡见 `reviews/execution_plan_2026-10-11.md`，状态和下一轮顺序以最新答复为准。
 - 查找页面入口：优先从 `app/src/main/java/html_reader/` 对应 Fragment 入手
 - 查找业务逻辑：按能力进入 `core/<能力名>/` 查看 `domain/usecase` 与 `repo`
