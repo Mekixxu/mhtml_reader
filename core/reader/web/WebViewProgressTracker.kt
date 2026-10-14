@@ -48,6 +48,7 @@ class WebViewProgressTracker(
     }
 
     fun enableSampling() {
+        if (samplingEnabled.get()) return
         latestSnapshot = null
         baselineScrollY = webView.scrollY
         samplingEnabled.set(true)
@@ -61,8 +62,12 @@ class WebViewProgressTracker(
     }
 
     fun stopAndFlush(): WebProgressSnapshot? {
-        if (!listenerAttached && pendingWriteJob == null) return null
-        val shouldSample = samplingEnabled.get()
+        val shouldSample = samplingEnabled.getAndSet(false)
+        if (!listenerAttached && pendingWriteJob == null) {
+            latestSnapshot = null
+            baselineScrollY = null
+            return null
+        }
         invalidatePendingWrite()
         if (listenerAttached) {
             webView.setOnScrollChangeListener(null)

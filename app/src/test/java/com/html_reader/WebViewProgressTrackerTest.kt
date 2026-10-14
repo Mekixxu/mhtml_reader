@@ -37,6 +37,7 @@ class WebViewProgressTrackerTest {
         tracker.startTracking()
         advanceTimeBy(1_000)
         assertEquals(listOf(0.25f), writes)
+        tracker.enableSampling()
         tracker.onScrollChanged(scrollY = 500, contentHeightPx = 1_200f, viewportHeightPx = 200f)
         tracker.stopAndFlush()
         assertEquals(listOf(0.25f, 0.5f), writes)
@@ -70,6 +71,28 @@ class WebViewProgressTrackerTest {
 
         assertNull(tracker.stopAndFlush())
         assertEquals(emptyList<Float>(), writes)
+    }
+
+    @Test
+    fun samplingResumesOnlyAfterExplicitActivation() = runTest {
+        val writes = mutableListOf<Float>()
+        val tracker = tracker(this, writes)
+        tracker.startTracking()
+        tracker.enableSampling()
+        tracker.onScrollChanged(scrollY = 250, contentHeightPx = 1_200f, viewportHeightPx = 200f)
+        tracker.stopAndFlush()
+
+        tracker.startTracking()
+        tracker.onScrollChanged(scrollY = 500, contentHeightPx = 1_200f, viewportHeightPx = 200f)
+        advanceTimeBy(500)
+        runCurrent()
+        assertEquals(listOf(0.25f), writes)
+
+        tracker.enableSampling()
+        tracker.onScrollChanged(scrollY = 500, contentHeightPx = 1_200f, viewportHeightPx = 200f)
+        advanceTimeBy(500)
+        runCurrent()
+        assertEquals(listOf(0.25f, 0.5f), writes)
     }
 
     private fun tracker(

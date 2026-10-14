@@ -4,7 +4,7 @@
 > 用户确认：后续集中本地及 SMB/FTP 下载打开 MHTML；本轮只审查，下一份计划纳入全部三个已确认问题。
 > 用户未要求删除任何功能。PDF、上传专项不再列入后续主动执行队列；旧功能和已提交修复保留。
 > 本文件覆盖旧计划的优先顺序，不把历史 PDF/上传任务作为下一轮入口；各卡实施状态以本文顶部及对应执行记录为准。
-> **执行状态（2026-10-14）**：B01、B02 已完成；B03 代码、JVM 验证和 APK 已完成，真实设备 WebView 验收待做。执行记录分别见 `reviews/mhtml_security_execution_2026-10-14.md`、`reviews/files_navigation_execution_2026-10-14.md`、`reviews/mhtml_progress_execution_2026-10-14.md`。
+> **执行状态（2026-10-14）**：B01、B02 已完成；B03 代码、生命周期回归、JVM 验证和 APK 已完成，真实设备 WebView 验收待做。执行记录分别见 `reviews/mhtml_security_execution_2026-10-14.md`、`reviews/files_navigation_execution_2026-10-14.md`、`reviews/mhtml_progress_execution_2026-10-14.md`。
 
 ## 1. 结论
 
@@ -65,7 +65,7 @@ flowchart LR
 | No. | Issue Title | Suggestion | Code Link |
 |---|---|---|---|
 | M2 高（B01 已修复） | MHTML 被拦截资源/导航完整 URL 直接落日志 | 已改为不含 userinfo、path、query、fragment 或 data 内容的安全摘要 | [资源日志](file:///C:/Users/Player_X/Documents/Tare/mhtml_reader/core/reader/web/BlockingResourceWebViewClient.kt)、[摘要 helper](file:///C:/Users/Player_X/Documents/Tare/mhtml_reader/core/reader/web/SafeUrlLogSummary.kt) |
-| M1 中（B03 代码/JVM 完成） | MHTML 尾次阅读进度丢失，重建后无历史驱动的滚动恢复 | 已实现快照尾写、串行 writer、generation guard 与有限稳定布局恢复；真实设备时序待验 | [tracker](file:///C:/Users/Player_X/Documents/Tare/mhtml_reader/core/reader/web/WebViewProgressTracker.kt)、[ReaderFragment](file:///C:/Users/Player_X/Documents/Tare/mhtml_reader/app/src/main/java/html_reader/ReaderFragment.kt) |
+| M1 中（B03 代码/JVM 完成） | MHTML 尾次阅读进度丢失，重建后无历史驱动的滚动恢复 | 已实现快照尾写、串行 writer、generation guard、有限稳定布局恢复及暂停/恢复后采样重启；真实设备时序待验 | [tracker](file:///C:/Users/Player_X/Documents/Tare/mhtml_reader/core/reader/web/WebViewProgressTracker.kt)、[ReaderFragment](file:///C:/Users/Player_X/Documents/Tare/mhtml_reader/app/src/main/java/html_reader/ReaderFragment.kt) |
 | U1 中（B02 已修复） | 操作期间禁用的 Up 被目录刷新重新启用 | 已统一操作态与可上行态，Up、系统 Back 和目录点击共享导航守卫 | [FilesFragment](file:///C:/Users/Player_X/Documents/Tare/mhtml_reader/app/src/main/java/html_reader/FilesFragment.kt) |
 
 ### M2：安全/防御，既有问题，不是本次新回归（B01 已完成）
@@ -83,7 +83,7 @@ Log.d(tag, "blocked_resource fileType=$fileType target=${safeTargetSummary(url)}
 
 ### M1：状态/协程，既有问题（B03 代码/JVM 已完成，设备验收待做）
 
-B03 前，最后滚动不足500ms就切tab/暂停/销毁，stopTracking取消pending而无flush。已落库数据不因此丢失；同一存活WebView同URL可保留滚动，不能说每次返回必回顶部。新建WebView或跨文档加载没有应用层历史恢复。Tab.lastKnownProgress是创建时快照，直接读它不保证最新。现已实施应用级串行尾写与基于最新 history 的有限恢复，设备时序验收仍待做。
+B03 前，最后滚动不足500ms就切tab/暂停/销毁，stopTracking取消pending而无flush。已落库数据不因此丢失；同一存活WebView同URL可保留滚动，不能说每次返回必回顶部。新建WebView或跨文档加载没有应用层历史恢复。Tab.lastKnownProgress是创建时快照，直接读它不保证最新。现已实施应用级串行尾写、基于最新 history 的有限恢复，以及按内容代次协调恢复完成与 Fragment 前后台状态的采样门；设备时序验收仍待做。
 
 ```kotlin
 // Before

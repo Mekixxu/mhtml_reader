@@ -48,6 +48,7 @@ import core.reader.web.WebProgressRestoreGuard
 import core.reader.web.WebProgressRestoreGate
 import core.reader.web.WebProgressRestoreRequest
 import core.reader.web.WebViewProgressTracker
+import core.reader.web.WebProgressSamplingState
 import core.reader.web.WebViewMetrics
 import core.reader.web.WebViewProgressRestorer
 import core.reader.web.WebViewProgressWriter
@@ -79,6 +80,7 @@ class ReaderFragment : Fragment() {
     private lateinit var historyRepository: HistoryRepository
     private lateinit var webProgressWriter: WebViewProgressWriter
     private var webProgressTracker: WebViewProgressTracker? = null
+    private val webProgressSamplingState = WebProgressSamplingState()
     private var webRestoreJob: Job? = null
     private val webProgressRestoreGate = WebProgressRestoreGate()
     private var webContentGeneration = 0L
@@ -457,6 +459,7 @@ class ReaderFragment : Fragment() {
         webRestoreJob = null
         webContentGeneration++
         val contentGeneration = webContentGeneration
+        webProgressSamplingState.beginContent(contentGeneration)
         webRestoreInteractionGeneration = null
         activeWebTabId = tab.tabId
         activeWebTargetUrl = targetUrl
@@ -579,7 +582,9 @@ class ReaderFragment : Fragment() {
         } catch (error: Throwable) {
             Log.w("ReaderFragment", "web_progress_restore_failed error=${error.javaClass.simpleName}")
         } finally {
-            if (isCurrentWebRestore(request, loadedUrl)) {
+            if (isCurrentWebRestore(request, loadedUrl) &&
+                webProgressSamplingState.onRestoreCompleted(request.generation)
+            ) {
                 webProgressTracker?.enableSampling()
             }
         }
@@ -648,6 +653,7 @@ class ReaderFragment : Fragment() {
         webRestoreJob?.cancel()
         webRestoreJob = null
         webContentGeneration++
+        webProgressSamplingState.beginContent(webContentGeneration)
         webRestoreInteractionGeneration = null
         activeWebTabId = null
         activeWebTargetUrl = null
@@ -940,10 +946,14 @@ class ReaderFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         webProgressTracker?.startTracking()
+        if (webProgressSamplingState.onResume(webContentGeneration)) {
+            webProgressTracker?.enableSampling()
+        }
     }
 
     override fun onPause() {
         super.onPause()
+        webProgressSamplingState.onPause()
         webProgressTracker?.stopTracking()
     }
 

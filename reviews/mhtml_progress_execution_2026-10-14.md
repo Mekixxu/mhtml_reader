@@ -30,3 +30,13 @@
 
 - APK 来自含未提交 V03 业务修改的共享工作区，不应描述为仅由 B03 提交可独立重现。
 - 本次 Git 提交白名单只包含进度恢复代码、测试、版本与执行/索引文档；V03 文件继续保留未提交。
+
+## 生命周期补充修复
+
+- 后续复核发现：旧 `stopAndFlush()` 虽会解绑滚动 listener，却没有关闭 tracker 的 `samplingEnabled`；`onResume()` 重挂 listener 后，可能在历史恢复完成前就恢复采样。
+- 修正 `stopAndFlush()`：先关闭采样再尾写，并清理无 listener 时残留的采样状态。新增 `WebProgressSamplingState`，以内容 generation 记录恢复是否完成及 Fragment 是否 resumed。恢复未结束时回前台不会采样；恢复在后台结束时延迟到 `onResume()` 启用；已恢复内容暂停后再返回则重新启用。旧 generation 的迟到完成不能打开新内容采样。
+- `WebViewProgressTracker.enableSampling()` 变为幂等，重复生命周期通知不会重置现有采样基线。
+- 新增 `WebProgressSamplingStateTest` 与 tracker 生命周期用例，覆盖恢复/暂停两种先后次序、旧代次回调，以及 listener 重挂后必须显式启用采样。
+- 生命周期修复版本：`1.0.70` / `versionCode 71`。JDK 17 全量 JVM 测试：245 项，0 失败、0 错误、2 跳过；跳过项仍为两个 symlink 主机能力测试。`:app:assembleDebug` 成功。
+- APK：`app/build/outputs/apk/debug/MHTMLReader_v1.0.70_debug.apk`，23,365,459 bytes；SHA-256 `7A0A735046329E84811D84EFA0AF43BE84BCBA45D3094C675D7EE5AC6DD7FF97`。该 APK 是含未提交 V03 改动的共享工作区构建，不代表仅由本次修复提交独立重现。
+- 该修复不改变 Room v4、PDF 路径或上传路径。真实设备验收仍待进行；APK 仍由含未提交 V03 改动的共享工作区构建。

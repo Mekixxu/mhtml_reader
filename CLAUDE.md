@@ -30,7 +30,7 @@
   - `compileSdk = 36`
   - `targetSdk = 36`
   - `minSdk = 30`
-- 版本号：`versionName = 1.0.69` / `versionCode = 70`（见 `app/build.gradle.kts`）
+- 版本号：`versionName = 1.0.70` / `versionCode = 71`（见 `app/build.gradle.kts`）
 - 核心依赖（关键版本）：
   - AndroidX（AppCompat `1.7.0`、Lifecycle `2.8.4`、WorkManager `2.9.1`、WebKit `1.11.0`、Room `2.6.1`）
   - Hilt `2.52`
@@ -145,7 +145,7 @@ Linux/macOS：
 ### 3.2.1 测试基础设施（2026-09-21 更新）
 
 - `core-base/src/test/java`：纯 JVM 单元测试（`HashUtilsTest` / `OutcomeTest` / `AppErrorTest` / `UrlCredentialSanitizerTest`），不依赖模拟器。
-- `app/src/test/java`：Robolectric 单元测试（`FilesSortHelperTest`、`FilesFtpCodecTest`、`FilesNetworkGatewayTest`、`TransferCacheCleanerTest`、`CacheEvictorTest`、`MoveUseCaseTest`、`HistoryDaoTest`、`DefaultReaderTabManagerTest`、`BlockingResourceWebViewClientTest`、`WebViewProgressTrackerTest`、`WebViewProgressWriterTest`、`WebViewProgressRestorerTest`、`FilesStartupHandlerTest`、`BackupImportTransactionTest`）。
+- `app/src/test/java`：Robolectric 单元测试（`FilesSortHelperTest`、`FilesFtpCodecTest`、`FilesNetworkGatewayTest`、`TransferCacheCleanerTest`、`CacheEvictorTest`、`MoveUseCaseTest`、`HistoryDaoTest`、`DefaultReaderTabManagerTest`、`BlockingResourceWebViewClientTest`、`WebViewProgressTrackerTest`、`WebViewProgressWriterTest`、`WebViewProgressRestorerTest`、`WebProgressSamplingStateTest`、`FilesStartupHandlerTest`、`BackupImportTransactionTest`）。
   - `app/src/test/resources/robolectric.properties` 固定 `sdk=35` 与测试用 `Application`；`testOptions.unitTests.isIncludeAndroidResources = true` 已开启（避免走 `HtmlReaderApp` 的 WorkManager 初始化）。
 - `app/src/androidTest/java`：设备端冒烟测试（`AppSmokeTest`），验证 app 冷启动不崩，需连接模拟器/真机。
 - 本地运行：Linux/macOS 使用 `./gradlew :core-base:testDebugUnitTest`、`:app:testDebugUnitTest`、`:app:connectedDebugAndroidTest`；Windows 使用对应的 `:core-base:testDebugUnitTest`、`:app:testDebugUnitTest`、`:app:connectedDebugAndroidTest` bat 命令。
@@ -234,6 +234,7 @@ Linux/macOS：
 - `core/reader/web/BlockingResourceWebViewClient.kt`：外链/资源拦截策略
 - `core/reader/web/SafeUrlLogSummary.kt`：WebView URL 日志安全摘要（仅记录安全 scheme/host）
 - `core/reader/web/WebViewProgressTracker.kt`：阅读进度跟踪
+- `core/reader/web/WebProgressSamplingState.kt`：内容恢复代次与 Fragment 前后台采样门控
 - `core/reader/web/WebViewProgressWriter.kt`：应用作用域的顺序化阅读进度写入
 - `core/reader/web/WebViewProgressRestorer.kt`：generation guard、稳定尺寸等待与 WebView 百分比恢复
 

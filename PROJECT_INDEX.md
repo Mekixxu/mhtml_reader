@@ -26,7 +26,7 @@
 - 主导航布局：`app/src/main/res/layout/activity_main.xml`
 - 底部导航菜单：`app/src/main/res/menu/main_bottom_nav_menu.xml`
 - 视觉主题：`app/src/main/res/values/themes.xml`（Material 3）、`values/colors.xml` 与 `values-night/colors.xml`
-- UI 回归：`ModernUiThemeTest.kt`、`HomeDensityLayoutTest.kt`、`FilesCompactLayoutTest.kt`、`FilesScrollStateStoreTest.kt`、`WebViewProgressTrackerTest.kt`、`WebViewProgressWriterTest.kt`、`WebViewProgressRestorerTest.kt`
+- UI 回归：`ModernUiThemeTest.kt`、`HomeDensityLayoutTest.kt`、`FilesCompactLayoutTest.kt`、`FilesScrollStateStoreTest.kt`、`WebViewProgressTrackerTest.kt`、`WebViewProgressWriterTest.kt`、`WebViewProgressRestorerTest.kt`、`WebProgressSamplingStateTest.kt`
 
 ## 4. app 模块页面索引
 
@@ -88,6 +88,7 @@
   - `core/reader/vm/ReaderViewModel.kt`
   - `app/src/main/java/html_reader/ReaderFragment.kt`
   - `core/reader/web/WebViewProgressTracker.kt`
+  - `core/reader/web/WebProgressSamplingState.kt`
   - `core/reader/web/WebViewProgressWriter.kt`
   - `core/reader/web/WebViewProgressRestorer.kt`
 - 文件操作：
