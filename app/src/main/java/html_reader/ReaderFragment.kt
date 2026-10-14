@@ -42,6 +42,7 @@ import core.reader.pdf.impl.AndroidPdfReaderController
 import core.reader.web.BlockingResourceWebViewClient
 import core.reader.web.MeasuringWebView
 import core.reader.web.NewTabLinkHandler
+import core.reader.web.SafeUrlLogSummary
 import core.reader.web.WebViewConfigurator
 import core.reader.web.WebViewProgressTracker
 import core.reader.vm.ReaderViewModel
@@ -506,7 +507,10 @@ class ReaderFragment : Fragment() {
         mhtmlFallbackRetriedTabIds.add(tab.tabId)
         activeWebRenderProfile = WebViewConfigurator.RenderProfile.MHTML_FALLBACK
         WebViewConfigurator.configure(webPreview, profile = activeWebRenderProfile)
-        Log.d("ReaderFragment", "mhtml_layout_fallback_reload tab=${tab.tabId} url=$loadedUrl")
+        Log.d(
+            "ReaderFragment",
+            "mhtml_layout_fallback_reload tab=${tab.tabId} ${SafeUrlLogSummary.summarize(loadedUrl)}"
+        )
         webPreview.reload()
     }
 

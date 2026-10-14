@@ -37,7 +37,7 @@ class BlockingResourceWebViewClient(
                 isAllowedLocalFile(url)
 
             if (!allowed) {
-                Log.d(tag, "blocked_resource fileType=$fileType url=$url")
+                Log.d(tag, "blocked_resource fileType=$fileType ${SafeUrlLogSummary.summarize(url)}")
                 return WebResourceResponse(
                     "text/plain",
                     "utf-8",
@@ -68,7 +68,7 @@ class BlockingResourceWebViewClient(
         if (isAllowedLocalFile(url)) {
             return false
         }
-        Log.d(tag, "blocked_navigation fileType=$fileType url=$url")
+        Log.d(tag, "blocked_navigation fileType=$fileType ${SafeUrlLogSummary.summarize(url)}")
         return true
     }
 

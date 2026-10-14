@@ -3,7 +3,8 @@
 > 审查基线：`497cfbe`，应用 1.0.66 / 67；范围 `35792ac..497cfbe` 加当前未提交 V03。
 > 用户确认：后续集中本地及 SMB/FTP 下载打开 MHTML；本轮只审查，下一份计划纳入全部三个已确认问题。
 > 用户未要求删除任何功能。PDF、上传专项不再列入后续主动执行队列；旧功能和已提交修复保留。
-> 本文件覆盖旧计划的优先顺序，不把历史 PDF/上传任务作为下一轮入口。未实施本文件修复。
+> 本文件覆盖旧计划的优先顺序，不把历史 PDF/上传任务作为下一轮入口；各卡实施状态以本文顶部及对应执行记录为准。
+> **执行状态（2026-10-14）**：B01 已完成，代码、测试、版本、APK 与范围说明见 `reviews/mhtml_security_execution_2026-10-14.md`；B02/B03 尚未开始。
 
 ## 1. 结论
 
@@ -135,7 +136,7 @@ flowchart LR
 
 用户已选择全部三项。以下按同一浏览主线内风险给出建议顺序，不擅自扩大 feature 范围。
 
-### P0 / B01：安全日志（M2）
+### P0 / B01：安全日志（M2）- 已完成
 
 - 允许：BlockingResourceWebViewClient、必要安全摘要helper、相关tests；helper在`core/reader/web`归feature-reader，跨层复用再明确模块，不重构网络栈。
 - 先写ShadowLog失败测试：HTTPS user:secret@host/path?token=secret#secret资源、非HTTP导航、畸形URL、data payload、不可信host控制字符。
