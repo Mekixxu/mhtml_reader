@@ -96,6 +96,7 @@ class FilesFragment : Fragment(), FilesRemoteHost {
     internal var currentDir: File? = null
     internal var selectedEntry: BrowserEntry? = null
     internal var operationRunning = false
+    private var operationButtonsEnabled = true
     private var pendingUploadStore: FilesPendingUploadStore? = null
     internal var currentSessionId: Long? = null
     internal var initialNetworkConfigId: Long? = null
@@ -313,6 +314,7 @@ class FilesFragment : Fragment(), FilesRemoteHost {
             val item = parent?.let { FilesListItemResolver.entryAt(it, position) }
                 ?: return@OnItemClickListener
             if (item.isDirectory) {
+                if (isNavigationBlocked()) return@OnItemClickListener
                 if (browseSource == BrowseSource.FTP) {
                     remoteController.ftpCurrentPath = item.ftpPath ?: remoteController.ftpCurrentPath
                     selectedEntry = null
@@ -493,18 +495,19 @@ class FilesFragment : Fragment(), FilesRemoteHost {
     }
 
     fun navigateUp(): Boolean {
+        if (isNavigationBlocked()) return true
         val plan = FilesNavigateUpHelper.plan(
             browseSource,
             currentDirFile(),
             remoteController.ftpCurrentPath,
             remoteController.smbCurrentPath
         )
-        if (!plan.handled) return false
         if (plan.localAccessDenied) {
             if (!checkStoragePermission()) requestStoragePermission()
             else Toast.makeText(requireContext(), getString(R.string.files_msg_cannot_access_parent), Toast.LENGTH_SHORT).show()
-            return false
+            return true
         }
+        if (!plan.handled) return false
         if (plan.nextFtpPath != null) remoteController.ftpCurrentPath = plan.nextFtpPath
         if (plan.nextSmbPath != null) remoteController.smbCurrentPath = plan.nextSmbPath
         if (plan.nextLocalDir != null) currentDir = plan.nextLocalDir
@@ -546,8 +549,8 @@ class FilesFragment : Fragment(), FilesRemoteHost {
 
     internal fun currentDirFile(): File = currentDir ?: requireContext().filesDir
 
-    private fun updateUpNavigationEnabled(operationEnabled: Boolean = true) {
-        if (!::actionUpButton.isInitialized) return
+    private fun updateUpNavigationEnabled() {
+        if (view == null || !::actionUpButton.isInitialized) return
         val canNavigateUp = when (browseSource) {
             BrowseSource.FTP -> {
                 val path = remoteController.ftpCurrentPath
@@ -561,13 +564,16 @@ class FilesFragment : Fragment(), FilesRemoteHost {
                 parent.exists() && parent.isDirectory
             } == true
         }
-        actionUpButton.isEnabled = operationEnabled && canNavigateUp
+        actionUpButton.isEnabled = operationButtonsEnabled && !operationRunning && canNavigateUp
         val label = getString(
             if (canNavigateUp) R.string.action_up else R.string.files_action_up_root
         )
         actionUpButton.text = label
         actionUpButton.contentDescription = label
     }
+
+    private fun isNavigationBlocked(): Boolean =
+        operationRunning || !operationButtonsEnabled
 
     private fun requireLocalSelection(): BrowserEntry? {
         if (browseSource != BrowseSource.LOCAL) {
@@ -638,11 +644,13 @@ class FilesFragment : Fragment(), FilesRemoteHost {
             return false
         }
         operationRunning = true
+        updateUpNavigationEnabled()
         return true
     }
 
     override fun releaseOperationLock() {
         operationRunning = false
+        updateUpNavigationEnabled()
     }
 
     internal fun selectResultPath(resultPath: VfsPath?) {
@@ -690,8 +698,9 @@ class FilesFragment : Fragment(), FilesRemoteHost {
     internal fun defaultRootDir(): File = requireContext().filesDir.parentFile ?: requireContext().filesDir
 
     override fun setOperationButtonsEnabled(enabled: Boolean) {
+        operationButtonsEnabled = enabled
         if (view == null) return
-        updateUpNavigationEnabled(operationEnabled = enabled)
+        updateUpNavigationEnabled()
         actionCreateButton.isEnabled = enabled
     }
 

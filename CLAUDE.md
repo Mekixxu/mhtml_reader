@@ -30,7 +30,7 @@
   - `compileSdk = 36`
   - `targetSdk = 36`
   - `minSdk = 30`
-- 版本号：`versionName = 1.0.67` / `versionCode = 68`（见 `app/build.gradle.kts`）
+- 版本号：`versionName = 1.0.68` / `versionCode = 69`（见 `app/build.gradle.kts`）
 - 核心依赖（关键版本）：
   - AndroidX（AppCompat `1.7.0`、Lifecycle `2.8.4`、WorkManager `2.9.1`、WebKit `1.11.0`、Room `2.6.1`）
   - Hilt `2.52`
@@ -251,6 +251,7 @@ Linux/macOS：
 - `reviews/ui_density_execution_2026-10-14.md`：1.0.66 Home/Files 紧凑布局执行记录、测试和设备待验项。
 - `reviews/mhtml_review_plan_2026-10-14.md`：最新复核与 MHTML 主线入口（U1/M1/M2、214 项含2跳过、B01-B04）；B01 执行状态见安全日志记录。
 - `reviews/mhtml_security_execution_2026-10-14.md`：B01 MHTML 敏感 URL 日志脱敏执行记录。
+- `reviews/files_navigation_execution_2026-10-14.md`：B02 Files 操作期间 Up/系统返回状态修复记录。
 ---
 
 ## 5. 文档维护规则

@@ -150,6 +150,161 @@ class FilesCompactLayoutTest {
         }
     }
 
+    @Test
+    fun operationDisabledUpStaysDisabledAcrossDirectoryRefreshAndRemotePreparation() {
+        val controller = launchFilesActivity()
+        try {
+            val fragment = currentFilesFragment(controller.get())
+            val parent = tempFolder.newFolder("refreshParent")
+            fragment.currentDir = java.io.File(parent, "child").apply { mkdir() }
+            val currentPath = fragment.currentDir?.absolutePath
+
+            fragment.setOperationButtonsEnabled(false)
+            fragment.updateCurrentDirLabel()
+            fragment.prepareRemoteBrowse(R.string.action_upload_file)
+
+            assertTrue("Refresh must not re-enable Up during an operation", !fragment.actionUpButton.isEnabled)
+            assertTrue(fragment.navigateUp())
+            assertEquals(currentPath, fragment.currentDir?.absolutePath)
+
+            fragment.setOperationButtonsEnabled(true)
+            assertTrue(fragment.actionUpButton.isEnabled)
+        } finally {
+            controller.pause().stop().destroy()
+        }
+    }
+
+    @Test
+    fun operationLockConsumesUpAndDirectoryRowNavigationWithoutChangingPath() {
+        val controller = launchFilesActivity()
+        try {
+            val fragment = currentFilesFragment(controller.get())
+            val parent = tempFolder.newFolder("lockedParent")
+            val current = java.io.File(parent, "current").apply { mkdir() }
+            java.io.File(current, "child").mkdir()
+            fragment.currentDir = current
+            fragment.loadEntries()
+            idle()
+
+            assertTrue(fragment.tryAcquireOperationLock())
+            assertTrue(fragment.navigateUp())
+            fragment.listView.onItemClickListener!!.onItemClick(fragment.listView, null, 1, 0L)
+
+            assertEquals(current.absolutePath, fragment.currentDir?.absolutePath)
+            assertTrue(!fragment.actionUpButton.isEnabled)
+            fragment.releaseOperationLock()
+            assertTrue(fragment.actionUpButton.isEnabled)
+        } finally {
+            controller.pause().stop().destroy()
+        }
+    }
+
+    @Test
+    fun systemBackDuringOperationDoesNotMoveUpOrLeaveFilesAtRoot() {
+        val controller = launchFilesActivity()
+        try {
+            val activity = controller.get()
+            val fragment = currentFilesFragment(activity)
+            val parent = tempFolder.newFolder("backParent")
+            val nested = java.io.File(parent, "nested").apply { mkdir() }
+            fragment.currentDir = nested
+            fragment.updateCurrentDirLabel()
+            assertTrue(fragment.tryAcquireOperationLock())
+
+            activity.onBackPressedDispatcher.onBackPressed()
+            idle()
+
+            assertSame(fragment, currentFilesFragment(activity))
+            assertTrue(fragment.isVisible)
+            assertEquals(nested.absolutePath, fragment.currentDir?.absolutePath)
+            fragment.releaseOperationLock()
+
+            fragment.currentDir = java.io.File("/")
+            fragment.updateCurrentDirLabel()
+            val pathBeforeBack = fragment.currentDir?.absolutePath
+            assertTrue(fragment.tryAcquireOperationLock())
+
+            activity.onBackPressedDispatcher.onBackPressed()
+            idle()
+
+            assertSame(fragment, currentFilesFragment(activity))
+            assertTrue(fragment.isVisible)
+            assertEquals(pathBeforeBack, fragment.currentDir?.absolutePath)
+        } finally {
+            controller.pause().stop().destroy()
+        }
+    }
+
+    @Test
+    fun ftpAndSmbRootStayDisabledWhenConfigurationIsMissing() {
+        val controller = launchFilesActivity()
+        try {
+            val fragment = currentFilesFragment(controller.get())
+            fragment.remoteController.syncFromSession(
+                ftpConfig = null,
+                ftpResolvedCharset = null,
+                ftpCurrentPath = "/",
+                smbConfig = null,
+                smbCurrentPath = "/"
+            )
+
+            fragment.browseSource = com.html_reader.files.BrowseSource.FTP
+            fragment.updateCurrentDirLabel()
+            assertTrue("FTP root without config must not expose Up", !fragment.actionUpButton.isEnabled)
+
+            fragment.browseSource = com.html_reader.files.BrowseSource.SMB
+            fragment.updateCurrentDirLabel()
+            assertTrue("SMB root without config must not expose Up", !fragment.actionUpButton.isEnabled)
+        } finally {
+            controller.pause().stop().destroy()
+        }
+    }
+
+    @Test
+    fun systemBackWhenParentIsInaccessibleKeepsFilesVisible() {
+        val controller = launchFilesActivity()
+        try {
+            val activity = controller.get()
+            val fragment = currentFilesFragment(activity)
+            val parent = tempFolder.newFolder("deniedParent")
+            val child = java.io.File(parent, "child").apply { mkdir() }
+            val deniedParent = ParentWithoutListing(parent.absolutePath)
+            fragment.currentDir = DirectoryWithParent(child.absolutePath, deniedParent)
+            fragment.updateCurrentDirLabel()
+
+            activity.onBackPressedDispatcher.onBackPressed()
+            idle()
+
+            assertSame(fragment, currentFilesFragment(activity))
+            assertTrue(fragment.isVisible)
+            assertEquals(child.absolutePath, fragment.currentDir?.absolutePath)
+        } finally {
+            controller.pause().stop().destroy()
+        }
+    }
+
+    private fun launchFilesActivity() =
+        Robolectric.buildActivity(MainActivity::class.java).create().also { controller ->
+            controller.get().showDirectoryMode(fromFolders = true)
+            controller.start().resume()
+            controller.visible()
+            idle()
+        }
+
+    private fun currentFilesFragment(activity: MainActivity): FilesFragment =
+        activity.supportFragmentManager.fragments.filterIsInstance<FilesFragment>().last()
+
+    private class ParentWithoutListing(path: String) : java.io.File(path) {
+        override fun listFiles(): Array<java.io.File>? = null
+    }
+
+    private class DirectoryWithParent(
+        path: String,
+        private val parent: java.io.File
+    ) : java.io.File(path) {
+        override fun getParentFile(): java.io.File = parent
+    }
+
     private fun entry(name: String) = BrowserEntry(
         name = name,
         isDirectory = false,

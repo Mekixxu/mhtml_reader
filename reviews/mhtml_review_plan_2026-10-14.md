@@ -4,7 +4,7 @@
 > 用户确认：后续集中本地及 SMB/FTP 下载打开 MHTML；本轮只审查，下一份计划纳入全部三个已确认问题。
 > 用户未要求删除任何功能。PDF、上传专项不再列入后续主动执行队列；旧功能和已提交修复保留。
 > 本文件覆盖旧计划的优先顺序，不把历史 PDF/上传任务作为下一轮入口；各卡实施状态以本文顶部及对应执行记录为准。
-> **执行状态（2026-10-14）**：B01 已完成，代码、测试、版本、APK 与范围说明见 `reviews/mhtml_security_execution_2026-10-14.md`；B02/B03 尚未开始。
+> **执行状态（2026-10-14）**：B01、B02 已完成，分别见 `reviews/mhtml_security_execution_2026-10-14.md` 与 `reviews/files_navigation_execution_2026-10-14.md`；B03 尚未开始。
 
 ## 1. 结论
 
@@ -143,7 +143,7 @@ flowchart LR
 - 修复两处日志并核对MHTML加载fallback诊断；保留场景/类型/原因，秘密不得进入任何测试期日志。
 - 原拦截安全测试全部保留；不得把放行网络、开启JS或删日志能力当作修法。
 
-### P1 / B02：浏览导航状态（U1）
+### P1 / B02：浏览导航状态（U1）- 已完成
 
 - 允许：FilesFragment和必要小型状态helper、FilesCompactLayoutTest；remote controller仅必要UI状态通知，不改传输/上传策略。
 - 先测试setOperationButtonsEnabled(false) → updateCurrentDirLabel/prepareRemoteBrowse → Up仍禁用。
