@@ -24,6 +24,22 @@ interface HistoryDao {
     """)
     suspend fun touchOpen(path: String, title: String, lastAccess: Long, fileType: FileType)
 
+    @Query("""
+        INSERT INTO history (path, title, lastAccess, progress, pageIndex, fileType)
+        VALUES (:path, :title, :lastAccess, :progress, -1, :fileType)
+        ON CONFLICT(path) DO UPDATE SET
+            lastAccess = excluded.lastAccess,
+            progress = excluded.progress,
+            pageIndex = -1
+    """)
+    suspend fun saveWebProgress(
+        path: String,
+        title: String,
+        lastAccess: Long,
+        progress: Float,
+        fileType: FileType
+    )
+
     @Query("UPDATE history SET progress = :progress, pageIndex = :pageIndex, lastAccess = :lastAccess WHERE path = :path")
     suspend fun updateProgress(path: String, progress: Float, pageIndex: Int, lastAccess: Long)
     @Query("SELECT * FROM history ORDER BY lastAccess DESC LIMIT :limit OFFSET :offset")

@@ -44,7 +44,13 @@ import core.reader.web.MeasuringWebView
 import core.reader.web.NewTabLinkHandler
 import core.reader.web.SafeUrlLogSummary
 import core.reader.web.WebViewConfigurator
+import core.reader.web.WebProgressRestoreGuard
+import core.reader.web.WebProgressRestoreGate
+import core.reader.web.WebProgressRestoreRequest
 import core.reader.web.WebViewProgressTracker
+import core.reader.web.WebViewMetrics
+import core.reader.web.WebViewProgressRestorer
+import core.reader.web.WebViewProgressWriter
 import core.reader.vm.ReaderViewModel
 import core.vfs.model.VfsPath
 import java.io.File
@@ -71,7 +77,14 @@ class ReaderFragment : Fragment() {
     private lateinit var readerViewModel: ReaderViewModel
     private lateinit var pdfReaderController: PdfReaderController
     private lateinit var historyRepository: HistoryRepository
+    private lateinit var webProgressWriter: WebViewProgressWriter
     private var webProgressTracker: WebViewProgressTracker? = null
+    private var webRestoreJob: Job? = null
+    private val webProgressRestoreGate = WebProgressRestoreGate()
+    private var webContentGeneration = 0L
+    private var webRestoreInteractionGeneration: Long? = null
+    private var activeWebTabId: String? = null
+    private var activeWebTargetUrl: String? = null
 
     private val tabs = mutableListOf<ReaderTab>()
     private var selectedTabId: String? = null
@@ -130,6 +143,7 @@ class ReaderFragment : Fragment() {
         val dispatcherProvider = DefaultDispatcherProvider()
         pdfReaderController = AndroidPdfReaderController(dispatcherProvider)
         historyRepository = ReaderRuntime.historyRepository(context)
+        webProgressWriter = ReaderRuntime.webProgressWriter(context)
         readerViewModel = ReaderRuntime.viewModel(context)
 
         statusLabel.visibility = View.GONE
@@ -138,6 +152,12 @@ class ReaderFragment : Fragment() {
         pdfNextButton.isEnabled = false
         webPreview.setLayerType(View.LAYER_TYPE_HARDWARE, null)
         WebViewConfigurator.configure(webPreview, profile = WebViewConfigurator.RenderProfile.DEFAULT)
+        webPreview.setOnTouchListener { _, event ->
+            if (event.actionMasked == android.view.MotionEvent.ACTION_DOWN) {
+                webRestoreInteractionGeneration = webContentGeneration
+            }
+            false
+        }
         webPreview.visibility = View.GONE
         installWebImageLongPressHandler()
         
@@ -336,10 +356,9 @@ class ReaderFragment : Fragment() {
         val tab = tabs.firstOrNull { it.tabId == selectedTabId }
         if (tab == null) {
             resetPdfPreview()
+            invalidateWebContent()
             webPreview.loadUrl("about:blank")
             webPreview.visibility = View.GONE
-            webProgressTracker?.stopTracking()
-            webProgressTracker = null
             return
         }
         if (tab.fileType == FileType.PDF) {
@@ -351,9 +370,8 @@ class ReaderFragment : Fragment() {
 
     private fun loadSelectedPdfTab(tab: ReaderTab, generation: Long, exitJob: Job?) {
         webPreview.visibility = View.GONE
+        invalidateWebContent()
         webPreview.loadUrl("about:blank")
-        webProgressTracker?.stopTracking()
-        webProgressTracker = null
         pdfPreviewImage.visibility = View.VISIBLE
         pdfControls.visibility = View.VISIBLE
 
@@ -409,11 +427,13 @@ class ReaderFragment : Fragment() {
         
         val cachePath = tab.cacheFilePath
         if (cachePath.isNullOrBlank()) {
+            invalidateWebContent()
             webPreview.loadUrl("about:blank")
             return
         }
         val file = File(cachePath)
         if (!file.exists() || !file.isFile) {
+            invalidateWebContent()
             webPreview.loadUrl("about:blank")
             val msg = getString(R.string.reader_file_not_found)
             Log.w("ReaderFragment", "reader_web_file_missing cachePath=$cachePath")
@@ -423,37 +443,64 @@ class ReaderFragment : Fragment() {
 
         val targetUrl = file.toURI().toString()
         val isSameUrl = webPreview.url == targetUrl
-
-        if (!isSameUrl) {
-            mhtmlFallbackRetriedTabIds.remove(tab.tabId)
-            activeWebRenderProfile = initialRenderProfileFor(tab.fileType)
-            WebViewConfigurator.configure(webPreview, profile = activeWebRenderProfile)
-            webPreview.webViewClient = BlockingResourceWebViewClient(
-                fileType = tab.fileType,
-                allowedCacheRootPath = requireContext().cacheDir.resolve("app_cache").absolutePath,
-                onOpenLinkInNewTab = NewTabLinkHandler { url ->
-                    if (tab.fileType == FileType.WEB) {
-                        webPreview.loadUrl(url)
-                    } else {
-                        showShort(getString(R.string.reader_external_link_blocked))
-                    }
-                },
-                onPageFinishedCallback = { loadedUrl ->
-                    onWebPageFinished(tab = tab, loadedUrl = loadedUrl, targetUrl = targetUrl)
-                }
-            )
+        if (activeWebTabId == tab.tabId &&
+            activeWebTargetUrl == targetUrl &&
+            webProgressTracker != null
+        ) {
+            webProgressTracker?.startTracking()
+            return
         }
 
-        webProgressTracker?.stopTracking()
+        webProgressTracker?.stopAndFlush()
+        webProgressTracker = null
+        webRestoreJob?.cancel()
+        webRestoreJob = null
+        webContentGeneration++
+        val contentGeneration = webContentGeneration
+        webRestoreInteractionGeneration = null
+        activeWebTabId = tab.tabId
+        activeWebTargetUrl = targetUrl
+
+        mhtmlFallbackRetriedTabIds.remove(tab.tabId)
+        activeWebRenderProfile = initialRenderProfileFor(tab.fileType)
+        WebViewConfigurator.configure(webPreview, profile = activeWebRenderProfile)
+        bindWebViewClient(tab, targetUrl, contentGeneration)
+        createWebProgressTracker(tab, file.name)
+
+        if (isSameUrl) {
+            startWebProgressRestore(tab, targetUrl, contentGeneration, loadedUrl = targetUrl)
+        } else {
+            webPreview.loadUrl(targetUrl)
+        }
+    }
+
+    private fun bindWebViewClient(tab: ReaderTab, targetUrl: String, generation: Long) {
+        webPreview.webViewClient = BlockingResourceWebViewClient(
+            fileType = tab.fileType,
+            allowedCacheRootPath = requireContext().cacheDir.resolve("app_cache").absolutePath,
+            onOpenLinkInNewTab = NewTabLinkHandler { url ->
+                if (tab.fileType == FileType.WEB) {
+                    webPreview.loadUrl(url)
+                } else {
+                    showShort(getString(R.string.reader_external_link_blocked))
+                }
+            },
+            onPageFinishedCallback = { loadedUrl ->
+                onWebPageFinished(tab, loadedUrl, targetUrl, generation)
+            }
+        )
+    }
+
+    private fun createWebProgressTracker(tab: ReaderTab, fallbackTitle: String) {
         webProgressTracker = WebViewProgressTracker(
             webView = webPreview,
             sourcePathRaw = tab.sourcePathRaw,
-            historyRepo = historyRepository,
-            coroutineScope = viewLifecycleOwner.lifecycleScope
-        ).also { it.startTracking() }
-
-        if (!isSameUrl) {
-            webPreview.loadUrl(targetUrl)
+            title = tab.title ?: fallbackTitle,
+            fileType = tab.fileType,
+            coroutineScope = viewLifecycleOwner.lifecycleScope,
+            onSnapshot = { snapshot -> webProgressWriter.enqueue(snapshot) }
+        ).also {
+            it.startTracking()
         }
     }
 
@@ -465,46 +512,128 @@ class ReaderFragment : Fragment() {
         }
     }
 
-    private fun onWebPageFinished(tab: ReaderTab, loadedUrl: String, targetUrl: String) {
-        if (selectedTabId != tab.tabId) {
-            return
-        }
-        if (!loadedUrl.startsWith(targetUrl)) {
-            return
-        }
-        if (tab.fileType != FileType.MHTML && tab.fileType != FileType.HTML) {
-            return
-        }
-        maybeRetryMhtmlWithFallback(tab, loadedUrl)
+    private fun onWebPageFinished(
+        tab: ReaderTab,
+        loadedUrl: String,
+        targetUrl: String,
+        generation: Long
+    ) {
+        val request = WebProgressRestoreRequest(tab.tabId, generation, targetUrl)
+        if (!isCurrentWebRestore(request, loadedUrl)) return
+        if ((tab.fileType == FileType.MHTML || tab.fileType == FileType.HTML) &&
+            maybeRetryMhtmlWithFallback(tab, loadedUrl)
+        ) return
+        startWebProgressRestore(tab, targetUrl, generation, loadedUrl)
     }
 
-    private fun maybeRetryMhtmlWithFallback(tab: ReaderTab, loadedUrl: String) {
+    private fun startWebProgressRestore(
+        tab: ReaderTab,
+        targetUrl: String,
+        generation: Long,
+        loadedUrl: String
+    ) {
+        val request = WebProgressRestoreRequest(tab.tabId, generation, targetUrl)
+        val claimed = webProgressRestoreGate.tryClaim(
+            request = request,
+            selectedTabId = selectedTabId,
+            generation = webContentGeneration,
+            currentTargetUrl = activeWebTargetUrl,
+            loadedUrl = loadedUrl,
+            webViewUrl = webPreview.url,
+            viewAlive = view != null
+        )
+        if (!claimed) return
+        webRestoreJob?.cancel()
+        webRestoreJob = viewLifecycleOwner.lifecycleScope.launch {
+            restoreWebProgress(tab, request, loadedUrl)
+        }
+    }
+
+    private suspend fun restoreWebProgress(
+        tab: ReaderTab,
+        request: WebProgressRestoreRequest,
+        loadedUrl: String
+    ) {
+        try {
+            webProgressWriter.awaitWrites()
+            if (!isCurrentWebRestore(request, loadedUrl)) return
+
+            val history = historyRepository.getByPath(tab.sourcePathRaw)
+            if (!isCurrentWebRestore(request, loadedUrl)) return
+            val progress = history?.progress ?: tab.lastKnownProgress
+            if (webRestoreInteractionGeneration == request.generation) return
+
+            val stableMetrics = WebViewProgressRestorer.awaitStableMetrics(
+                readMetrics = ::readWebViewMetrics,
+                shouldContinue = {
+                    isCurrentWebRestore(request, loadedUrl) &&
+                        webRestoreInteractionGeneration != request.generation
+                }
+            ) ?: return
+            if (!isCurrentWebRestore(request, loadedUrl)) return
+            if (webRestoreInteractionGeneration == request.generation) return
+            WebViewProgressRestorer.targetScrollY(progress, stableMetrics)
+                ?.let { webPreview.scrollTo(0, it) }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (error: Throwable) {
+            Log.w("ReaderFragment", "web_progress_restore_failed error=${error.javaClass.simpleName}")
+        } finally {
+            if (isCurrentWebRestore(request, loadedUrl)) {
+                webProgressTracker?.enableSampling()
+            }
+        }
+    }
+
+    private fun isCurrentWebRestore(
+        request: WebProgressRestoreRequest,
+        loadedUrl: String
+    ): Boolean = WebProgressRestoreGuard.isCurrent(
+        request = request,
+        selectedTabId = selectedTabId,
+        generation = webContentGeneration,
+        currentTargetUrl = activeWebTargetUrl,
+        loadedUrl = loadedUrl,
+        viewAlive = view != null
+    ) && webPreview.url?.startsWith(request.targetUrl) == true
+
+    @Suppress("DEPRECATION")
+    private fun readWebViewMetrics(): WebViewMetrics = WebViewMetrics(
+        contentHeightPx = webPreview.contentHeight.toFloat(),
+        viewportHeightPx = webPreview.height.toFloat(),
+        scale = webPreview.scale,
+        scrollY = webPreview.scrollY
+    )
+
+    private fun maybeRetryMhtmlWithFallback(tab: ReaderTab, loadedUrl: String): Boolean {
         if (activeWebRenderProfile != WebViewConfigurator.RenderProfile.MHTML_DESKTOP) {
-            return
+            return false
         }
         if (mhtmlFallbackRetriedTabIds.contains(tab.tabId)) {
-            return
+            return false
         }
         val viewWidth = webPreview.width
         if (viewWidth <= 0) {
-            return
+            return false
         }
         if (selectedTabId != tab.tabId) {
-            return
+            return false
         }
-        val contentWidthPx = (webPreview as? MeasuringWebView)?.contentWidthPxScaled()?.toFloat() ?: return
-        if (contentWidthPx <= 0f) {
-            return
-        }
+        val contentWidthPx = (webPreview as? MeasuringWebView)?.contentWidthPxScaled()?.toFloat()
+            ?: return false
+        if (contentWidthPx <= 0f) return false
         val narrow = contentWidthPx < viewWidth * 0.72f
         Log.d(
             "ReaderFragment",
             "mhtml_layout_check tab=${tab.tabId} viewWidth=$viewWidth contentWidthPx=$contentWidthPx narrow=$narrow profile=$activeWebRenderProfile"
         )
         if (!narrow) {
-            return
+            return false
         }
         mhtmlFallbackRetriedTabIds.add(tab.tabId)
+        webProgressTracker?.stopAndFlush()
+        webProgressTracker?.pauseForRestore()
+        webProgressTracker?.startTracking()
         activeWebRenderProfile = WebViewConfigurator.RenderProfile.MHTML_FALLBACK
         WebViewConfigurator.configure(webPreview, profile = activeWebRenderProfile)
         Log.d(
@@ -512,6 +641,18 @@ class ReaderFragment : Fragment() {
             "mhtml_layout_fallback_reload tab=${tab.tabId} ${SafeUrlLogSummary.summarize(loadedUrl)}"
         )
         webPreview.reload()
+        return true
+    }
+
+    private fun invalidateWebContent() {
+        webRestoreJob?.cancel()
+        webRestoreJob = null
+        webContentGeneration++
+        webRestoreInteractionGeneration = null
+        activeWebTabId = null
+        activeWebTargetUrl = null
+        webProgressTracker?.stopAndFlush()
+        webProgressTracker = null
     }
 
     private fun schedulePdfPageRender(tabId: String, pageIndex: Int, generation: Long, force: Boolean) {
@@ -823,8 +964,7 @@ class ReaderFragment : Fragment() {
             // Fragment 销毁后由应用级任务等待旧 load/render，再关闭捕获的 controller。
             schedulePdfControllerExit(previousLoad, previousRender)
         }
-        webProgressTracker?.stopTracking()
-        webProgressTracker = null
+        invalidateWebContent()
         webPreview.loadUrl("about:blank")
         webPreview.stopLoading()
         webPreview.webViewClient = WebViewClient()

@@ -37,6 +37,17 @@ class HistoryRepository(
             )
         }
 
+    suspend fun saveWebProgress(path: String, title: String, fileType: FileType, progress: Float) =
+        withContext(dispatcherProvider.io) {
+            dao.saveWebProgress(
+                path = path,
+                title = title,
+                lastAccess = System.currentTimeMillis(),
+                progress = progress.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0f,
+                fileType = fileType
+            )
+        }
+
     fun observeRecent(limit: Int, offset: Int = 0): Flow<List<HistoryEntity>> = dao.observeRecent(limit, offset)
 
     suspend fun getRecent(limit: Int, offset: Int = 0): List<HistoryEntity> =

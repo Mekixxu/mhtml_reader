@@ -30,7 +30,7 @@
   - `compileSdk = 36`
   - `targetSdk = 36`
   - `minSdk = 30`
-- 版本号：`versionName = 1.0.68` / `versionCode = 69`（见 `app/build.gradle.kts`）
+- 版本号：`versionName = 1.0.69` / `versionCode = 70`（见 `app/build.gradle.kts`）
 - 核心依赖（关键版本）：
   - AndroidX（AppCompat `1.7.0`、Lifecycle `2.8.4`、WorkManager `2.9.1`、WebKit `1.11.0`、Room `2.6.1`）
   - Hilt `2.52`
@@ -145,7 +145,7 @@ Linux/macOS：
 ### 3.2.1 测试基础设施（2026-09-21 更新）
 
 - `core-base/src/test/java`：纯 JVM 单元测试（`HashUtilsTest` / `OutcomeTest` / `AppErrorTest` / `UrlCredentialSanitizerTest`），不依赖模拟器。
-- `app/src/test/java`：Robolectric 单元测试（`FilesSortHelperTest`、`FilesFtpCodecTest`、`FilesNetworkGatewayTest`、`TransferCacheCleanerTest`、`CacheEvictorTest`、`MoveUseCaseTest`、`HistoryDaoTest`、`DefaultReaderTabManagerTest`、`BlockingResourceWebViewClientTest`、`FilesStartupHandlerTest`、`BackupImportTransactionTest`）。
+- `app/src/test/java`：Robolectric 单元测试（`FilesSortHelperTest`、`FilesFtpCodecTest`、`FilesNetworkGatewayTest`、`TransferCacheCleanerTest`、`CacheEvictorTest`、`MoveUseCaseTest`、`HistoryDaoTest`、`DefaultReaderTabManagerTest`、`BlockingResourceWebViewClientTest`、`WebViewProgressTrackerTest`、`WebViewProgressWriterTest`、`WebViewProgressRestorerTest`、`FilesStartupHandlerTest`、`BackupImportTransactionTest`）。
   - `app/src/test/resources/robolectric.properties` 固定 `sdk=35` 与测试用 `Application`；`testOptions.unitTests.isIncludeAndroidResources = true` 已开启（避免走 `HtmlReaderApp` 的 WorkManager 初始化）。
 - `app/src/androidTest/java`：设备端冒烟测试（`AppSmokeTest`），验证 app 冷启动不崩，需连接模拟器/真机。
 - 本地运行：Linux/macOS 使用 `./gradlew :core-base:testDebugUnitTest`、`:app:testDebugUnitTest`、`:app:connectedDebugAndroidTest`；Windows 使用对应的 `:core-base:testDebugUnitTest`、`:app:testDebugUnitTest`、`:app:connectedDebugAndroidTest` bat 命令。
@@ -234,6 +234,8 @@ Linux/macOS：
 - `core/reader/web/BlockingResourceWebViewClient.kt`：外链/资源拦截策略
 - `core/reader/web/SafeUrlLogSummary.kt`：WebView URL 日志安全摘要（仅记录安全 scheme/host）
 - `core/reader/web/WebViewProgressTracker.kt`：阅读进度跟踪
+- `core/reader/web/WebViewProgressWriter.kt`：应用作用域的顺序化阅读进度写入
+- `core/reader/web/WebViewProgressRestorer.kt`：generation guard、稳定尺寸等待与 WebView 百分比恢复
 
 ### 4.6 Review 索引
 
@@ -252,6 +254,7 @@ Linux/macOS：
 - `reviews/mhtml_review_plan_2026-10-14.md`：最新复核与 MHTML 主线入口（U1/M1/M2、214 项含2跳过、B01-B04）；B01 执行状态见安全日志记录。
 - `reviews/mhtml_security_execution_2026-10-14.md`：B01 MHTML 敏感 URL 日志脱敏执行记录。
 - `reviews/files_navigation_execution_2026-10-14.md`：B02 Files 操作期间 Up/系统返回状态修复记录。
+- `reviews/mhtml_progress_execution_2026-10-14.md`：B03 MHTML/Web 阅读进度尾写与恢复执行记录；真实设备验收项单列。
 ---
 
 ## 5. 文档维护规则

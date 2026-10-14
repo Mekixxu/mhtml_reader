@@ -6,6 +6,7 @@ import core.cache.TabCacheRegistry
 import core.data.repo.HistoryRepository
 import core.reader.pdf.PdfReaderController
 import core.reader.tab.DefaultReaderTabManager
+import core.reader.web.WebViewProgressWriter
 import core.reader.vm.ReaderViewModel
 import core.vfs.local.LocalFileSystem
 import kotlinx.coroutines.CancellationException
@@ -23,6 +24,7 @@ object ReaderRuntime {
      * 应用级 PDF 控制器清理入口：Fragment 视图销毁后仍能完成 renderer/descriptor 关闭。
      */
     private val pdfCleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val progressWriteScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     fun closePdfController(controller: PdfReaderController): Job =
         closePdfControllerAfter(previous = null, controller = controller)
@@ -51,6 +53,8 @@ object ReaderRuntime {
     fun viewModel(context: Context): ReaderViewModel = ensure(context).readerViewModel
 
     fun historyRepository(context: Context): HistoryRepository = ensure(context).historyRepository
+
+    fun webProgressWriter(context: Context): WebViewProgressWriter = ensure(context).webProgressWriter
 
     fun tabCacheRegistry(context: Context): TabCacheRegistry = ensure(context).tabCacheRegistry
 
@@ -86,6 +90,7 @@ object ReaderRuntime {
                 )
                 
                 val historyRepository = HistoryRepository(db.historyDao(), dispatcherProvider)
+                val webProgressWriter = WebViewProgressWriter(progressWriteScope, historyRepository)
                 val tabManager = DefaultReaderTabManager(
                     cacheOpenManager = cacheOpenManager,
                     tabCacheRegistry = tabCacheRegistry,
@@ -95,6 +100,7 @@ object ReaderRuntime {
                 Holder(
                     readerViewModel = ReaderViewModel(tabManager),
                     historyRepository = historyRepository,
+                    webProgressWriter = webProgressWriter,
                     tabCacheRegistry = tabCacheRegistry
                 ).also { holder = it }
             }
@@ -104,6 +110,7 @@ object ReaderRuntime {
     private data class Holder(
         val readerViewModel: ReaderViewModel,
         val historyRepository: HistoryRepository,
+        val webProgressWriter: WebViewProgressWriter,
         val tabCacheRegistry: TabCacheRegistry
     )
 }

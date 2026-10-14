@@ -100,6 +100,43 @@ class HistoryDaoTest {
         assertEquals(-1, row.pageIndex)
     }
 
+    @Test
+    fun saveWebProgress_insertsWhenOpenRecordHasNotCompleted() = runBlocking {
+        dao.saveWebProgress(
+            path = "/docs/fast.mhtml",
+            title = "fast.mhtml",
+            lastAccess = 4_000,
+            progress = 0.63f,
+            fileType = FileType.MHTML
+        )
+
+        val row = dao.getByPath("/docs/fast.mhtml")!!
+        assertEquals("fast.mhtml", row.title)
+        assertEquals(FileType.MHTML, row.fileType)
+        assertEquals(0.63f, row.progress, 0.0001f)
+        assertEquals(-1, row.pageIndex)
+    }
+
+    @Test
+    fun saveWebProgress_conflictPreservesOpenMetadata() = runBlocking {
+        val path = "/docs/existing.mhtml"
+        dao.touchOpen(path, "original title", 1_000, FileType.MHTML)
+
+        dao.saveWebProgress(
+            path = path,
+            title = "stale title",
+            lastAccess = 2_000,
+            progress = 0.4f,
+            fileType = FileType.HTML
+        )
+
+        val row = dao.getByPath(path)!!
+        assertEquals("original title", row.title)
+        assertEquals(FileType.MHTML, row.fileType)
+        assertEquals(0.4f, row.progress, 0.0001f)
+        assertEquals(2_000, row.lastAccess)
+    }
+
     private suspend fun insertHistory(path: String, lastAccess: Long) {
         dao.upsert(
             HistoryEntity(

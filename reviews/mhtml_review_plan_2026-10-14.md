@@ -4,14 +4,14 @@
 > 用户确认：后续集中本地及 SMB/FTP 下载打开 MHTML；本轮只审查，下一份计划纳入全部三个已确认问题。
 > 用户未要求删除任何功能。PDF、上传专项不再列入后续主动执行队列；旧功能和已提交修复保留。
 > 本文件覆盖旧计划的优先顺序，不把历史 PDF/上传任务作为下一轮入口；各卡实施状态以本文顶部及对应执行记录为准。
-> **执行状态（2026-10-14）**：B01、B02 已完成，分别见 `reviews/mhtml_security_execution_2026-10-14.md` 与 `reviews/files_navigation_execution_2026-10-14.md`；B03 尚未开始。
+> **执行状态（2026-10-14）**：B01、B02 已完成；B03 代码、JVM 验证和 APK 已完成，真实设备 WebView 验收待做。执行记录分别见 `reviews/mhtml_security_execution_2026-10-14.md`、`reviews/files_navigation_execution_2026-10-14.md`、`reviews/mhtml_progress_execution_2026-10-14.md`。
 
 ## 1. 结论
 
 | 范围 | 代码复核判定 | 尚缺证据 |
 |---|---|---|
 | 497cfbe / Home 密度 | 实际行测高、observer 清理、响应式按钮方向可接受 | 真机内外滚动、大字体、实际前后截图 |
-| 497cfbe / Files 紧凑顶栏 | header 先于 adapter，点击/长按取 adapter item，空态和旧位置偏移正确 | U1 操作态回归未关闭，网络根及旋转设备验证 |
+| 497cfbe / Files 紧凑顶栏 | header 先于 adapter，点击/长按取 adapter item，空态和旧位置偏移正确；B02 已修复导航操作态守卫 | 网络根及旋转设备验证 |
 | 8ec0279 / PDF | 已补等待旧 load/render 和 Bitmap 创建时登记；原 S6/R3 主要缺口代码方向通过 | Fragment 全切换集成及真实 PDF；不安排后续 PDF 专项 |
 | 7eee5cc / 网络 | CIFSContext 超时实际字段已接线，共享 context 和资源 use；下载入口有 factory 测试 | 真实 SMB/FTP 下载认证、取消及缓存更新 |
 | 7eee5cc / 上传 | 已加部分写入持久状态与回页提示 | 本轮没有发现需立刻回退的新增问题；不安排上传后续专项 |
@@ -42,9 +42,9 @@
 
 不足：
 
-- Up 刷新状态没有合并操作锁，显示状态和行为约束脱节。
-- MHTML 历史数据已保存到模型，但 WebView 没有消费并恢复，尾写还会取消。
-- 文档资源日志仍有秘密泄露边界。
+- B02 前 Up 刷新状态没有合并操作锁；现已修复操作态、目录入口与系统 Back 一致性。
+- B03 前 WebView 不消费历史进度，debounce 尾写会随生命周期取消；现已实现代码与 JVM 验证，设备时序验收待做。
+- B01 前文档资源日志存在敏感 URL 泄露；现已替换为安全摘要并通过日志回归。
 - 共享工作区的 APK/测试与提交范围不同，必须分开描述代码与二进制验收。
 
 ```mermaid
@@ -64,13 +64,13 @@ flowchart LR
 
 | No. | Issue Title | Suggestion | Code Link |
 |---|---|---|---|
-| M2 高 | MHTML 被拦截资源/导航完整 URL 直接落日志 | 使用不含 userinfo、query、fragment 的安全摘要，不只删密码 | [资源日志 L40](file:///C:/Users/Player_X/Documents/Tare/mhtml_reader/core/reader/web/BlockingResourceWebViewClient.kt#L40)、[导航日志 L71](file:///C:/Users/Player_X/Documents/Tare/mhtml_reader/core/reader/web/BlockingResourceWebViewClient.kt#L71) |
-| M1 中 | MHTML 尾次阅读进度丢失，重建后无历史驱动的滚动恢复 | 捕获快照并有序持久化，页面稳定后幂等恢复，抑制恢复期间回写 | [stopTracking L43-L45](file:///C:/Users/Player_X/Documents/Tare/mhtml_reader/core/reader/web/WebViewProgressTracker.kt#L43-L45)、[Web 加载 L454-L456](file:///C:/Users/Player_X/Documents/Tare/mhtml_reader/app/src/main/java/html_reader/ReaderFragment.kt#L454-L456) |
-| U1 中 | 操作期间禁用的 Up 被目录刷新重新启用 | 合并当前操作态与可向上态，入口统一检查，不能刷新默认 true | [默认参数 L549](file:///C:/Users/Player_X/Documents/Tare/mhtml_reader/app/src/main/java/html_reader/FilesFragment.kt#L549)、[赋值 L564](file:///C:/Users/Player_X/Documents/Tare/mhtml_reader/app/src/main/java/html_reader/FilesFragment.kt#L564)、[调用 L778](file:///C:/Users/Player_X/Documents/Tare/mhtml_reader/app/src/main/java/html_reader/FilesFragment.kt#L778) |
+| M2 高（B01 已修复） | MHTML 被拦截资源/导航完整 URL 直接落日志 | 已改为不含 userinfo、path、query、fragment 或 data 内容的安全摘要 | [资源日志](file:///C:/Users/Player_X/Documents/Tare/mhtml_reader/core/reader/web/BlockingResourceWebViewClient.kt)、[摘要 helper](file:///C:/Users/Player_X/Documents/Tare/mhtml_reader/core/reader/web/SafeUrlLogSummary.kt) |
+| M1 中（B03 代码/JVM 完成） | MHTML 尾次阅读进度丢失，重建后无历史驱动的滚动恢复 | 已实现快照尾写、串行 writer、generation guard 与有限稳定布局恢复；真实设备时序待验 | [tracker](file:///C:/Users/Player_X/Documents/Tare/mhtml_reader/core/reader/web/WebViewProgressTracker.kt)、[ReaderFragment](file:///C:/Users/Player_X/Documents/Tare/mhtml_reader/app/src/main/java/html_reader/ReaderFragment.kt) |
+| U1 中（B02 已修复） | 操作期间禁用的 Up 被目录刷新重新启用 | 已统一操作态与可上行态，Up、系统 Back 和目录点击共享导航守卫 | [FilesFragment](file:///C:/Users/Player_X/Documents/Tare/mhtml_reader/app/src/main/java/html_reader/FilesFragment.kt) |
 
-### M2：安全/防御，既有问题，不是本次新回归
+### M2：安全/防御，既有问题，不是本次新回归（B01 已完成）
 
-MHTML 外部子资源进入拦截回调后，userinfo 密码或 query token 原样进 Log.d；非 HTTP(S) 被拒导航也有该问题。HTTP(S) 导航提前返回，不经过导航日志，不能泛化成所有外链均记录。风险不等于网络配置密码自动泄漏，读取日志也需要相应权限；不声称已公网外泄。
+B01 前，MHTML 外部子资源进入拦截回调后，userinfo 密码或 query token 原样进 Log.d；非 HTTP(S) 被拒导航也有该问题。HTTP(S) 导航提前返回，不经过导航日志，不能泛化成所有外链均记录。风险不等于网络配置密码自动泄漏，读取日志也需要相应权限；不声称已公网外泄。现由 B01 的安全摘要替换，执行记录见 `reviews/mhtml_security_execution_2026-10-14.md`。
 
 ```kotlin
 // Before
@@ -81,9 +81,9 @@ Log.d(tag, "blocked_resource fileType=$fileType target=${safeTargetSummary(url)}
 
 安全摘要最多记录 scheme 与验证后的 host，不日志 URL、path、data内容。`UrlCredentialSanitizer.sanitizeText` 仅删 userinfo 密码，不足以清除 query token；不要凭此宣布修复。不要增加网络请求、放宽拦截、启用 JavaScript。
 
-### M1：状态/协程，既有问题
+### M1：状态/协程，既有问题（B03 代码/JVM 已完成，设备验收待做）
 
-最后滚动不足500ms就切tab/暂停/销毁，stopTracking取消pending而无flush。已落库数据不因此丢失；同一存活WebView同URL可保留滚动，不能说每次返回必回顶部。新建WebView或跨文档加载没有应用层历史恢复。Tab.lastKnownProgress是创建时快照，直接读它不保证最新。
+B03 前，最后滚动不足500ms就切tab/暂停/销毁，stopTracking取消pending而无flush。已落库数据不因此丢失；同一存活WebView同URL可保留滚动，不能说每次返回必回顶部。新建WebView或跨文档加载没有应用层历史恢复。Tab.lastKnownProgress是创建时快照，直接读它不保证最新。现已实施应用级串行尾写与基于最新 history 的有限恢复，设备时序验收仍待做。
 
 ```kotlin
 // Before
@@ -98,9 +98,9 @@ progressWriter.enqueue(snapshot) // 捕获 source、内容代次和序号；同 
 
 恢复需读取最新历史/内存快照，核验当前tab、内容代次与目标URL；页面有有效尺寸后计算offset。恢复滚动/首次加载产生的0事件不能覆盖历史；旧快照不得晚到覆盖较新快照。离页保存只持有不可变数据，不捕获已销毁View。不能用NonCancellable包整页业务；不承诺强杀进程时一定保存最后像素。
 
-### U1：架构/状态，497cfbe 新回归的限定部分
+### U1：架构/状态，497cfbe 新回归的限定部分（B02 已完成）
 
-本地/SMB操作禁用Up后，目录点击仍可触发加载；updateCurrentDirLabel/prepareRemoteBrowse以默认true刷新，非根目录Up再次启用。无刷新时仍禁用，根目录仍不可Up。系统Back无操作检查、目录项未受锁保护是旧问题；新回归仅是刷新覆盖禁用状态。
+B02 前，本地/SMB操作禁用Up后，目录点击仍可触发加载；updateCurrentDirLabel/prepareRemoteBrowse以默认true刷新，非根目录Up再次启用。无刷新时仍禁用，根目录仍不可Up。现已合并操作态与可上行态，目录导航和系统 Back 均复用守卫。
 
 ```kotlin
 // Before
@@ -151,7 +151,7 @@ flowchart LR
 - 完成/取消后再恢复可向上计算；根/网络无配置仍禁用；header offset、搜索排序、滚动恢复不变。
 - 不清空用户目录、不断开操作、不加入新网络管理功能。
 
-### P1 / B03：MHTML进度闭环（M1）
+### P1 / B03：MHTML进度闭环（M1）- 代码/JVM 完成，设备验收待做
 
 - 允许：WebViewProgressTracker、ReaderFragment的Web加载/暂停/销毁接线、小型进度writer/state helper、HistoryRepository必要方法、tests。保持Room v4；不改PDF渲染任务或上传。
 - 先可控dispatcher测试滚动后<500ms离页最终保存、连续事件节流、旧快照不覆盖新快照、取消不触碰旧View。
@@ -161,7 +161,7 @@ flowchart LR
 - 网络下载打开当前以本地中转路径入reader；先保持该身份契约，不在此卡偷偷设计远端收藏/历史identity。网络重下后身份/版本稳定性作为B04审查对象。
 - 修改后实测MHTML图片、布局fallback和离线安全；不能只用fake宣称真实WebView验收。
 
-### P2 / B04：仅审查和采集 MHTML 性能证据
+### P2 / B04：仅审查和采集 MHTML 性能证据（待执行）
 
 先研究本地/SMB/FTP“目录 → 下载 → cache copy → tab → WebView”耗时和内存，不先写未经证据的优化。
 分开冷开/热开、大图片/大档案、多tab、慢网络；采集阶段耗时与帧阻塞，不记录凭据或文档正文。
