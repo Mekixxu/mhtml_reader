@@ -15,7 +15,7 @@
 | A | T01 Q1 有效手势接管 | 已完成 | 1.0.72 / 73 |
 | B | T02 Q4 缓存完整性 | 已完成 | 1.0.73 / 74 |
 | C | T03 Q2/Q3 缓存协调 | 已完成 | 1.0.74 / 75 |
-| D | T04 总回归与交接 | 进行中 | — |
+| D | T04 总回归与交接 | 已完成（设备待验未执行） | — |
 
 ## 2. 批次 A（T01：Q1 有效手势接管）
 
@@ -199,6 +199,7 @@ read 正常返回 EOF，于是缓存里只剩前 60 字节却上报 100/100 并�
 
 ### 4.5 交付
 
+- 提交：`eb4033c`（`fix: 缓存保护租约与全局容量预约（Q2/Q3）`），21 files changed（仅本批文件，未纳入 V03）。
 - 版本 `1.0.74 / 75`；APK：`app/build/outputs/apk/debug/MHTMLReader_v1.0.74_debug.apk`
   - SHA256 `BF70F2F4F0A8A476FF298B7E1EF48CCC2A1EDBDCD712D647837B8D28EC1ECE96`
   - 大小 23,398,447 字节
@@ -208,4 +209,41 @@ read 正常返回 EOF，于是缓存里只剩前 60 字节却上报 100/100 并�
 
 - 设备待验（未执行）：见批次 D 清单；Robolectric 不能替代真实设备签字。
 - 在途锁表 `copyLocks` 不回收，进程内长期打开过的 cacheKey 保留一个 `Mutex` 条目，数量受历史打开数限制（已记录边界，回收需处理等待者，本批不做）。
+
+## 5. 批次 D（T04：总回归与交接）
+
+### 5.1 自动化命令与结果
+
+| 命令 | 结果 |
+|---|---|
+| `.\gradlew.bat :core-base:testDebugUnitTest :app:testDebugUnitTest` | BUILD SUCCESSFUL；`files=55 tests=280 failures=0 errors=0 skipped=2` |
+| `.\gradlew.bat :app:assembleDebug` | BUILD SUCCESSFUL；产出 `MHTMLReader_v1.0.74_debug.apk` |
+| `git diff --check` | 干净（exit 0；仅 CRLF 换行提示，非空白错误） |
+
+- 跳过原因：2 项为未提交 V03 的 `LocalFileSystemRenameTest` 符号链接用例，Windows 无创建权限按 `Assume` 跳过。
+- 完整测试较批次起始（`b2c8fe1` 主线复核记录 245 项含 2 跳过）净增 35 项，全部为本轮 T01-T03 正式回归。
+
+### 5.2 Q1-Q4 状态（以本记录为准）
+
+| 问题 | 批次 | 状态 | 依据 |
+|---|---|---|---|
+| Q1 轻触接管缺口 | A（T01） | 已修复并回归 | `WebGestureTakeoverState` + `ReaderFragmentGestureTakeoverTest`（commit `e43e60f`） |
+| Q4 短 EOF/截短假成功 | B（T02） | 已修复并回归 | `CacheOpenManagerIntegrityTest` 等（commit `626e402`） |
+| Q2 缓存保护交接空窗 | C（T03） | 已修复并回归 | 租约连续持有 + 同步区先移交后发布；`CacheCoordinationTest`（commit `eb4033c`） |
+| Q3 并发容量无预约 | C（T03） | 已修复并回归 | 全局预算 reservation；`CacheCoordinationTest`（commit `eb4033c`） |
+
+> 说明：设备待验项与维护清理/未知长度源等边界尚未在真机签字，故本表"已修复"仅代表**代码与自动化回归闭合**，不等于设备端验收完成。
+
+### 5.3 设备待验清单（未执行，需连接真机/服务器）
+
+- 本地、SMB、FTP 各打开 MHTML，验证中部进度恢复与快速离页尾写。
+- 轻触、抖动、长按、真正拖动、缩放不误覆盖/回拉阅读位置；后台返回正常。
+- 后台连续打开多个文件，关闭其中一个并同时触发维护，仍能读取其它标签（对应 Q2/Q3 真机并发）。
+- 文件变化/磁盘不足时显示失败或忙碌，不出现"完成"后空白（对应 Q4 与预算失败路径）。
+- Files 搜索、Display、路径详情、列表内 Up 不退化。
+
+### 5.4 共享工作区状态
+
+- 本记录提交后，工作区仍保留其他 agent 的 V03 改动（备份导入、网络凭据游标迁移、本地 rename 及测试、`review_answers_504583f_2026-10-12.md`），未由本批代为提交。
+- 未启用 Hilt；`DefaultMaintenanceManager`/`core/*/di` 未接线，运行时仍走 `ReaderRuntime` + `App*Worker`。
 

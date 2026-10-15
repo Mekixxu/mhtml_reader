@@ -262,7 +262,7 @@ Linux/macOS：
 - `reviews/mhtml_ui_execution_2026-10-15.md`：R1 失败恢复保护与 Files 四控件对齐、去搜索底线交付；1.0.71、自动化验证及设备待验清单。
 - `reviews/mhtml_current_review_2026-10-15.md`：b2c8fe1 当前工作区主线复核；Q1 轻触接管缺口、Q2/Q3 缓存交接与预约遗留、Q4 短 EOF，四项受控实验与分级路线。
 - `reviews/mhtml_fix_plan_2026-10-15.md`：MHTML 四项缺陷（Q1-Q4）分批修复执行计划（T01-T04），供执行 LLM 使用。
-- `reviews/mhtml_fix_execution_2026-10-15.md`：`mhtml_fix_plan_2026-10-15.md` 的分批执行记录（T01-T04，逐项列出 Q1-Q4 状态、测试统计、APK 与设备待验项）；当前 A（Q1）/B（Q4）/C（Q2/Q3）已完成并交付 1.0.74，D（T04）进行中。
+- `reviews/mhtml_fix_execution_2026-10-15.md`：`mhtml_fix_plan_2026-10-15.md` 的分批执行记录（T01-T04，逐项列出 Q1-Q4 状态、测试统计、APK 与设备待验项）；A-D 已完成（Q1-Q4 代码与自动化回归闭合，交付 1.0.74；设备待验未执行）。
 ---
 
 ## 5. 文档维护规则
