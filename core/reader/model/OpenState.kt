@@ -8,7 +8,8 @@ import core.reader.model.ReaderTab
  */
 sealed class OpenState {
     object Loading : OpenState()
-    data class Copying(val bytesCopied: Long, val totalBytes: Long) : OpenState()
+    /** [totalBytes] 为 `null` 表示源长度未知，UI 应以不确定进度展示 */
+    data class Copying(val bytesCopied: Long, val totalBytes: Long?) : OpenState()
     data class Ready(val tab: ReaderTab) : OpenState()
     data class Error(val error: AppError) : OpenState()
 }

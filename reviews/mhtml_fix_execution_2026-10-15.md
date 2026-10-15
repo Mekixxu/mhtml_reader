@@ -13,7 +13,7 @@
 | 批次 | 任务 | 状态 | 版本 / APK |
 |---|---|---|---|
 | A | T01 Q1 有效手势接管 | 已完成 | 1.0.72 / 73 |
-| B | T02 Q4 缓存完整性 | 待执行 | — |
+| B | T02 Q4 缓存完整性 | 已完成 | 1.0.73 / 74 |
 | C | T03 Q2/Q3 缓存协调 | 待执行 | — |
 | D | T04 总回归与交接 | 待执行 | — |
 
@@ -64,7 +64,56 @@
 
 ## 3. 批次 B（T02：Q4 缓存完整性）
 
-待执行。
+### 3.1 问题
+
+`CacheOpenManager.openToCache` 把 `totalBytes: Long` 当已知长度使用，且直接写入最终
+`content.[ext]`；EOF 后无条件上报 `CopyProgress(totalBytes, totalBytes)`，从不比较实际
+copied。TabManager 先采样本地文件长度、再打开输入流，源在打开前被截短或拷贝期间原地截短时
+read 正常返回 EOF，于是缓存里只剩前 60 字节却上报 100/100 并发布 Ready 标签（Q4）。
+
+### 3.2 变更
+
+- `core/cache/model/CopyProgress.kt`：`totalBytes` 改为 `Long?`（`null` 未知、`0` 已知空文件）。
+- `core/reader/model/OpenState.kt`：`Copying.totalBytes` 同步为 `Long?`。
+- `core/cache/CacheOpenManager.kt`：
+  - 签名 `totalBytes: Long?`；`generateCacheKey(size: Long?)` 与之一致（`versionStamp` 非空时键不变）。
+  - 先写本次专属 `content.[ext].part`，关闭输出后再校验实际字节数；
+  - 校验通过才 `delete + rename` 提交为最终成品；失败/取消只删除本次 `.part`；
+  - 已知长度不相等即失败：截短报 `AppError.IoError("Incomplete copy: expected=… actual=…")`，
+    增长（`copied + read > totalBytes`）抛 `EOFException("Source length changed while copying")`，两者都不会落入末尾假成功；
+  - 每块写入前 `ensureActive()` 并做长度检查；
+  - 上报真实 copied；缓存命中只命中已提交成品；Windows 下先关闭句柄再删临时文件（否则删除失败）；
+  - CancellationException 直接重抛、取消态不再 emit；`flush/close` 失败走失败路径而非 finally 吞掉。
+- `core/reader/tab/DefaultReaderTabManager.kt`：本地已存在文件取真实长度（0 为已知空文件），
+  SAF/网络等未知长度传 `null`；建 Ready 前要求成品存在且已知长度时长度一致。
+- `core/domain/usecase/ObserveDisplayTitlesUseCase.kt`：仅正数视为已知长度，其余按未知处理；
+  `buildVersionStamp` 取值不变，避免标题缓存无谓失效。
+- `app/src/main/java/html_reader/ReaderFragment.kt`：`Copying` 的 `totalBytes == null` 或 `<= 0` 时按不确定进度展示。
+
+### 3.3 回归
+
+- `app/src/test/java/com/html_reader/CacheOpenManagerIntegrityTest.kt`（7 项）：
+  截短 100→60 报错且无半成品；100/100 成功并上报真实字节；增长 100→140 不假成功；
+  已知空文件提交 0 字节成品；未知长度接受实际字节且 `totalBytes` 为 null；
+  失败不损坏其他持有者的有效缓存；取消清理半成品且从不提交。
+- `app/src/test/java/com/html_reader/DefaultReaderTabManagerTest.kt` 新增：
+  真实 `LocalFileSystem` + TabManager 链路，打开输入流前原地截短到 60，
+  断言无 Ready、有 Error、无 `content.*` 半成品、无 tab 建立（正式串联，而非仅断言 helper）。
+
+### 3.4 测试统计
+
+- `:core-base:testDebugUnitTest :app:testDebugUnitTest`：`tests=271 failures=0 errors=0 skipped=2`（较 T01 基线 263 新增 8 项）。
+
+### 3.5 交付
+
+- 版本 `1.0.73 / 74`；APK：`app/build/outputs/apk/debug/MHTMLReader_v1.0.73_debug.apk`
+  - SHA256 `21C96A09D25DF1C7651683125CB79FE8F572FB250AD18BE7A03A91F160B95BA5`
+
+### 3.6 未闭合 / 下一步
+
+- 设备待验（未执行）：本地/SMB/FTP 打开 MHTML，拷贝期间中断源文件后应显示失败而非"完成"后空白；
+  FTP/SMB 未知长度源（`totalBytes=null`）仍可正常打开。
+- 未知长度源无法检测同长度内容变化（长度检查本身不证明 MHTML 语法有效），属计划已声明的边界。
 
 ## 4. 批次 C（T03：Q2/Q3 缓存协调）
 

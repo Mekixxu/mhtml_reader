@@ -93,8 +93,10 @@ class ObserveDisplayTitlesUseCase(
 
                                 // 2.2 打开到缓存（包1统一链路）
                                 val contentType = guessContentType(e.name)
-                                val totalBytes = e.sizeBytes.coerceAtLeast(0L)
-                                val versionStamp = buildVersionStamp(e.lastModifiedEpochMs, totalBytes)
+                                // 仅正数视为已知长度；0/负数（部分 SAF/网络源未提供大小）按未知处理，
+                                // 但不改变 buildVersionStamp 既有取值，避免无谓的标题缓存失效
+                                val totalBytes = e.sizeBytes.takeIf { it > 0L }
+                                val versionStamp = buildVersionStamp(e.lastModifiedEpochMs, e.sizeBytes)
                                 cacheOpenManager.openToCache(
                                     src = e.path,
                                     totalBytes = totalBytes,

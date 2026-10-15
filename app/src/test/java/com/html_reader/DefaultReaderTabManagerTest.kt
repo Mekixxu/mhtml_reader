@@ -14,6 +14,7 @@ import core.database.entity.enums.FileType
 import core.reader.model.OpenRequest
 import core.reader.model.OpenState
 import core.reader.tab.DefaultReaderTabManager
+import core.vfs.IFileSystem
 import core.vfs.local.LocalFileSystem
 import core.vfs.model.VfsPath
 import kotlinx.coroutines.flow.toList
@@ -26,6 +27,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import java.io.File
+import java.io.InputStream
+import java.io.RandomAccessFile
 
 @RunWith(RobolectricTestRunner::class)
 class DefaultReaderTabManagerTest {
@@ -156,6 +159,60 @@ class DefaultReaderTabManagerTest {
             assertTrue("UI 必须收到具体缓存占用错误", error === AppError.CacheBusy)
         } finally {
             smallRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun openNewTab_sourceTruncatedDuringCopy_errorsWithoutReadyOrHalfProduct() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dispatchers = DefaultDispatcherProvider()
+        val root = File(context.cacheDir, "app_cache_trunc_${System.nanoTime()}").apply { mkdirs() }
+        try {
+            // 采样时长度为 100；打开输入流前被原地截短到 60，真实链路必须识别为不完整
+            val source = File(cacheRoot.parentFile, "trunc-${System.nanoTime()}.mhtml")
+                .apply { writeBytes(ByteArray(100) { 'a'.code.toByte() }) }
+            val delegate = LocalFileSystem(context, dispatchers)
+            val truncating = object : IFileSystem by delegate {
+                override suspend fun openInputStream(path: VfsPath): Result<InputStream> {
+                    val p = (path as? VfsPath.LocalFile)?.filePath
+                    if (p != null && File(p) == source) {
+                        RandomAccessFile(source, "rw").use { it.setLength(60) }
+                    }
+                    return delegate.openInputStream(path)
+                }
+            }
+            val openManager = CacheOpenManager(
+                context = context,
+                cacheRoot = root,
+                fileSystem = truncating,
+                dispatcherProvider = dispatchers,
+                cacheEvictor = CacheEvictor(root, maxBytes = 10L * 1024 * 1024)
+            )
+            val manager = DefaultReaderTabManager(
+                cacheOpenManager = openManager,
+                tabCacheRegistry = TabCacheRegistry(root),
+                historyRepo = HistoryRepository(db.historyDao(), dispatchers),
+                dispatcherProvider = dispatchers
+            )
+
+            val states = manager.openNewTab(
+                OpenRequest(
+                    source = VfsPath.LocalFile(source.absolutePath),
+                    fileName = source.name,
+                    fileType = FileType.MHTML,
+                    versionStamp = "${source.lastModified()}:100"
+                )
+            ).toList()
+
+            assertEquals(0, states.filterIsInstance<OpenState.Ready>().size)
+            assertTrue("必须上报错误而非创建 Ready 标签", states.filterIsInstance<OpenState.Error>().isNotEmpty())
+            assertTrue(
+                "不得留下可复用半成品",
+                root.walkTopDown().filter { it.isFile }.none { it.name.startsWith("content.") }
+            )
+            assertEquals(0, manager.observeTabs().value.size)
+        } finally {
+            root.deleteRecursively()
         }
     }
 }

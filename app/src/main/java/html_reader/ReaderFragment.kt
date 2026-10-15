@@ -268,9 +268,10 @@ class ReaderFragment : Fragment() {
                         }
                         is OpenState.Copying -> {
                             statusLabel.setOnClickListener(null)
-                            if (state.totalBytes > 0L) {
+                            val total = state.totalBytes
+                            if (total != null && total > 0L) {
                                 openProgress.isIndeterminate = false
-                                val percent = ((state.bytesCopied * 100L) / state.totalBytes).toInt().coerceIn(0, 100)
+                                val percent = ((state.bytesCopied * 100L) / total).toInt().coerceIn(0, 100)
                                 openProgress.max = 100
                                 openProgress.progress = percent
                                 statusLabel.text = getString(R.string.reader_status_copying_percent, percent)

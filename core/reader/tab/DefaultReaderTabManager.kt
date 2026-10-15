@@ -63,9 +63,10 @@ class DefaultReaderTabManager(
 
         val (contentType, extName) = inferContentTypeAndExt(request.fileType, request.fileName)
 
-        val totalBytes = when (request.source) {
-            is core.vfs.model.VfsPath.LocalFile -> File(request.source.filePath).takeIf { it.exists() }?.length() ?: 0L
-            else -> 0L
+        // 长度：本地已存在文件取真实字节数（0 为已知空文件）；SAF/网络等无法预知长度时为 null
+        val knownTotalBytes: Long? = when (request.source) {
+            is core.vfs.model.VfsPath.LocalFile -> File(request.source.filePath).takeIf { it.exists() }?.length()
+            else -> null
         }
         var copyFailure: Throwable? = null
 
@@ -73,7 +74,7 @@ class DefaultReaderTabManager(
         try {
             cacheOpenManager.openToCache(
                 src = request.source,
-                totalBytes = totalBytes,
+                totalBytes = knownTotalBytes,
                 contentType = contentType,
                 versionStamp = request.versionStamp,
                 extName = extName
@@ -102,7 +103,7 @@ class DefaultReaderTabManager(
         val cacheKey = cacheOpenManager.generateCacheKey(
             src = request.source,
             contentType = contentType,
-            size = totalBytes,
+            size = knownTotalBytes,
             versionStamp = request.versionStamp
         )
         val cacheFile = cacheOpenManager.resolveCacheFile(
@@ -111,8 +112,10 @@ class DefaultReaderTabManager(
             extName = extName ?: contentType.defaultExt()
         )
         val cacheFilePath = cacheFile.path
-        if (!cacheFile.exists()) {
-            emit(OpenState.Error(AppError.IoError("cache file not resolved", null)))
+        // 只对明确完整的结果建 Ready：成品必须存在，且已知长度时必须与源长度一致
+        val committedLength = cacheFile.takeIf { it.exists() }?.length()
+        if (committedLength == null || (knownTotalBytes != null && committedLength != knownTotalBytes)) {
+            emit(OpenState.Error(AppError.IoError("cache file not committed or incomplete", null)))
             return@flow
         }
 

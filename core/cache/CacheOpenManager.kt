@@ -16,6 +16,8 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.sync.Mutex
 import kotlin.coroutines.coroutineContext
+import java.io.Closeable
+import java.io.EOFException
 import java.io.File
 import java.io.OutputStream
 import java.util.concurrent.ConcurrentHashMap
@@ -26,6 +28,12 @@ import java.util.concurrent.ConcurrentHashMap
  * - cacheKey生成纳入contentType、路径、size
  * - extName按内容类型推断，未知类型返回 Result.failure，不抛异常
  * - 同一 cacheKey 使用 Mutex 单飞，避免并发写坏缓存
+ *
+ * 完整性约定（Q4）：
+ * - 长度用 `Long?` 表达：`null` 未知、`0` 为已知空文件。
+ * - 先写本次专属 `.part` 临时文件，关闭输出后校验实际字节数；已知长度不一致即失败。
+ * - 只有校验通过才提交为最终 `content.[ext]`；失败/取消只清理本次 `.part`。
+ * - 上报真实 copied，不再伪造 total/total；缓存命中只命中已提交成品。
  */
 class CacheOpenManager(
     private val context: Context,
@@ -40,7 +48,7 @@ class CacheOpenManager(
 
     suspend fun openToCache(
         src: VfsPath,
-        totalBytes: Long,
+        totalBytes: Long?,
         contentType: ContentType,
         versionStamp: String? = null,
         extName: String? = null
@@ -74,15 +82,17 @@ class CacheOpenManager(
                 return@flow
             }
             val cacheFile = File(cacheDir, "content.$fileExt")
+            val partFile = File(cacheDir, "content.$fileExt.part")
 
-            // 已存在直接100%进度
-            if (cacheFile.exists() && cacheFile.length() == totalBytes) {
-                emit(Result.success(CopyProgress(totalBytes, totalBytes)))
+            // 只命中已提交成品；成品仅在「关闭输出并通过字节校验」后提交，故存在即完整。
+            // 未知长度无法比对字节数，退化为「成品是否存在」。
+            if (cacheFile.exists() && (totalBytes == null || cacheFile.length() == totalBytes)) {
+                emit(Result.success(CopyProgress(cacheFile.length(), totalBytes)))
                 return@flow
             }
 
             // Proactive eviction：保护活跃 tab 与所有在途拷贝的 cacheKey；失败按类型化错误下发，由 UI 层本地化
-            val eviction = cacheEvictor.makeRoomFor(totalBytes, activeKeysProvider() + inFlightKeys, cacheKey)
+            val eviction = cacheEvictor.makeRoomFor(totalBytes ?: 0L, activeKeysProvider() + inFlightKeys, cacheKey)
             if (eviction != EvictionResult.READY) {
                 val error = when (eviction) {
                     EvictionResult.EXCEEDS_LIMIT -> AppError.CacheLimitExceeded
@@ -100,33 +110,60 @@ class CacheOpenManager(
             }
             var out: OutputStream? = null
             try {
-                out = cacheFile.outputStream()
-                val buf = ByteArray(64 * 1024)
+                out = partFile.outputStream()
+                val buf = ByteArray(COPY_BUFFER_SIZE)
                 var copied = 0L
-                var read: Int
                 while (true) {
                     coroutineContext.ensureActive()
-                    read = `in`.read(buf)
+                    val read = `in`.read(buf)
                     if (read == -1) break
+                    // 已知长度的源增长视为变化，避免无限写入
+                    if (totalBytes != null && copied + read > totalBytes) {
+                        throw EOFException("Source length changed while copying")
+                    }
                     out.write(buf, 0, read)
                     copied += read
                     emit(Result.success(CopyProgress(copied, totalBytes)))
                 }
+                // flush/close 失败必须上报失败，不能被 finally 吞掉后仍宣布成功
                 out.flush()
+                out.close()
+                out = null
             } catch (ce: CancellationException) {
-                cacheFile.delete()
-                emit(Result.failure(ce))
+                // 取消时关闭句柄并只清理本次临时文件（Windows 下必须先关闭再删）；取消状态下不再 emit
+                closeQuietly(out)
+                partFile.delete()
                 throw ce
             } catch (e: Throwable) {
-                cacheFile.delete()
+                // 先关闭句柄再删临时文件，避免句柄占用导致删除失败；
                 // 只上报失败，不再二次抛出，避免调用方 collect 崩溃；并终止，避免落入末尾的假成功
+                closeQuietly(out)
+                partFile.delete()
                 emit(Result.failure(e))
                 return@flow
             } finally {
-                try { `in`.close() } catch (_: Throwable) {}
-                try { out?.close() } catch (_: Throwable) {}
+                closeQuietly(`in`)
             }
-            emit(Result.success(CopyProgress(totalBytes, totalBytes)))
+
+            // 关闭输出后校验实际字节数：已知长度必须完全一致
+            val committedBytes = partFile.length()
+            if (totalBytes != null && committedBytes != totalBytes) {
+                partFile.delete()
+                emit(Result.failure(AppError.IoError("Incomplete copy: expected=$totalBytes actual=$committedBytes")))
+                return@flow
+            }
+            // 校验通过才提交成品（替换可能存在的旧成品）
+            if (cacheFile.exists() && !cacheFile.delete()) {
+                partFile.delete()
+                emit(Result.failure(AppError.IoError("Cannot replace stale cache file")))
+                return@flow
+            }
+            if (!partFile.renameTo(cacheFile)) {
+                partFile.delete()
+                emit(Result.failure(AppError.IoError("Cannot commit cache file")))
+                return@flow
+            }
+            emit(Result.success(CopyProgress(committedBytes, totalBytes)))
         } finally {
             inFlightKeys.remove(cacheKey)
             copyLock.unlock()
@@ -136,7 +173,7 @@ class CacheOpenManager(
     fun generateCacheKey(
         src: VfsPath,
         contentType: ContentType,
-        size: Long,
+        size: Long?,
         versionStamp: String? = null
     ): String {
         val id = src.raw
@@ -147,4 +184,15 @@ class CacheOpenManager(
 
     fun resolveCacheFile(contentType: ContentType, cacheKey: String, extName: String): File =
         cacheRoot.resolve(contentType.name.lowercase()).resolve(cacheKey).resolve("content.$extName")
+
+    private fun closeQuietly(closeable: Closeable?) {
+        try {
+            closeable?.close()
+        } catch (_: Throwable) {
+        }
+    }
+
+    private companion object {
+        const val COPY_BUFFER_SIZE = 64 * 1024
+    }
 }
