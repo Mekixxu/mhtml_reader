@@ -30,7 +30,7 @@
   - `compileSdk = 36`
   - `targetSdk = 36`
   - `minSdk = 30`
-- 版本号：`versionName = 1.0.73` / `versionCode = 74`（见 `app/build.gradle.kts`）
+- 版本号：`versionName = 1.0.74` / `versionCode = 75`（见 `app/build.gradle.kts`）
 - 核心依赖（关键版本）：
   - AndroidX（AppCompat `1.7.0`、Lifecycle `2.8.4`、WorkManager `2.9.1`、WebKit `1.11.0`、Room `2.6.1`）
   - Hilt `2.52`
@@ -145,7 +145,7 @@ Linux/macOS：
 ### 3.2.1 测试基础设施（2026-09-21 更新）
 
 - `core-base/src/test/java`：纯 JVM 单元测试（`HashUtilsTest` / `OutcomeTest` / `AppErrorTest` / `UrlCredentialSanitizerTest`），不依赖模拟器。
-- `app/src/test/java`：Robolectric 单元测试（`FilesSortHelperTest`、`FilesFtpCodecTest`、`FilesNetworkGatewayTest`、`TransferCacheCleanerTest`、`CacheEvictorTest`、`CacheOpenManagerFailureTest`、`CacheOpenManagerInFlightTest`、`CacheOpenManagerIntegrityTest`、`MoveUseCaseTest`、`HistoryDaoTest`、`DefaultReaderTabManagerTest`、`BlockingResourceWebViewClientTest`、`WebViewProgressTrackerTest`、`WebViewProgressWriterTest`、`WebViewProgressRestorerTest`、`WebProgressSamplingStateTest`、`WebProgressRestoreIntegrationTest`、`WebGestureTakeoverStateTest`、`ReaderFragmentGestureTakeoverTest`、`FilesStartupHandlerTest`、`BackupImportTransactionTest`）。
+- `app/src/test/java`：Robolectric 单元测试（`FilesSortHelperTest`、`FilesFtpCodecTest`、`FilesNetworkGatewayTest`、`TransferCacheCleanerTest`、`CacheEvictorTest`、`CacheOpenManagerFailureTest`、`CacheOpenManagerInFlightTest`、`CacheOpenManagerIntegrityTest`、`CacheCoordinationTest`、`MoveUseCaseTest`、`HistoryDaoTest`、`DefaultReaderTabManagerTest`、`BlockingResourceWebViewClientTest`、`WebViewProgressTrackerTest`、`WebViewProgressWriterTest`、`WebViewProgressRestorerTest`、`WebProgressSamplingStateTest`、`WebProgressRestoreIntegrationTest`、`WebGestureTakeoverStateTest`、`ReaderFragmentGestureTakeoverTest`、`FilesStartupHandlerTest`、`BackupImportTransactionTest`）。
   - `app/src/test/resources/robolectric.properties` 固定 `sdk=35` 与测试用 `Application`；`testOptions.unitTests.isIncludeAndroidResources = true` 已开启（避免走 `HtmlReaderApp` 的 WorkManager 初始化）。
 - `app/src/androidTest/java`：设备端冒烟测试（`AppSmokeTest`），验证 app 冷启动不崩，需连接模拟器/真机。
 - 本地运行：Linux/macOS 使用 `./gradlew :core-base:testDebugUnitTest`、`:app:testDebugUnitTest`、`:app:connectedDebugAndroidTest`；Windows 使用对应的 `:core-base:testDebugUnitTest`、`:app:testDebugUnitTest`、`:app:connectedDebugAndroidTest` bat 命令。
@@ -215,7 +215,7 @@ Linux/macOS：
 - `core/data/repo` `[C → core-data]`：仓储实现（收藏/历史/网络配置/标题缓存）
 - `core/security` `[C → core-data]`：`CredentialCipher` Android Keystore 凭据加解密
 - `core/session/*` `[C → core-data / feature-files]`：目录会话实体、DAO、仓储与用例
-- `core/cache` `[C → core-domain]`：缓存打开、淘汰与清理
+- `core/cache` `[C → core-domain]`：缓存打开、淘汰与清理；保护/预算协调（`TabCacheRegistry` 引用计数租约与受保护删除、`CacheLease`/`CacheProtection` 契约、`CacheEvictor` 预约预算）
 - `core/domain` `[C → core-domain]`：领域模型与用例（目录列表/标题/历史保留）
 - `core/title` `[C → core-domain]`：标题提取能力（HTML/PDF）
 - `core/backup` `[C → core-domain]`：JSON 导入导出、收藏导入顺序规划（FavoriteImportPlanner）
@@ -261,7 +261,8 @@ Linux/macOS：
 - `reviews/mhtml_review_2026-10-15.md`：四个 MHTML 主线修复提交复核（B01/B02代码通过、B03失败恢复R1未闭合；245项含2跳过），最新复核判定入口。
 - `reviews/mhtml_ui_execution_2026-10-15.md`：R1 失败恢复保护与 Files 四控件对齐、去搜索底线交付；1.0.71、自动化验证及设备待验清单。
 - `reviews/mhtml_current_review_2026-10-15.md`：b2c8fe1 当前工作区主线复核；Q1 轻触接管缺口、Q2/Q3 缓存交接与预约遗留、Q4 短 EOF，四项受控实验与分级路线。
-- `reviews/mhtml_fix_execution_2026-10-15.md`：`mhtml_fix_plan_2026-10-15.md` 的分批执行记录（T01-T04，逐项列出 Q1-Q4 状态、测试统计、APK 与设备待验项）；当前 A（Q1）/B（Q4）已完成并交付 1.0.73。
+- `reviews/mhtml_fix_plan_2026-10-15.md`：MHTML 四项缺陷（Q1-Q4）分批修复执行计划（T01-T04），供执行 LLM 使用。
+- `reviews/mhtml_fix_execution_2026-10-15.md`：`mhtml_fix_plan_2026-10-15.md` 的分批执行记录（T01-T04，逐项列出 Q1-Q4 状态、测试统计、APK 与设备待验项）；当前 A（Q1）/B（Q4）/C（Q2/Q3）已完成并交付 1.0.74，D（T04）进行中。
 ---
 
 ## 5. 文档维护规则

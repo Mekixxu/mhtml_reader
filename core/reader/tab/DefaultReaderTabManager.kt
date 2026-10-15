@@ -1,5 +1,6 @@
 package core.reader.tab
 
+import core.cache.CacheLease
 import core.cache.CacheOpenManager
 import core.cache.TabCacheRegistry
 import core.cache.model.ContentType
@@ -12,6 +13,7 @@ import core.reader.model.OpenState
 import core.reader.model.ReaderTab
 import core.reader.model.ReadingPosition
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.collect
@@ -23,7 +25,9 @@ import java.util.UUID
 /**
  * Tab 管理：
  * - openNewTab：统一走 CacheOpenManager.openToCache（复制到缓存后才可读）
- * - closeTab：立即触发 TabCacheRegistry 清理
+ * - 保护交接：拷贝/缓存命中即持有租约，在状态同步区内先 `transferToTab` 再发布可观察状态，
+ *   杜绝「Flow 结束 → 尚未 bind」的保护空窗（Q2）。
+ * - closeTab：先撤销可观察状态与引用，最后一个引用消失后才允许清理缓存文件
  * - 进度恢复：从 history 精确读取对应 path 的记录（禁止 getRecent(1) 这种错误逻辑）
  */
 class DefaultReaderTabManager(
@@ -69,124 +73,136 @@ class DefaultReaderTabManager(
             else -> null
         }
         var copyFailure: Throwable? = null
+        var lease: CacheLease? = null
 
-        // 1) 拷贝到缓存（并把拷贝进度转发出去）
         try {
-            cacheOpenManager.openToCache(
+            // 1) 拷贝到缓存（并把拷贝进度转发出去）
+            try {
+                cacheOpenManager.openToCache(
+                    src = request.source,
+                    totalBytes = knownTotalBytes,
+                    contentType = contentType,
+                    versionStamp = request.versionStamp,
+                    extName = extName
+                ).collect { result ->
+                    result.fold(
+                        onSuccess = { progress ->
+                            // 成功帧携带保护租约；此处接管，直到移交给标签或放弃时释放
+                            progress.lease?.let { lease = it }
+                            emit(OpenState.Copying(progress.copiedBytes, progress.totalBytes))
+                        },
+                        onFailure = { t ->
+                            copyFailure = t
+                        }
+                    )
+                }
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (t: Throwable) {
+                copyFailure = t
+            }
+            copyFailure?.let { t ->
+                // 保留 CacheOpenManager 的类型化 AppError，UI 才能命中具体文案；普通异常才包装 IoError。
+                val error = t as? AppError ?: AppError.IoError(t.message ?: "copy to cache failed", t)
+                emit(OpenState.Error(error))
+                return@flow
+            }
+
+            val cacheKey = cacheOpenManager.generateCacheKey(
                 src = request.source,
-                totalBytes = knownTotalBytes,
                 contentType = contentType,
-                versionStamp = request.versionStamp,
-                extName = extName
-            ).collect { result ->
-                result.fold(
-                    onSuccess = { progress ->
-                        emit(OpenState.Copying(progress.copiedBytes, progress.totalBytes))
-                    },
-                    onFailure = { t ->
-                        copyFailure = t
-                    }
+                size = knownTotalBytes,
+                versionStamp = request.versionStamp
+            )
+            val cacheFile = cacheOpenManager.resolveCacheFile(
+                contentType = contentType,
+                cacheKey = cacheKey,
+                extName = extName ?: contentType.defaultExt()
+            )
+            val cacheFilePath = cacheFile.path
+            // 只对明确完整的结果建 Ready：成品必须存在，且已知长度时必须与源长度一致
+            val committedLength = cacheFile.takeIf { it.exists() }?.length()
+            if (committedLength == null || (knownTotalBytes != null && committedLength != knownTotalBytes)) {
+                emit(OpenState.Error(AppError.IoError("cache file not committed or incomplete", null)))
+                return@flow
+            }
+
+            // 2) 恢复进度（精确按 path 查询）
+            val position = withContext(dispatcherProvider.io) {
+                val hist = historyRepo.getByPath(historyKey)
+                ReadingPosition(
+                    progress = hist?.progress ?: 0f,
+                    pageIndex = hist?.pageIndex ?: -1
                 )
             }
-        } catch (ce: CancellationException) {
-            throw ce
-        } catch (t: Throwable) {
-            copyFailure = t
-        }
-        copyFailure?.let { t ->
-            // 保留 CacheOpenManager 的类型化 AppError，UI 才能命中具体文案；普通异常才包装 IoError。
-            val error = t as? AppError ?: AppError.IoError(t.message ?: "copy to cache failed", t)
-            emit(OpenState.Error(error))
-            return@flow
-        }
 
-        val cacheKey = cacheOpenManager.generateCacheKey(
-            src = request.source,
-            contentType = contentType,
-            size = knownTotalBytes,
-            versionStamp = request.versionStamp
-        )
-        val cacheFile = cacheOpenManager.resolveCacheFile(
-            contentType = contentType,
-            cacheKey = cacheKey,
-            extName = extName ?: contentType.defaultExt()
-        )
-        val cacheFilePath = cacheFile.path
-        // 只对明确完整的结果建 Ready：成品必须存在，且已知长度时必须与源长度一致
-        val committedLength = cacheFile.takeIf { it.exists() }?.length()
-        if (committedLength == null || (knownTotalBytes != null && committedLength != knownTotalBytes)) {
-            emit(OpenState.Error(AppError.IoError("cache file not committed or incomplete", null)))
-            return@flow
-        }
-
-        // 2) 恢复进度（精确按 path 查询）
-        val position = withContext(dispatcherProvider.io) {
-            val hist = historyRepo.getByPath(historyKey)
-            ReadingPosition(
-                progress = hist?.progress ?: 0f,
-                pageIndex = hist?.pageIndex ?: -1
+            // 3) 建 tab + 在同步区内交接保护后再发布
+            val tab = ReaderTab(
+                tabId = tabId,
+                sourcePathRaw = historyKey,
+                versionStamp = request.versionStamp,
+                fileType = request.fileType,
+                cacheKey = cacheKey,
+                cacheFilePath = cacheFilePath,
+                title = request.fileName,
+                lastKnownProgress = position.progress.coerceIn(0f, 1f),
+                lastKnownPageIndex = position.pageIndex
             )
-        }
 
-        // 3) 建 tab + 绑定缓存清理
-        val tab = ReaderTab(
-            tabId = tabId,
-            sourcePathRaw = historyKey,
-            versionStamp = request.versionStamp,
-            fileType = request.fileType,
-            cacheKey = cacheKey,
-            cacheFilePath = cacheFilePath,
-            title = request.fileName,
-            lastKnownProgress = position.progress.coerceIn(0f, 1f),
-            lastKnownPageIndex = position.pageIndex
-        )
-
-        val duplicatedTab = synchronized(tabStates) {
-            val duplicate = tabStates.values.firstOrNull {
-                it.sourcePathRaw == historyKey && it.versionStamp == request.versionStamp
+            val duplicatedTab = synchronized(tabStates) {
+                val duplicate = tabStates.values.firstOrNull {
+                    it.sourcePathRaw == historyKey && it.versionStamp == request.versionStamp
+                }
+                if (duplicate == null) {
+                    // 先移交保护所有权，再发布可观察状态：不得先发出 tabs 再补绑定
+                    lease?.transferToTab(tabId)
+                    tabStates[tabId] = tab
+                    _tabs.value = tabStates.values.toList()
+                }
+                duplicate
             }
-            if (duplicate == null) {
-                tabStates[tabId] = tab
-                _tabs.value = tabStates.values.toList()
-            }
-            duplicate
-        }
 
-        if (duplicatedTab != null) {
+            if (duplicatedTab != null) {
+                if (!request.background) {
+                    _currentTabId.value = duplicatedTab.tabId
+                }
+                emit(OpenState.Ready(duplicatedTab))
+                return@flow
+            }
+
+            // Auto-switch to new tab
             if (!request.background) {
-                _currentTabId.value = duplicatedTab.tabId
+                _currentTabId.value = tabId
             }
-            emit(OpenState.Ready(duplicatedTab))
-            return@flow
+
+            emit(OpenState.Ready(tab))
+
+            // 4) history：recordOpen 不应强行覆盖旧进度；建议仅 upsert title/fileType/lastAccess
+            historyRepo.recordOpen(historyKey, request.fileType, request.fileName)
+        } finally {
+            // 去重/失败/取消等放弃路径释放未移交的保护；已移交时为空操作
+            withContext(NonCancellable) {
+                lease?.release()
+            }
         }
-
-        // Auto-switch to new tab
-        if (!request.background) {
-            _currentTabId.value = tabId
-        }
-
-        // bind：以 cacheKey 为准，清理时按 cacheKey 删除缓存目录
-        tabCacheRegistry.bind(tabId, contentType.name.lowercase(), cacheKey)
-
-        emit(OpenState.Ready(tab))
-
-        // 4) history：recordOpen 不应强行覆盖旧进度；建议仅 upsert title/fileType/lastAccess
-        historyRepo.recordOpen(historyKey, request.fileType, request.fileName)
     }.flowOn(dispatcherProvider.io)
 
     override suspend fun closeTab(tabId: String) {
-        withContext(dispatcherProvider.io) {
-            tabCacheRegistry.onTabClosed(tabId)
-        }
+        // 1) 先撤销可观察状态与所属引用
         val remaining = synchronized(tabStates) {
             tabStates.remove(tabId)
             tabStates.values.toList().also { snapshot ->
                 _tabs.value = snapshot
             }
         }
-        
+
         if (_currentTabId.value == tabId) {
             _currentTabId.value = remaining.lastOrNull()?.tabId
+        }
+
+        // 2) 最后一个引用消失后才允许清理缓存文件（计数归零由 registry 判定）
+        withContext(dispatcherProvider.io) {
+            tabCacheRegistry.onTabClosed(tabId)
         }
     }
 

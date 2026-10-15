@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import core.cache.CacheEvictor
 import core.cache.CacheOpenManager
+import core.cache.TabCacheRegistry
 import core.cache.model.ContentType
 import core.cache.model.CopyProgress
 import core.common.AppError
@@ -50,7 +51,8 @@ class CacheOpenManagerIntegrityTest {
             cacheRoot = cacheRoot,
             fileSystem = fileSystem,
             dispatcherProvider = DefaultDispatcherProvider(),
-            cacheEvictor = CacheEvictor(cacheRoot = cacheRoot, maxBytes = maxBytes)
+            cacheEvictor = CacheEvictor(cacheRoot = cacheRoot, maxBytes = maxBytes),
+            leaseRegistry = TabCacheRegistry(cacheRoot)
         )
     }
 

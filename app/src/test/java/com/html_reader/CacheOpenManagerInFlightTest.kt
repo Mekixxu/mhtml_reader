@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import core.cache.CacheEvictor
 import core.cache.CacheOpenManager
+import core.cache.TabCacheRegistry
 import core.cache.model.ContentType
 import core.cache.model.CopyProgress
 import core.common.AppError
@@ -75,7 +76,8 @@ class CacheOpenManagerInFlightTest {
             cacheRoot = cacheRoot,
             fileSystem = fileSystem,
             dispatcherProvider = DefaultDispatcherProvider(),
-            cacheEvictor = CacheEvictor(cacheRoot = cacheRoot, maxBytes = 200)
+            cacheEvictor = CacheEvictor(cacheRoot = cacheRoot, maxBytes = 200),
+            leaseRegistry = TabCacheRegistry(cacheRoot)
         )
 
         val resultsA = mutableListOf<Result<CopyProgress>>()

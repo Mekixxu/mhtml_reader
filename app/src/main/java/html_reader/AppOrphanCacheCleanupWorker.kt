@@ -14,8 +14,8 @@ class AppOrphanCacheCleanupWorker(
         val daysUnused = inputData.getInt("daysUnused", AppMaintenancePolicy.ORPHAN_DAYS_UNUSED)
         return runCatching {
             val cacheRoot = AppMaintenancePolicy.cacheRoot(applicationContext)
-            val activeKeys = ReaderRuntime.tabCacheRegistry(applicationContext).activeCacheKeys()
-            OrphanCacheCleaner(cacheRoot, daysUnused).clean(activeKeys)
+            val registry = ReaderRuntime.tabCacheRegistry(applicationContext)
+            OrphanCacheCleaner(cacheRoot, daysUnused, protection = registry).clean(registry.activeCacheKeys())
             TransferCacheCleaner.clean(cacheDir = applicationContext.cacheDir, daysUnused = daysUnused)
             // 标题缓存此前无任何生效清理入口，这里按策略统一裁剪
             val titleCutoff = System.currentTimeMillis() -

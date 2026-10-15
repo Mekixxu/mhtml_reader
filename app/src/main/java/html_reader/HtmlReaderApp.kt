@@ -90,8 +90,12 @@ class HtmlReaderApp : Application() {
             runCatching {
                 val daysUnused = AppMaintenancePolicy.ORPHAN_DAYS_UNUSED
                 val cacheRoot = AppMaintenancePolicy.cacheRoot(this@HtmlReaderApp)
-                val activeKeys = ReaderRuntime.tabCacheRegistry(applicationContext).activeCacheKeys()
-                OrphanCacheCleaner(cacheRoot = cacheRoot, daysUnused = daysUnused).clean(activeKeys)
+                val registry = ReaderRuntime.tabCacheRegistry(applicationContext)
+                OrphanCacheCleaner(
+                    cacheRoot = cacheRoot,
+                    daysUnused = daysUnused,
+                    protection = registry
+                ).clean(registry.activeCacheKeys())
                 TransferCacheCleaner.clean(cacheDir = cacheDir, daysUnused = daysUnused)
                 // 与周期 Worker 对齐：启动兜底同样裁剪标题缓存
                 val titleCutoff = System.currentTimeMillis() -

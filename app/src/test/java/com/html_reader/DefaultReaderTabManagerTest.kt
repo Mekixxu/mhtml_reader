@@ -36,6 +36,7 @@ class DefaultReaderTabManagerTest {
     private lateinit var db: AppDatabase
     private lateinit var tabManager: DefaultReaderTabManager
     private lateinit var cacheRoot: File
+    private lateinit var registry: TabCacheRegistry
 
     @Before
     fun setUp() {
@@ -46,11 +47,14 @@ class DefaultReaderTabManagerTest {
         cacheRoot = File(context.cacheDir, "app_cache_test").apply { mkdirs() }
         val dispatchers = DefaultDispatcherProvider()
         val fileSystem = LocalFileSystem(context, dispatchers)
-        val cacheEvictor = CacheEvictor(cacheRoot, maxBytes = 2L * 1024 * 1024 * 1024)
-        val cacheOpenManager = CacheOpenManager(context, cacheRoot, fileSystem, dispatchers, cacheEvictor)
+        registry = TabCacheRegistry(cacheRoot)
+        val cacheEvictor = CacheEvictor(cacheRoot, maxBytes = 2L * 1024 * 1024 * 1024, protection = registry)
+        val cacheOpenManager = CacheOpenManager(
+            context, cacheRoot, fileSystem, dispatchers, cacheEvictor, leaseRegistry = registry
+        )
         tabManager = DefaultReaderTabManager(
             cacheOpenManager = cacheOpenManager,
-            tabCacheRegistry = TabCacheRegistry(cacheRoot),
+            tabCacheRegistry = registry,
             historyRepo = HistoryRepository(db.historyDao(), dispatchers),
             dispatcherProvider = dispatchers
         )
@@ -90,16 +94,18 @@ class DefaultReaderTabManagerTest {
         val smallRoot = File(context.cacheDir, "app_cache_limit_${System.nanoTime()}").apply { mkdirs() }
         try {
             val fileSystem = LocalFileSystem(context, dispatchers)
+            val limitRegistry = TabCacheRegistry(smallRoot)
             val openManager = CacheOpenManager(
                 context = context,
                 cacheRoot = smallRoot,
                 fileSystem = fileSystem,
                 dispatcherProvider = dispatchers,
-                cacheEvictor = CacheEvictor(smallRoot, maxBytes = 50)
+                cacheEvictor = CacheEvictor(smallRoot, maxBytes = 50, protection = limitRegistry),
+                leaseRegistry = limitRegistry
             )
             val manager = DefaultReaderTabManager(
                 cacheOpenManager = openManager,
-                tabCacheRegistry = TabCacheRegistry(smallRoot),
+                tabCacheRegistry = limitRegistry,
                 historyRepo = HistoryRepository(db.historyDao(), dispatchers),
                 dispatcherProvider = dispatchers
             )
@@ -131,17 +137,19 @@ class DefaultReaderTabManagerTest {
                 writeBytes(ByteArray(400))
             }
             val fileSystem = LocalFileSystem(context, dispatchers)
+            val busyRegistry = TabCacheRegistry(smallRoot)
             val openManager = CacheOpenManager(
                 context = context,
                 cacheRoot = smallRoot,
                 fileSystem = fileSystem,
                 dispatcherProvider = dispatchers,
-                cacheEvictor = CacheEvictor(smallRoot, maxBytes = 500),
+                cacheEvictor = CacheEvictor(smallRoot, maxBytes = 500, protection = busyRegistry),
+                leaseRegistry = busyRegistry,
                 activeKeysProvider = { setOf("keep") }
             )
             val manager = DefaultReaderTabManager(
                 cacheOpenManager = openManager,
-                tabCacheRegistry = TabCacheRegistry(smallRoot),
+                tabCacheRegistry = busyRegistry,
                 historyRepo = HistoryRepository(db.historyDao(), dispatchers),
                 dispatcherProvider = dispatchers
             )
@@ -181,16 +189,18 @@ class DefaultReaderTabManagerTest {
                     return delegate.openInputStream(path)
                 }
             }
+            val truncRegistry = TabCacheRegistry(root)
             val openManager = CacheOpenManager(
                 context = context,
                 cacheRoot = root,
                 fileSystem = truncating,
                 dispatcherProvider = dispatchers,
-                cacheEvictor = CacheEvictor(root, maxBytes = 10L * 1024 * 1024)
+                cacheEvictor = CacheEvictor(root, maxBytes = 10L * 1024 * 1024, protection = truncRegistry),
+                leaseRegistry = truncRegistry
             )
             val manager = DefaultReaderTabManager(
                 cacheOpenManager = openManager,
-                tabCacheRegistry = TabCacheRegistry(root),
+                tabCacheRegistry = truncRegistry,
                 historyRepo = HistoryRepository(db.historyDao(), dispatchers),
                 dispatcherProvider = dispatchers
             )

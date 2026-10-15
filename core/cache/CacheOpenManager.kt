@@ -10,11 +10,13 @@ import core.common.HashUtils
 import core.vfs.IFileSystem
 import core.vfs.model.VfsPath
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.withContext
 import kotlin.coroutines.coroutineContext
 import java.io.Closeable
 import java.io.EOFException
@@ -34,6 +36,12 @@ import java.util.concurrent.ConcurrentHashMap
  * - 先写本次专属 `.part` 临时文件，关闭输出后校验实际字节数；已知长度不一致即失败。
  * - 只有校验通过才提交为最终 `content.[ext]`；失败/取消只清理本次 `.part`。
  * - 上报真实 copied，不再伪造 total/total；缓存命中只命中已提交成品。
+ *
+ * 保护与预算约定（Q2/Q3）：
+ * - 拷贝开始/缓存命中即经 [leaseRegistry] 取得保护租约；Flow 结束不自动撤销「尚待交给标签」的保护，
+ *   由调用方 `transferToTab` 或 `release`（去重/失败/取消）。
+ * - 预算经 [cacheEvictor] 统一协调：已知长度首块前一次性 `reserve`；未知长度按块 `growReservation`。
+ * - 失败/取消在 `NonCancellable` 中释放预约与未移交租约，避免悬挂。
  */
 class CacheOpenManager(
     private val context: Context,
@@ -41,10 +49,10 @@ class CacheOpenManager(
     private val fileSystem: IFileSystem,
     private val dispatcherProvider: DispatcherProvider,
     private val cacheEvictor: CacheEvictor,
+    private val leaseRegistry: CacheLeaseRegistry,
     private val activeKeysProvider: () -> Set<String> = { emptySet() }
 ) {
     private val copyLocks = ConcurrentHashMap<String, Mutex>()
-    private val inFlightKeys = ConcurrentHashMap.newKeySet<String>()
 
     suspend fun openToCache(
         src: VfsPath,
@@ -63,7 +71,9 @@ class CacheOpenManager(
         // 同一 cacheKey 串行拷贝，避免并发打开同一文件时互相写坏缓存
         val copyLock = copyLocks.computeIfAbsent(cacheKey) { Mutex() }
         copyLock.lock()
-        inFlightKeys.add(cacheKey)
+        // 连续保护：拷贝开始/缓存命中即持有租约，直到移交标签或调用方显式释放
+        val lease = leaseRegistry.acquire(cacheKey, contentType.name.lowercase())
+        var handedOff = false
         try {
             val typeDir = cacheRoot.resolve(contentType.name.lowercase())
             typeDir.mkdirs()
@@ -87,19 +97,19 @@ class CacheOpenManager(
             // 只命中已提交成品；成品仅在「关闭输出并通过字节校验」后提交，故存在即完整。
             // 未知长度无法比对字节数，退化为「成品是否存在」。
             if (cacheFile.exists() && (totalBytes == null || cacheFile.length() == totalBytes)) {
-                emit(Result.success(CopyProgress(cacheFile.length(), totalBytes)))
+                emit(Result.success(CopyProgress(cacheFile.length(), totalBytes, lease)))
+                handedOff = true
                 return@flow
             }
 
-            // Proactive eviction：保护活跃 tab 与所有在途拷贝的 cacheKey；失败按类型化错误下发，由 UI 层本地化
-            val eviction = cacheEvictor.makeRoomFor(totalBytes ?: 0L, activeKeysProvider() + inFlightKeys, cacheKey)
-            if (eviction != EvictionResult.READY) {
-                val error = when (eviction) {
-                    EvictionResult.EXCEEDS_LIMIT -> AppError.CacheLimitExceeded
-                    else -> AppError.CacheBusy
+            // 预算协调：已知长度在首块前一次性预约；未知长度在写入循环中按块扩容
+            val protectedKeys = activeKeysProvider()
+            if (totalBytes != null) {
+                val reserved = cacheEvictor.reserve(cacheKey, totalBytes, protectedKeys)
+                if (reserved != EvictionResult.READY) {
+                    emit(Result.failure(reserved.toAppError()))
+                    return@flow
                 }
-                emit(Result.failure(error))
-                return@flow
             }
 
             // 开始流式拷贝
@@ -121,9 +131,16 @@ class CacheOpenManager(
                     if (totalBytes != null && copied + read > totalBytes) {
                         throw EOFException("Source length changed while copying")
                     }
+                    // 未知长度：写入前按块扩容预约，超预算即失败，避免撑爆磁盘
+                    if (totalBytes == null) {
+                        val grown = cacheEvictor.growReservation(cacheKey, copied + read, protectedKeys)
+                        if (grown != EvictionResult.READY) {
+                            throw CacheBudgetException(grown)
+                        }
+                    }
                     out.write(buf, 0, read)
                     copied += read
-                    emit(Result.success(CopyProgress(copied, totalBytes)))
+                    emit(Result.success(CopyProgress(copied, totalBytes, lease)))
                 }
                 // flush/close 失败必须上报失败，不能被 finally 吞掉后仍宣布成功
                 out.flush()
@@ -139,7 +156,7 @@ class CacheOpenManager(
                 // 只上报失败，不再二次抛出，避免调用方 collect 崩溃；并终止，避免落入末尾的假成功
                 closeQuietly(out)
                 partFile.delete()
-                emit(Result.failure(e))
+                emit(Result.failure(e.asAppError()))
                 return@flow
             } finally {
                 closeQuietly(`in`)
@@ -163,10 +180,19 @@ class CacheOpenManager(
                 emit(Result.failure(AppError.IoError("Cannot commit cache file")))
                 return@flow
             }
-            emit(Result.success(CopyProgress(committedBytes, totalBytes)))
+            // 提交成功：成品已落盘，注销预约后由「盘上字节」接管计量（口径无缝切换，不双计）
+            emit(Result.success(CopyProgress(committedBytes, totalBytes, lease)))
+            handedOff = true
         } finally {
-            inFlightKeys.remove(cacheKey)
-            copyLock.unlock()
+            try {
+                // 取消/失败也要释放预约与未移交的保护租约（NonCancellable 保证在取消态仍执行）
+                withContext(NonCancellable) {
+                    cacheEvictor.releaseReservation(cacheKey)
+                    if (!handedOff) lease.release()
+                }
+            } finally {
+                copyLock.unlock()
+            }
         }
     }.flowOn(dispatcherProvider.io)
 
@@ -190,6 +216,22 @@ class CacheOpenManager(
             closeable?.close()
         } catch (_: Throwable) {
         }
+    }
+
+    /** 未知长度按块扩容超预算的内部信号；在 catch 中映射为既有类型化 AppError。 */
+    private class CacheBudgetException(val result: EvictionResult) :
+        Exception("cache budget exceeded: $result")
+
+    private fun Throwable.asAppError(): Throwable = when (this) {
+        is CacheBudgetException -> result.toAppError()
+        else -> this
+    }
+
+    private fun EvictionResult.toAppError(): AppError = when (this) {
+        EvictionResult.EXCEEDS_LIMIT -> AppError.CacheLimitExceeded
+        EvictionResult.CANNOT_FREE -> AppError.CacheBusy
+        // 调用方仅在非 READY 时映射，此处仅为穷尽分支
+        EvictionResult.READY -> AppError.IoError("unexpected eviction result READY", null)
     }
 
     private companion object {

@@ -1,5 +1,6 @@
 package core.domain.usecase
 
+import core.cache.CacheLease
 import core.cache.CacheOpenManager
 import core.cache.model.ContentType
 import core.common.DispatcherProvider
@@ -97,44 +98,51 @@ class ObserveDisplayTitlesUseCase(
                                 // 但不改变 buildVersionStamp 既有取值，避免无谓的标题缓存失效
                                 val totalBytes = e.sizeBytes.takeIf { it > 0L }
                                 val versionStamp = buildVersionStamp(e.lastModifiedEpochMs, e.sizeBytes)
-                                cacheOpenManager.openToCache(
-                                    src = e.path,
-                                    totalBytes = totalBytes,
-                                    contentType = contentType,
-                                    versionStamp = versionStamp
-                                ).collectLatest { }
-                                val cacheKey = cacheOpenManager.generateCacheKey(
-                                    src = e.path,
-                                    contentType = contentType,
-                                    size = totalBytes,
-                                    versionStamp = versionStamp
-                                )
-                                val cacheFile = cacheOpenManager.resolveCacheFile(
-                                    contentType = contentType,
-                                    cacheKey = cacheKey,
-                                    extName = contentType.defaultExt()
-                                )
-                                val fileType = guessFileType(e.name)
-                                val title = titleExtractor.extractTitle(
-                                    source = e.path,
-                                    cacheFile = cacheFile,
-                                    fileType = fileType,
-                                    maxBytesToRead = maxBytesToRead
-                                )?.trim()
-
-                                if (!title.isNullOrBlank()) {
-                                    titleCacheRepo.upsert(
-                                        TitleCacheEntity(
-                                            path = pathRaw,
-                                            title = title,
-                                            lastModified = e.lastModifiedEpochMs,
-                                            updatedAt = System.currentTimeMillis()
-                                        )
+                                // 标题提取只是临时复用缓存，用后必须释放保护租约，避免缓存永久占用
+                                var lease: CacheLease? = null
+                                try {
+                                    cacheOpenManager.openToCache(
+                                        src = e.path,
+                                        totalBytes = totalBytes,
+                                        contentType = contentType,
+                                        versionStamp = versionStamp
+                                    ).collect { result ->
+                                        result.onSuccess { progress -> progress.lease?.let { lease = it } }
+                                    }
+                                    val cacheKey = cacheOpenManager.generateCacheKey(
+                                        src = e.path,
+                                        contentType = contentType,
+                                        size = totalBytes,
+                                        versionStamp = versionStamp
                                     )
-                                    updates.trySend(pathRaw to title)
+                                    val cacheFile = cacheOpenManager.resolveCacheFile(
+                                        contentType = contentType,
+                                        cacheKey = cacheKey,
+                                        extName = contentType.defaultExt()
+                                    )
+                                    val fileType = guessFileType(e.name)
+                                    val title = titleExtractor.extractTitle(
+                                        source = e.path,
+                                        cacheFile = cacheFile,
+                                        fileType = fileType,
+                                        maxBytesToRead = maxBytesToRead
+                                    )?.trim()
+
+                                    if (!title.isNullOrBlank()) {
+                                        titleCacheRepo.upsert(
+                                            TitleCacheEntity(
+                                                path = pathRaw,
+                                                title = title,
+                                                lastModified = e.lastModifiedEpochMs,
+                                                updatedAt = System.currentTimeMillis()
+                                            )
+                                        )
+                                        updates.trySend(pathRaw to title)
+                                    }
+                                } finally {
+                                    // 标题提取完成（或取消/失败）即释放本次临时保护
+                                    lease?.release()
                                 }
-                                // 2.3 可选：若 openToCache 为“标题提取”产生了临时缓存，应在此处释放
-                                // 取决于你们包1的缓存生命周期 API：可在这里增加 cacheOpenManager.release(openResult.cacheKey)
                             }
                         } catch (ce: CancellationException) {
                             throw ce

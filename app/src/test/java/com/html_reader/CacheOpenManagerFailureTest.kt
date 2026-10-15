@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import core.cache.CacheEvictor
 import core.cache.CacheOpenManager
+import core.cache.TabCacheRegistry
 import core.cache.model.ContentType
 import core.cache.model.CopyProgress
 import core.common.AppError
@@ -40,7 +41,8 @@ class CacheOpenManagerFailureTest {
             cacheRoot = cacheRoot,
             fileSystem = fileSystem,
             dispatcherProvider = DefaultDispatcherProvider(),
-            cacheEvictor = CacheEvictor(cacheRoot = cacheRoot, maxBytes = maxBytes)
+            cacheEvictor = CacheEvictor(cacheRoot = cacheRoot, maxBytes = maxBytes),
+            leaseRegistry = TabCacheRegistry(cacheRoot)
         )
     }
 
@@ -93,7 +95,8 @@ class CacheOpenManagerFailureTest {
             cacheRoot = cacheRoot,
             fileSystem = fileSystem,
             dispatcherProvider = DefaultDispatcherProvider(),
-            cacheEvictor = CacheEvictor(cacheRoot = cacheRoot, maxBytes = 200)
+            cacheEvictor = CacheEvictor(cacheRoot = cacheRoot, maxBytes = 200),
+            leaseRegistry = TabCacheRegistry(cacheRoot)
         )
 
         val results = openManager.openToCache(
@@ -122,6 +125,7 @@ class CacheOpenManagerFailureTest {
             fileSystem = fileSystem,
             dispatcherProvider = DefaultDispatcherProvider(),
             cacheEvictor = CacheEvictor(cacheRoot = cacheRoot, maxBytes = 500),
+            leaseRegistry = TabCacheRegistry(cacheRoot),
             activeKeysProvider = { setOf("keep") }
         )
 

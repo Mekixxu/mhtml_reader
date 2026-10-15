@@ -75,17 +75,20 @@ object ReaderRuntime {
                 
                 val localFileSystem = LocalFileSystem(appContext, dispatcherProvider)
                 val cacheRoot = AppMaintenancePolicy.cacheRoot(appContext)
+                // 保护与租约的唯一来源；淘汰器与清理器共享同一实例，保证保护检查与删除同步
+                val tabCacheRegistry = TabCacheRegistry(cacheRoot)
                 val cacheEvictor = core.cache.CacheEvictor(
                     cacheRoot = cacheRoot,
-                    maxBytes = 2L * 1024 * 1024 * 1024 // 2GB，与 AppSettings.DEFAULT_CACHE_MAX_BYTES 对齐
+                    maxBytes = 2L * 1024 * 1024 * 1024, // 2GB，与 AppSettings.DEFAULT_CACHE_MAX_BYTES 对齐
+                    protection = tabCacheRegistry
                 )
-                val tabCacheRegistry = TabCacheRegistry(cacheRoot)
                 val cacheOpenManager = CacheOpenManager(
                     context = appContext,
                     cacheRoot = cacheRoot,
                     fileSystem = localFileSystem,
                     dispatcherProvider = dispatcherProvider,
                     cacheEvictor = cacheEvictor,
+                    leaseRegistry = tabCacheRegistry,
                     activeKeysProvider = tabCacheRegistry::activeCacheKeys
                 )
                 

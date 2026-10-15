@@ -39,9 +39,13 @@ object CoreModule {
 
     @Provides
     @Singleton
-    fun provideCacheEvictor(cacheRoot: File): CacheEvictor = CacheEvictor(
+    fun provideCacheEvictor(
+        cacheRoot: File,
+        tabCacheRegistry: TabCacheRegistry
+    ): CacheEvictor = CacheEvictor(
         cacheRoot = cacheRoot,
-        maxBytes = core.settings.model.AppSettings.DEFAULT_CACHE_MAX_BYTES
+        maxBytes = core.settings.model.AppSettings.DEFAULT_CACHE_MAX_BYTES,
+        protection = tabCacheRegistry
     )
 
     @Provides
@@ -50,9 +54,13 @@ object CoreModule {
 
     @Provides
     @Singleton
-    fun provideOrphanCacheCleaner(cacheRoot: File): OrphanCacheCleaner = OrphanCacheCleaner(
+    fun provideOrphanCacheCleaner(
+        cacheRoot: File,
+        tabCacheRegistry: TabCacheRegistry
+    ): OrphanCacheCleaner = OrphanCacheCleaner(
         cacheRoot = cacheRoot,
-        daysUnused = 3
+        daysUnused = 3,
+        protection = tabCacheRegistry
     )
 
     @Provides
@@ -62,12 +70,15 @@ object CoreModule {
         cacheRoot: File,
         localFileSystem: LocalFileSystem,
         dispatcherProvider: DispatcherProvider,
-        cacheEvictor: CacheEvictor
+        cacheEvictor: CacheEvictor,
+        tabCacheRegistry: TabCacheRegistry
     ): CacheOpenManager = CacheOpenManager(
         context = context,
         cacheRoot = cacheRoot,
         fileSystem = localFileSystem,
         dispatcherProvider = dispatcherProvider,
-        cacheEvictor = cacheEvictor
+        cacheEvictor = cacheEvictor,
+        leaseRegistry = tabCacheRegistry,
+        activeKeysProvider = tabCacheRegistry::activeCacheKeys
     )
 }
