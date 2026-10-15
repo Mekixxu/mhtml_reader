@@ -11,7 +11,9 @@ import android.provider.MediaStore
 import android.util.Log
 import android.graphics.drawable.BitmapDrawable
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -49,6 +51,7 @@ import core.reader.web.WebProgressRestoreGate
 import core.reader.web.WebProgressRestoreRequest
 import core.reader.web.WebProgressRestoreResult
 import core.reader.web.WebViewProgressTracker
+import core.reader.web.WebGestureTakeoverState
 import core.reader.web.WebProgressSamplingState
 import core.reader.web.WebViewMetrics
 import core.reader.web.WebViewProgressRestorer
@@ -82,12 +85,16 @@ class ReaderFragment : Fragment() {
     private lateinit var webProgressWriter: WebViewProgressWriter
     private var webProgressTracker: WebViewProgressTracker? = null
     private val webProgressSamplingState = WebProgressSamplingState()
+    private val webGestureTakeover = WebGestureTakeoverState()
     private var webRestoreJob: Job? = null
     private val webProgressRestoreGate = WebProgressRestoreGate()
     private var webContentGeneration = 0L
     private var webRestoreInteractionGeneration: Long? = null
     private var activeWebTabId: String? = null
     private var activeWebTargetUrl: String? = null
+    private val webTouchSlop: Float by lazy {
+        ViewConfiguration.get(requireContext()).scaledTouchSlop.toFloat()
+    }
 
     private val tabs = mutableListOf<ReaderTab>()
     private var selectedTabId: String? = null
@@ -156,14 +163,8 @@ class ReaderFragment : Fragment() {
         webPreview.setLayerType(View.LAYER_TYPE_HARDWARE, null)
         WebViewConfigurator.configure(webPreview, profile = WebViewConfigurator.RenderProfile.DEFAULT)
         webPreview.setOnTouchListener { _, event ->
-            if (event.actionMasked == android.view.MotionEvent.ACTION_MOVE) {
-                webRestoreInteractionGeneration = webContentGeneration
-                if (webProgressSamplingState.onRestoreResult(
-                        webContentGeneration,
-                        WebProgressRestoreResult.USER_TOOK_CONTROL
-                    )
-                ) webProgressTracker?.enableSampling()
-            }
+            handleWebPreviewTouch(event)
+            // 不消费事件：点击链接、缩放、长按图片仍交给 WebView
             false
         }
         webPreview.visibility = View.GONE
@@ -467,6 +468,7 @@ class ReaderFragment : Fragment() {
         val contentGeneration = webContentGeneration
         webProgressSamplingState.beginContent(contentGeneration)
         webRestoreInteractionGeneration = null
+        webGestureTakeover.clear()
         activeWebTabId = tab.tabId
         activeWebTargetUrl = targetUrl
 
@@ -614,6 +616,38 @@ class ReaderFragment : Fragment() {
         scrollY = webPreview.scrollY
     )
 
+    /**
+     * 触摸序列驱动的「有效手势接管」判定，接入生产 OnTouchListener。
+     * 只有超过 touchSlop 且当前内容尺寸有效的拖动才停止自动定位并放行采样，
+     * 轻触、抖动、长按、缩放都不会误判。
+     */
+    private fun handleWebPreviewTouch(event: MotionEvent) {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN ->
+                webGestureTakeover.onDown(event.x, event.y, webContentGeneration)
+            MotionEvent.ACTION_MOVE -> {
+                val intentionalDrag = webGestureTakeover.onMove(
+                    x = event.x,
+                    y = event.y,
+                    generation = webContentGeneration,
+                    touchSlop = webTouchSlop,
+                    hasValidContentExtent = readWebViewMetrics().maxScrollY != null
+                )
+                if (intentionalDrag) markCurrentWebContentTakenOver()
+            }
+            MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_UP -> webGestureTakeover.clear()
+        }
+    }
+
+    private fun markCurrentWebContentTakenOver() {
+        webRestoreInteractionGeneration = webContentGeneration
+        if (webProgressSamplingState.onRestoreResult(
+                webContentGeneration,
+                WebProgressRestoreResult.USER_TOOK_CONTROL
+            )
+        ) webProgressTracker?.enableSampling()
+    }
+
     private fun maybeRetryMhtmlWithFallback(tab: ReaderTab, loadedUrl: String): Boolean {
         if (activeWebRenderProfile != WebViewConfigurator.RenderProfile.MHTML_DESKTOP) {
             return false
@@ -659,6 +693,7 @@ class ReaderFragment : Fragment() {
         webContentGeneration++
         webProgressSamplingState.beginContent(webContentGeneration)
         webRestoreInteractionGeneration = null
+        webGestureTakeover.clear()
         activeWebTabId = null
         activeWebTargetUrl = null
         webProgressTracker?.stopAndFlush()

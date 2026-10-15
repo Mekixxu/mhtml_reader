@@ -30,7 +30,7 @@
   - `compileSdk = 36`
   - `targetSdk = 36`
   - `minSdk = 30`
-- 版本号：`versionName = 1.0.71` / `versionCode = 72`（见 `app/build.gradle.kts`）
+- 版本号：`versionName = 1.0.72` / `versionCode = 73`（见 `app/build.gradle.kts`）
 - 核心依赖（关键版本）：
   - AndroidX（AppCompat `1.7.0`、Lifecycle `2.8.4`、WorkManager `2.9.1`、WebKit `1.11.0`、Room `2.6.1`）
   - Hilt `2.52`
@@ -145,7 +145,7 @@ Linux/macOS：
 ### 3.2.1 测试基础设施（2026-09-21 更新）
 
 - `core-base/src/test/java`：纯 JVM 单元测试（`HashUtilsTest` / `OutcomeTest` / `AppErrorTest` / `UrlCredentialSanitizerTest`），不依赖模拟器。
-- `app/src/test/java`：Robolectric 单元测试（`FilesSortHelperTest`、`FilesFtpCodecTest`、`FilesNetworkGatewayTest`、`TransferCacheCleanerTest`、`CacheEvictorTest`、`MoveUseCaseTest`、`HistoryDaoTest`、`DefaultReaderTabManagerTest`、`BlockingResourceWebViewClientTest`、`WebViewProgressTrackerTest`、`WebViewProgressWriterTest`、`WebViewProgressRestorerTest`、`WebProgressSamplingStateTest`、`FilesStartupHandlerTest`、`BackupImportTransactionTest`）。
+- `app/src/test/java`：Robolectric 单元测试（`FilesSortHelperTest`、`FilesFtpCodecTest`、`FilesNetworkGatewayTest`、`TransferCacheCleanerTest`、`CacheEvictorTest`、`MoveUseCaseTest`、`HistoryDaoTest`、`DefaultReaderTabManagerTest`、`BlockingResourceWebViewClientTest`、`WebViewProgressTrackerTest`、`WebViewProgressWriterTest`、`WebViewProgressRestorerTest`、`WebProgressSamplingStateTest`、`WebProgressRestoreIntegrationTest`、`WebGestureTakeoverStateTest`、`ReaderFragmentGestureTakeoverTest`、`FilesStartupHandlerTest`、`BackupImportTransactionTest`）。
   - `app/src/test/resources/robolectric.properties` 固定 `sdk=35` 与测试用 `Application`；`testOptions.unitTests.isIncludeAndroidResources = true` 已开启（避免走 `HtmlReaderApp` 的 WorkManager 初始化）。
 - `app/src/androidTest/java`：设备端冒烟测试（`AppSmokeTest`），验证 app 冷启动不崩，需连接模拟器/真机。
 - 本地运行：Linux/macOS 使用 `./gradlew :core-base:testDebugUnitTest`、`:app:testDebugUnitTest`、`:app:connectedDebugAndroidTest`；Windows 使用对应的 `:core-base:testDebugUnitTest`、`:app:testDebugUnitTest`、`:app:connectedDebugAndroidTest` bat 命令。
@@ -238,6 +238,7 @@ Linux/macOS：
 - `core/reader/web/WebProgressSamplingState.kt`：内容恢复代次与 Fragment 前后台采样门控
 - `core/reader/web/WebViewProgressWriter.kt`：应用作用域的顺序化阅读进度写入
 - `core/reader/web/WebViewProgressRestorer.kt`：generation guard、恢复结果、有限尺寸重试与 WebView 百分比恢复
+- `core/reader/web/WebGestureTakeoverState.kt`：平台无关的「有效手势接管」状态机（touchSlop 阈值、down/generation 绑定、cancel/clear）
 
 ### 4.6 Review 索引
 
@@ -260,6 +261,7 @@ Linux/macOS：
 - `reviews/mhtml_review_2026-10-15.md`：四个 MHTML 主线修复提交复核（B01/B02代码通过、B03失败恢复R1未闭合；245项含2跳过），最新复核判定入口。
 - `reviews/mhtml_ui_execution_2026-10-15.md`：R1 失败恢复保护与 Files 四控件对齐、去搜索底线交付；1.0.71、自动化验证及设备待验清单。
 - `reviews/mhtml_current_review_2026-10-15.md`：b2c8fe1 当前工作区主线复核；Q1 轻触接管缺口、Q2/Q3 缓存交接与预约遗留、Q4 短 EOF，四项受控实验与分级路线。
+- `reviews/mhtml_fix_execution_2026-10-15.md`：`mhtml_fix_plan_2026-10-15.md` 的分批执行记录（T01-T04，逐项列出 Q1-Q4 状态、测试统计、APK 与设备待验项）。
 ---
 
 ## 5. 文档维护规则
