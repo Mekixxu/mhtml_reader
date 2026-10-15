@@ -27,4 +27,12 @@ class WebProgressSamplingState {
         restoredGeneration = generation
         return resumed
     }
+
+    fun onRestoreResult(generation: Long, result: WebProgressRestoreResult): Boolean =
+        when (result) {
+            WebProgressRestoreResult.APPLIED,
+            WebProgressRestoreResult.USER_TOOK_CONTROL -> onRestoreCompleted(generation)
+            WebProgressRestoreResult.DIMENSIONS_UNAVAILABLE,
+            WebProgressRestoreResult.SUPERSEDED -> false
+        }
 }

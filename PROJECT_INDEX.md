@@ -27,6 +27,7 @@
 - 底部导航菜单：`app/src/main/res/menu/main_bottom_nav_menu.xml`
 - 视觉主题：`app/src/main/res/values/themes.xml`（Material 3）、`values/colors.xml` 与 `values-night/colors.xml`
 - UI 回归：`ModernUiThemeTest.kt`、`HomeDensityLayoutTest.kt`、`FilesCompactLayoutTest.kt`、`FilesScrollStateStoreTest.kt`、`WebViewProgressTrackerTest.kt`、`WebViewProgressWriterTest.kt`、`WebViewProgressRestorerTest.kt`、`WebProgressSamplingStateTest.kt`
+- 恢复集成回归：`app/src/test/java/com/html_reader/WebProgressRestoreIntegrationTest.kt`（Fragment、暂停恢复、Tracker/Writer 与真实 Room）。
 
 ## 4. app 模块页面索引
 
@@ -104,6 +105,7 @@
 - 最新审查交接：`reviews/review_answers_504583f_2026-10-12.md`（新提交复核、问题逐项答复、V01-V03 与会话迁移批准契约；2026-10-14 已记录 V01-V03 执行状态）；问题原文见 `reviews/questions_2026-10-12.md`。
 - 最新 UI 交付：`reviews/ui_density_execution_2026-10-14.md`（Home/Files 紧凑布局实现、自动化验证与设备待验项）。
 - MHTML 进度交付：`reviews/mhtml_progress_execution_2026-10-14.md`（B03 代码、JVM 回归、APK 和设备待验项）。
+- 最新修复交付：`reviews/mhtml_ui_execution_2026-10-15.md`（R1 失败恢复保护、Files 顶栏四控件对齐及去搜索底线，1.0.71）。
 - 前轮记录：`reviews/review_next_plan_2026-10-12.md`；原始 F01-F18/T00-T16 任务卡见 `reviews/execution_plan_2026-10-11.md`，状态和下一轮顺序以最新答复为准。
 - 查找页面入口：优先从 `app/src/main/java/html_reader/` 对应 Fragment 入手
 - 查找业务逻辑：按能力进入 `core/<能力名>/` 查看 `domain/usecase` 与 `repo`

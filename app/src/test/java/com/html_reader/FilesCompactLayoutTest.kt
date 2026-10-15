@@ -31,6 +31,41 @@ import org.robolectric.annotation.Config
 @Config(shadows = [ShadowEnvironmentPermissions::class])
 class FilesCompactLayoutTest {
 
+    @Test
+    fun toolbarControlsShareHeightAndColumnEdgesWithoutSearchUnderline() {
+        for (night in listOf(Configuration.UI_MODE_NIGHT_NO, Configuration.UI_MODE_NIGHT_YES)) {
+            for (fontScale in listOf(1f, 1.5f, 2f)) {
+                val base = ApplicationProvider.getApplicationContext<Context>()
+                val config = Configuration(base.resources.configuration).apply {
+                    this.fontScale = fontScale
+                    uiMode = Configuration.UI_MODE_TYPE_NORMAL or night
+                }
+                val context = ContextThemeWrapper(base.createConfigurationContext(config), R.style.Theme_MHTMLReader)
+                val root = LayoutInflater.from(context).inflate(R.layout.fragment_files, null)
+                val query = root.findViewById<View>(R.id.files_query_input)
+                val search = query.parent.parent as TextInputLayout
+                val action = root.findViewById<Button>(R.id.files_action_create)
+                val path = root.findViewById<View>(R.id.files_current_dir)
+                val display = root.findViewById<Button>(R.id.files_display_options)
+                val width = dp(context, 320)
+                val height = dp(context, 640)
+                root.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY))
+                root.layout(0, 0, width, height)
+                assertEquals(dp(context, 48), search.height)
+                assertEquals(search.height, action.height)
+                assertEquals(search.height, path.height)
+                assertEquals(search.height, display.height)
+                assertEquals(search.right, path.right)
+                assertEquals(action.left, display.left)
+                assertEquals(action.right, display.right)
+                assertEquals(0, search.boxStrokeWidth)
+                assertEquals(0, search.boxStrokeWidthFocused)
+                assertTrue(query.width >= dp(context, 96))
+            }
+        }
+    }
+
     @get:Rule
     val tempFolder = TemporaryFolder()
 

@@ -47,6 +47,7 @@ import core.reader.web.WebViewConfigurator
 import core.reader.web.WebProgressRestoreGuard
 import core.reader.web.WebProgressRestoreGate
 import core.reader.web.WebProgressRestoreRequest
+import core.reader.web.WebProgressRestoreResult
 import core.reader.web.WebViewProgressTracker
 import core.reader.web.WebProgressSamplingState
 import core.reader.web.WebViewMetrics
@@ -155,8 +156,13 @@ class ReaderFragment : Fragment() {
         webPreview.setLayerType(View.LAYER_TYPE_HARDWARE, null)
         WebViewConfigurator.configure(webPreview, profile = WebViewConfigurator.RenderProfile.DEFAULT)
         webPreview.setOnTouchListener { _, event ->
-            if (event.actionMasked == android.view.MotionEvent.ACTION_DOWN) {
+            if (event.actionMasked == android.view.MotionEvent.ACTION_MOVE) {
                 webRestoreInteractionGeneration = webContentGeneration
+                if (webProgressSamplingState.onRestoreResult(
+                        webContentGeneration,
+                        WebProgressRestoreResult.USER_TOOK_CONTROL
+                    )
+                ) webProgressTracker?.enableSampling()
             }
             false
         }
@@ -557,6 +563,7 @@ class ReaderFragment : Fragment() {
         request: WebProgressRestoreRequest,
         loadedUrl: String
     ) {
+        var result = WebProgressRestoreResult.SUPERSEDED
         try {
             webProgressWriter.awaitWrites()
             if (!isCurrentWebRestore(request, loadedUrl)) return
@@ -564,28 +571,25 @@ class ReaderFragment : Fragment() {
             val history = historyRepository.getByPath(tab.sourcePathRaw)
             if (!isCurrentWebRestore(request, loadedUrl)) return
             val progress = history?.progress ?: tab.lastKnownProgress
-            if (webRestoreInteractionGeneration == request.generation) return
-
-            val stableMetrics = WebViewProgressRestorer.awaitStableMetrics(
+            result = WebViewProgressRestorer.restore(
+                progress = progress,
                 readMetrics = ::readWebViewMetrics,
-                shouldContinue = {
-                    isCurrentWebRestore(request, loadedUrl) &&
-                        webRestoreInteractionGeneration != request.generation
-                }
-            ) ?: return
-            if (!isCurrentWebRestore(request, loadedUrl)) return
-            if (webRestoreInteractionGeneration == request.generation) return
-            WebViewProgressRestorer.targetScrollY(progress, stableMetrics)
-                ?.let { webPreview.scrollTo(0, it) }
+                isCurrent = { isCurrentWebRestore(request, loadedUrl) },
+                userTookControl = { webRestoreInteractionGeneration == request.generation },
+                scrollTo = { webPreview.scrollTo(0, it) }
+            )
+            if (isCurrentWebRestore(request, loadedUrl) &&
+                webProgressSamplingState.onRestoreResult(request.generation, result)
+            ) webProgressTracker?.enableSampling()
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (error: Throwable) {
             Log.w("ReaderFragment", "web_progress_restore_failed error=${error.javaClass.simpleName}")
         } finally {
-            if (isCurrentWebRestore(request, loadedUrl) &&
-                webProgressSamplingState.onRestoreCompleted(request.generation)
+            if (result != WebProgressRestoreResult.APPLIED &&
+                result != WebProgressRestoreResult.USER_TOOK_CONTROL
             ) {
-                webProgressTracker?.enableSampling()
+                webProgressRestoreGate.release(request)
             }
         }
     }

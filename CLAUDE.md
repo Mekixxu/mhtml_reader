@@ -30,7 +30,7 @@
   - `compileSdk = 36`
   - `targetSdk = 36`
   - `minSdk = 30`
-- 版本号：`versionName = 1.0.70` / `versionCode = 71`（见 `app/build.gradle.kts`）
+- 版本号：`versionName = 1.0.71` / `versionCode = 72`（见 `app/build.gradle.kts`）
 - 核心依赖（关键版本）：
   - AndroidX（AppCompat `1.7.0`、Lifecycle `2.8.4`、WorkManager `2.9.1`、WebKit `1.11.0`、Room `2.6.1`）
   - Hilt `2.52`
@@ -194,6 +194,7 @@ Linux/macOS：
 - `app/src/main/res/values/themes.xml`、`values/colors.xml`、`values-night/colors.xml`：Material 3 蓝绿色浅深色主题与主次按钮样式
 - `app/src/main/res/layout/fragment_home.xml`、`fragment_files.xml`：首页信息层级、文件搜索与目录路径展示
 - `app/src/test/java/com/html_reader/ModernUiThemeTest.kt`：浅深色布局加载、文字对比度、导航与大字体触摸目标回归
+- `app/src/test/java/com/html_reader/WebProgressRestoreIntegrationTest.kt`：Fragment 恢复超时/迟到尺寸、暂停恢复与真实 Room 进度尾写回归
 
 ### 4.3 Runtime 与核心入口
 
@@ -236,7 +237,7 @@ Linux/macOS：
 - `core/reader/web/WebViewProgressTracker.kt`：阅读进度跟踪
 - `core/reader/web/WebProgressSamplingState.kt`：内容恢复代次与 Fragment 前后台采样门控
 - `core/reader/web/WebViewProgressWriter.kt`：应用作用域的顺序化阅读进度写入
-- `core/reader/web/WebViewProgressRestorer.kt`：generation guard、稳定尺寸等待与 WebView 百分比恢复
+- `core/reader/web/WebViewProgressRestorer.kt`：generation guard、恢复结果、有限尺寸重试与 WebView 百分比恢复
 
 ### 4.6 Review 索引
 
@@ -257,6 +258,7 @@ Linux/macOS：
 - `reviews/files_navigation_execution_2026-10-14.md`：B02 Files 操作期间 Up/系统返回状态修复记录。
 - `reviews/mhtml_progress_execution_2026-10-14.md`：B03 MHTML/Web 阅读进度尾写与恢复执行记录；真实设备验收项单列。
 - `reviews/mhtml_review_2026-10-15.md`：四个 MHTML 主线修复提交复核（B01/B02代码通过、B03失败恢复R1未闭合；245项含2跳过），最新复核判定入口。
+- `reviews/mhtml_ui_execution_2026-10-15.md`：R1 失败恢复保护与 Files 四控件对齐、去搜索底线交付；1.0.71、自动化验证及设备待验清单。
 ---
 
 ## 5. 文档维护规则

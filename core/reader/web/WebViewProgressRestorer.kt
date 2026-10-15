@@ -28,6 +28,10 @@ data class WebProgressRestoreRequest(
     val targetUrl: String
 )
 
+enum class WebProgressRestoreResult {
+    APPLIED, USER_TOOK_CONTROL, DIMENSIONS_UNAVAILABLE, SUPERSEDED
+}
+
 object WebProgressRestoreGuard {
     fun isCurrent(
         request: WebProgressRestoreRequest,
@@ -46,6 +50,12 @@ object WebProgressRestoreGuard {
 
 class WebProgressRestoreGate {
     private var claimedGeneration: Long? = null
+    private var attemptGeneration: Long? = null
+    private var attempts = 0
+
+    fun release(request: WebProgressRestoreRequest) {
+        if (claimedGeneration == request.generation) claimedGeneration = null
+    }
 
     fun tryClaim(
         request: WebProgressRestoreRequest,
@@ -67,12 +77,49 @@ class WebProgressRestoreGate {
             )
         ) return false
         if (webViewUrl?.startsWith(request.targetUrl) != true) return false
+        if (attemptGeneration != request.generation) {
+            attemptGeneration = request.generation
+            attempts = 0
+        }
+        if (attempts >= MAX_CLAIMS_PER_GENERATION) return false
+        attempts++
         claimedGeneration = request.generation
         return true
+    }
+
+    private companion object {
+        const val MAX_CLAIMS_PER_GENERATION = 2
     }
 }
 
 object WebViewProgressRestorer {
+    suspend fun restore(
+        progress: Float,
+        readMetrics: () -> WebViewMetrics,
+        isCurrent: () -> Boolean,
+        userTookControl: () -> Boolean,
+        scrollTo: (Int) -> Unit,
+        retryWindows: Int = DEFAULT_RETRY_WINDOWS
+    ): WebProgressRestoreResult {
+        repeat(retryWindows.coerceIn(1, DEFAULT_RETRY_WINDOWS)) { window ->
+            if (!isCurrent()) return WebProgressRestoreResult.SUPERSEDED
+            if (userTookControl()) return WebProgressRestoreResult.USER_TOOK_CONTROL
+            val metrics = awaitStableMetrics(
+                readMetrics = readMetrics,
+                shouldContinue = { isCurrent() && !userTookControl() }
+            )
+            if (!isCurrent()) return WebProgressRestoreResult.SUPERSEDED
+            if (userTookControl()) return WebProgressRestoreResult.USER_TOOK_CONTROL
+            val target = metrics?.let { targetScrollY(progress, it) }
+            if (target != null) {
+                scrollTo(target)
+                return WebProgressRestoreResult.APPLIED
+            }
+            if (window < retryWindows - 1) delay(RETRY_WINDOW_DELAY_MS)
+        }
+        return WebProgressRestoreResult.DIMENSIONS_UNAVAILABLE
+    }
+
     suspend fun awaitStableMetrics(
         readMetrics: () -> WebViewMetrics,
         shouldContinue: () -> Boolean,
@@ -115,4 +162,6 @@ object WebViewProgressRestorer {
     private const val DEFAULT_STABLE_SAMPLES = 5
     private const val DEFAULT_MAX_ATTEMPTS = 24
     private const val DEFAULT_RETRY_DELAY_MS = 50L
+    private const val DEFAULT_RETRY_WINDOWS = 3
+    private const val RETRY_WINDOW_DELAY_MS = 250L
 }
