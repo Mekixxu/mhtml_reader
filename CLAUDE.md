@@ -259,6 +259,7 @@ Linux/macOS：
 - `reviews/mhtml_progress_execution_2026-10-14.md`：B03 MHTML/Web 阅读进度尾写与恢复执行记录；真实设备验收项单列。
 - `reviews/mhtml_review_2026-10-15.md`：四个 MHTML 主线修复提交复核（B01/B02代码通过、B03失败恢复R1未闭合；245项含2跳过），最新复核判定入口。
 - `reviews/mhtml_ui_execution_2026-10-15.md`：R1 失败恢复保护与 Files 四控件对齐、去搜索底线交付；1.0.71、自动化验证及设备待验清单。
+- `reviews/mhtml_current_review_2026-10-15.md`：b2c8fe1 当前工作区主线复核；Q1 轻触接管缺口、Q2/Q3 缓存交接与预约遗留、Q4 短 EOF，四项受控实验与分级路线。
 ---
 
 ## 5. 文档维护规则
