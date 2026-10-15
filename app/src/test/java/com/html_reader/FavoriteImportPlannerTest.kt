@@ -2,6 +2,12 @@ package com.html_reader
 
 import core.backup.FavoriteImportPlanner
 import core.backup.model.FavoriteDto
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.supervisorScope
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -11,8 +17,8 @@ import org.junit.Test
 class FavoriteImportPlannerTest {
 
     @Test
-    fun reverseDeepChain_plansLinearlyAndParentBeforeChild() {
-        val count = 20_000
+    fun reverseDeepChain_plansLinearlyAndParentBeforeChild() = runBlocking {
+        val count = 100_000
         val folders = (count downTo 1).map { id ->
             folder(
                 id = id.toLong(),
@@ -45,7 +51,7 @@ class FavoriteImportPlannerTest {
     }
 
     @Test
-    fun unorderedTree_stillOrdersParentBeforeChild() {
+    fun unorderedTree_stillOrdersParentBeforeChild() = runBlocking {
         val folders = listOf(
             folder(id = 3L, parentId = 2L, name = "grandchild"),
             folder(id = 1L, parentId = null, name = "root"),
@@ -61,7 +67,7 @@ class FavoriteImportPlannerTest {
     }
 
     @Test
-    fun brokenCycleAndNullIdFolders_areFlatRoots() {
+    fun brokenCycleAndNullIdFolders_areFlatRoots() = runBlocking {
         val folders = listOf(
             folder(id = 1L, parentId = null, name = "root"),
             folder(id = 2L, parentId = 1L, name = "child"),
@@ -82,7 +88,7 @@ class FavoriteImportPlannerTest {
     }
 
     @Test
-    fun missingParentSubtree_isImportedFlatAsBefore() {
+    fun missingParentSubtree_isImportedFlatAsBefore() = runBlocking {
         val folders = listOf(
             folder(id = 10L, parentId = 99L, name = "broken-parent"),
             folder(id = 11L, parentId = 10L, name = "child"),
@@ -99,13 +105,36 @@ class FavoriteImportPlannerTest {
     }
 
     @Test
-    fun selfLoop_isPlannedAsFlatRoot() {
+    fun selfLoop_isPlannedAsFlatRoot() = runBlocking {
         val plan = FavoriteImportPlanner().plan(
             listOf(folder(id = 7L, parentId = 7L, name = "self"))
         )
 
         assertEquals(1, plan.nodes.size)
         assertNull(plan.nodes.single().parentOldId)
+    }
+
+    @Test
+    fun plan_observesCancellationDuringInputTraversal() = runBlocking {
+        supervisorScope {
+            lateinit var job: Job
+            val folders = object : AbstractList<FavoriteDto>() {
+                override val size: Int = 100_000
+
+                override fun get(index: Int): FavoriteDto {
+                    if (index == 0) job.cancel()
+                    return folder(id = index.toLong() + 1L, parentId = null)
+                }
+            }
+            job = launch(Dispatchers.Default, start = CoroutineStart.LAZY) {
+                FavoriteImportPlanner().plan(folders)
+            }
+
+            job.start()
+            job.join()
+
+            assertTrue(job.isCancelled)
+        }
     }
 
     private fun folder(

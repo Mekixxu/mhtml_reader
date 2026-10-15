@@ -14,6 +14,7 @@ import core.data.repo.TitleCacheRepository
 import core.database.AppDatabase
 import core.database.entity.enums.SourceType
 import core.security.CredentialCipher
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -31,6 +32,7 @@ class BackupImportTransactionTest {
     private lateinit var db: AppDatabase
     private lateinit var favoritesRepo: FavoritesRepository
     private lateinit var manager: JsonBackupManager
+    private var transactionRunCount = 0
 
     @Before
     fun setUp() {
@@ -46,8 +48,10 @@ class BackupImportTransactionTest {
             networkRepo = NetworkConfigRepository(db.networkConfigDao(), dispatchers, CredentialCipher()),
             titleCacheRepo = TitleCacheRepository(db.titleCacheDao(), dispatchers),
             transactionRunner = object : BackupTransactionRunner {
-                override suspend fun <T> run(block: suspend () -> T): T =
-                    db.withTransaction { block() }
+                override suspend fun <T> run(block: suspend () -> T): T {
+                    transactionRunCount++
+                    return db.withTransaction { block() }
+                }
             }
         )
     }
@@ -124,7 +128,57 @@ class BackupImportTransactionTest {
         }
     }
 
+    @Test
+    fun importAll_cancellationDuringPreparationDoesNotStartTransactionOrClear() = runBlocking {
+        favoritesRepo.addFile(
+            parentId = null,
+            name = "seed",
+            path = "/tmp/seed.mhtml",
+            sourceType = SourceType.LOCAL
+        )
+        val folders = buildString {
+            append('[')
+            repeat(MAX_RECORDS) { index ->
+                if (index > 0) append(',')
+                val id = MAX_RECORDS - index
+                append(
+                    """{"id":$id,"parentId":null,"name":"n$id","type":"FOLDER","path":"","sourceType":"LOCAL","createdAt":$id}"""
+                )
+            }
+            append(']')
+        }
+        val payload =
+            """{"schemaVersion":1,"exportedAt":1,"favorites":$folders,"history":[],"networkConfigs":[],"titleCache":[]}"""
+
+        val result = withTimeoutOrNull(PREPARATION_TIMEOUT_MS) {
+            manager.importAll(payload)
+        }
+
+        assertNull("大型准备阶段应能被取消", result)
+        assertEquals(0, transactionRunCount)
+        assertTrue(favoritesRepo.getAll().any { it.name == "seed" })
+    }
+
+    @Test
+    fun importAll_appendModePreservesExistingFavorites() = runBlocking {
+        favoritesRepo.addFile(
+            parentId = null,
+            name = "seed",
+            path = "/tmp/seed.mhtml",
+            sourceType = SourceType.LOCAL
+        )
+
+        val result = manager.importAll(SUCCESS_BUNDLE, clearBeforeImport = false)
+
+        assertTrue(result.isSuccess)
+        assertTrue(favoritesRepo.getAll().any { it.name == "seed" })
+        assertTrue(favoritesRepo.getAll().any { it.name == "keep-me" })
+    }
+
     private companion object {
+        const val MAX_RECORDS = 100_000
+        const val PREPARATION_TIMEOUT_MS = 25L
+
         const val FAILING_BUNDLE = """
         {
           "schemaVersion": 1,

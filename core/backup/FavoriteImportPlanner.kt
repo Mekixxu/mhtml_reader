@@ -1,6 +1,8 @@
 package core.backup
 
 import core.backup.model.FavoriteDto
+import kotlinx.coroutines.ensureActive
+import kotlin.coroutines.coroutineContext
 
 /**
  * 一个待导入的 FOLDER 节点。
@@ -20,7 +22,7 @@ data class FavoriteImportPlan(
 )
 
 /**
- * FOLDER 导入顺序规划：
+ * FOLDER 导入顺序规划。输入必须已通过校验：ID 唯一且节点类型均为 FOLDER。
  * - parentId 为空或 id 为空 -> 根节点；
  * - 能通过 parentId 链从根节点到达的节点按层序导入，保证父先于子；
  * - 父 ID 缺失、循环或不可达的整个连通分量按旧兼容策略全部挂根。
@@ -29,12 +31,15 @@ data class FavoriteImportPlan(
  */
 class FavoriteImportPlanner {
 
-    fun plan(folders: List<FavoriteDto>): FavoriteImportPlan {
+    suspend fun plan(folders: List<FavoriteDto>): FavoriteImportPlan {
         var visits = 0L
         val byId = LinkedHashMap<Long, FavoriteDto>()
         val rootDtos = ArrayDeque<FavoriteDto>()
+        val context = coroutineContext
+        context.ensureActive()
 
         folders.forEach { dto ->
+            context.ensureActive()
             visits += 1
             val id = dto.id
             if (id == null) {
@@ -49,8 +54,9 @@ class FavoriteImportPlanner {
 
         val childrenByParent = HashMap<Long, MutableList<FavoriteDto>>()
         folders.forEach { dto ->
+            context.ensureActive()
             visits += 1
-            val id = dto.id ?: return@forEach
+            if (dto.id == null) return@forEach
             val parentId = dto.parentId ?: return@forEach
             if (byId.containsKey(parentId)) {
                 childrenByParent.getOrPut(parentId) { ArrayList() }.add(dto)
@@ -61,17 +67,20 @@ class FavoriteImportPlanner {
         val reachable = HashSet<Long>()
         val queue = ArrayDeque<FavoriteImportNode>()
         rootDtos.forEach { dto ->
+            context.ensureActive()
             visits += 1
             queue.add(FavoriteImportNode(dto, parentOldId = null))
         }
 
         while (queue.isNotEmpty()) {
+            context.ensureActive()
             visits += 1
             val node = queue.removeFirst()
             planned.add(node)
             val oldId = node.dto.id ?: continue
             reachable.add(oldId)
             childrenByParent[oldId]?.forEach { child ->
+                context.ensureActive()
                 visits += 1
                 queue.add(FavoriteImportNode(child, parentOldId = oldId))
             }
@@ -79,6 +88,7 @@ class FavoriteImportPlanner {
 
         // 不可达节点通常来自缺失父 ID 的断链或纯环，全部按旧行为挂根，保持输入顺序。
         folders.forEach { dto ->
+            context.ensureActive()
             visits += 1
             val id = dto.id ?: return@forEach
             if (!reachable.contains(id)) {

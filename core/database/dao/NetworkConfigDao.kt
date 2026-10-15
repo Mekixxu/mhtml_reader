@@ -22,6 +22,8 @@ interface NetworkConfigDao {
     fun observeAll(limit: Int = 100, offset: Int = 0): Flow<List<NetworkConfigEntity>>
     @Query("SELECT * FROM network_configs LIMIT :limit OFFSET :offset")
     suspend fun getAll(limit: Int = 100, offset: Int = 0): List<NetworkConfigEntity>
+    @Query("SELECT * FROM network_configs WHERE id > :afterId ORDER BY id ASC LIMIT :limit")
+    suspend fun getAfterId(afterId: Long, limit: Int): List<NetworkConfigEntity>
     @Query("SELECT * FROM network_configs WHERE id = :id LIMIT 1")
     suspend fun getById(id: Long): NetworkConfigEntity?
     @Query("DELETE FROM network_configs")

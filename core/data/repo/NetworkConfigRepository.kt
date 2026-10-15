@@ -10,7 +10,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.coroutineContext
 
 /**
  * 网络配置Repo。密码在写入口统一加密、在读取路径统一解密；
@@ -77,15 +79,17 @@ class NetworkConfigRepository(
         isEncrypted: (String) -> Boolean,
         encrypt: suspend (String) -> String
     ) = withContext(dispatcherProvider.io) {
-        var offset = 0
+        var afterId = 0L
         val pageSize = 100
         while (true) {
-            val page = dao.getAll(limit = pageSize, offset = offset)
+            coroutineContext.ensureActive()
+            val page = dao.getAfterId(afterId = afterId, limit = pageSize)
             if (page.isEmpty()) break
             page.forEach { entity ->
-                val stored = entity.password
-                if (stored.isEmpty() || isEncrypted(stored)) return@forEach
+                coroutineContext.ensureActive()
                 try {
+                    val stored = entity.password
+                    if (stored.isEmpty() || isEncrypted(stored)) return@forEach
                     val encrypted = encrypt(stored)
                     val updated = dao.updatePasswordIfUnchanged(
                         id = entity.id,
@@ -100,12 +104,12 @@ class NetworkConfigRepository(
                     }
                 } catch (ce: CancellationException) {
                     throw ce
-                } catch (error: Throwable) {
+                } catch (error: Exception) {
                     // 只记录类别与 ID，不输出凭据或完整行。
                     Log.w(TAG, "credential_migration_failed id=${entity.id} err=${error.javaClass.simpleName}")
                 }
             }
-            offset += page.size
+            afterId = page.last().id
         }
     }
 

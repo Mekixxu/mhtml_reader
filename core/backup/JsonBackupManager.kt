@@ -1,7 +1,6 @@
 package core.backup
 
 import core.backup.model.*
-import core.common.AppError
 import core.common.UrlCredentialSanitizer
 import core.data.repo.FavoritesRepository
 import core.data.repo.HistoryRepository
@@ -21,6 +20,11 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+
+private data class PreparedFavoriteImport(
+    val folderPlan: FavoriteImportPlan,
+    val fileDtos: List<FavoriteDto>
+)
 
 /**
  * JSON 导入导出（仅元数据）。
@@ -72,61 +76,10 @@ class JsonBackupManager(
                 )
             }
 
-            // 所有校验必须在清库前完成，非法备份不得触发任何 DAO 清空
-            validateBundle(bundle)
-
-            // 清库 + 导入整体在一个事务中，中途失败回滚，避免半清空
-            transactionRunner.run {
-                if (clearBeforeImport) {
-                    clearEverything()
-                }
-
-                // 1) Favorites：先导入文件夹，再导入文件；全程使用 oldId -> newId 映射
-                importFavorites(bundle.favorites)
-
-                // 2) History：保留进度与时间戳
-                bundle.history.forEach { dto ->
-                    historyRepo.upsert(
-                        core.database.entity.HistoryEntity(
-                            path = UrlCredentialSanitizer.stripPassword(dto.path),
-                            title = dto.title,
-                            lastAccess = dto.lastAccess,
-                            progress = dto.progress,
-                            pageIndex = dto.pageIndex,
-                            fileType = fromSafeFileType(dto.fileType)
-                        )
-                    )
-                }
-
-                // 3) Network configs
-                bundle.networkConfigs.forEach { dto ->
-                    networkRepo.add(
-                        NetworkConfigEntity(
-                            id = 0L,
-                            name = dto.name,
-                            protocol = fromSafeNetworkProtocol(dto.protocol),
-                            host = dto.host,
-                            port = dto.port,
-                            username = dto.username,
-                            password = dto.password, // 明文警告，仅 v1.0
-                            defaultPath = dto.defaultPath,
-                            encoding = dto.encoding.ifBlank { "Auto" }
-                        )
-                    )
-                }
-
-                // 4) Title cache：按原数据写入
-                bundle.titleCache.forEach { dto ->
-                    titleCacheRepo.upsert(
-                        TitleCacheEntity(
-                            path = dto.path,
-                            title = dto.title,
-                            lastModified = dto.lastModified,
-                            updatedAt = dto.updatedAt
-                        )
-                    )
-                }
-            }
+            // Decode, validation and CPU-only planning finish before the database transaction starts.
+            val preparedFavorites = prepareFavorites(bundle)
+            coroutineContext.ensureActive()
+            importPreparedBundle(bundle, preparedFavorites, clearBeforeImport)
 
             Result.success(Unit)
         } catch (ce: CancellationException) {
@@ -136,14 +89,100 @@ class JsonBackupManager(
         }
     }
 
-    private fun validateBundle(bundle: ExportBundle) {
+    private suspend fun importPreparedBundle(
+        bundle: ExportBundle,
+        preparedFavorites: PreparedFavoriteImport,
+        clearBeforeImport: Boolean
+    ) {
+        transactionRunner.run {
+            if (clearBeforeImport) clearEverything()
+            importFavorites(preparedFavorites)
+            importHistory(bundle.history)
+            importNetworkConfigs(bundle.networkConfigs)
+            importTitleCache(bundle.titleCache)
+        }
+    }
+
+    private suspend fun importHistory(history: List<HistoryDto>) {
+        history.forEach { dto ->
+            coroutineContext.ensureActive()
+            historyRepo.upsert(
+                core.database.entity.HistoryEntity(
+                    path = UrlCredentialSanitizer.stripPassword(dto.path),
+                    title = dto.title,
+                    lastAccess = dto.lastAccess,
+                    progress = dto.progress,
+                    pageIndex = dto.pageIndex,
+                    fileType = fromSafeFileType(dto.fileType)
+                )
+            )
+        }
+    }
+
+    private suspend fun importNetworkConfigs(networkConfigs: List<NetworkConfigDto>) {
+        networkConfigs.forEach { dto ->
+            coroutineContext.ensureActive()
+            networkRepo.add(
+                NetworkConfigEntity(
+                    id = 0L,
+                    name = dto.name,
+                    protocol = fromSafeNetworkProtocol(dto.protocol),
+                    host = dto.host,
+                    port = dto.port,
+                    username = dto.username,
+                    password = dto.password,
+                    defaultPath = dto.defaultPath,
+                    encoding = dto.encoding.ifBlank { "Auto" }
+                )
+            )
+        }
+    }
+
+    private suspend fun importTitleCache(titleCache: List<TitleCacheDto>) {
+        titleCache.forEach { dto ->
+            coroutineContext.ensureActive()
+            titleCacheRepo.upsert(
+                TitleCacheEntity(
+                    path = dto.path,
+                    title = dto.title,
+                    lastModified = dto.lastModified,
+                    updatedAt = dto.updatedAt
+                )
+            )
+        }
+    }
+
+    private suspend fun prepareFavorites(bundle: ExportBundle): PreparedFavoriteImport {
+        coroutineContext.ensureActive()
+        validateBundle(bundle)
+        val folders = ArrayList<FavoriteDto>()
+        val files = ArrayList<FavoriteDto>()
+        bundle.favorites.forEach { dto ->
+            coroutineContext.ensureActive()
+            if (dto.type == FavoriteType.FOLDER.name) folders += dto else files += dto
+        }
+        return PreparedFavoriteImport(
+            folderPlan = FavoriteImportPlanner().plan(folders),
+            fileDtos = files
+        )
+    }
+
+    private suspend fun validateBundle(bundle: ExportBundle) {
         require(bundle.favorites.size <= MAX_RECORDS_PER_TABLE) { "Too many favorites" }
         require(bundle.history.size <= MAX_RECORDS_PER_TABLE) { "Too many history records" }
         require(bundle.networkConfigs.size <= MAX_RECORDS_PER_TABLE) { "Too many network configs" }
         require(bundle.titleCache.size <= MAX_RECORDS_PER_TABLE) { "Too many title cache records" }
 
+        validateFavorites(bundle.favorites)
+        validateHistory(bundle.history)
+        validateNetworkConfigs(bundle.networkConfigs)
+        validateTitleCache(bundle.titleCache)
+    }
+
+    private suspend fun validateFavorites(favorites: List<FavoriteDto>) {
         val favoriteIds = mutableSetOf<Long>()
-        bundle.favorites.forEach { dto ->
+        favorites.forEach { dto ->
+            coroutineContext.ensureActive()
             require(dto.type == FavoriteType.FOLDER.name || dto.type == FavoriteType.FILE.name) {
                 "Unknown favorite type: ${dto.type}"
             }
@@ -159,8 +198,11 @@ class JsonBackupManager(
             }
             require(dto.parentId == null || dto.parentId > 0L) { "Favorite parentId invalid" }
         }
+    }
 
-        bundle.history.forEach { dto ->
+    private suspend fun validateHistory(history: List<core.backup.model.HistoryDto>) {
+        history.forEach { dto ->
+            coroutineContext.ensureActive()
             require(dto.progress.isFinite() && dto.progress in 0f..1f) { "Invalid history progress" }
             require(dto.pageIndex >= -1) { "Invalid history pageIndex" }
             require(runCatching { core.database.entity.enums.FileType.valueOf(dto.fileType) }.isSuccess) {
@@ -170,8 +212,11 @@ class JsonBackupManager(
             require(dto.title.length <= MAX_STRING_LENGTH) { "History title too long" }
             require(dto.lastAccess >= 0L) { "History lastAccess invalid" }
         }
+    }
 
-        bundle.networkConfigs.forEach { dto ->
+    private suspend fun validateNetworkConfigs(networkConfigs: List<core.backup.model.NetworkConfigDto>) {
+        networkConfigs.forEach { dto ->
+            coroutineContext.ensureActive()
             require(dto.protocol == "SMB" || dto.protocol == "FTP") { "Unknown network protocol" }
             require(dto.port in 1..65535) { "Invalid network port" }
             require(dto.host.isNotBlank()) { "Network host is blank" }
@@ -181,27 +226,26 @@ class JsonBackupManager(
             require(dto.password.length <= MAX_STRING_LENGTH) { "Network password too long" }
             require(dto.defaultPath.length <= MAX_STRING_LENGTH) { "Network defaultPath too long" }
         }
+    }
 
-        bundle.titleCache.forEach { dto ->
+    private suspend fun validateTitleCache(titleCache: List<core.backup.model.TitleCacheDto>) {
+        titleCache.forEach { dto ->
+            coroutineContext.ensureActive()
             require(dto.path.length <= MAX_STRING_LENGTH) { "Title cache path too long" }
             require(dto.title.length <= MAX_STRING_LENGTH) { "Title cache title too long" }
         }
     }
 
-    private suspend fun importFavorites(favorites: List<FavoriteDto>) {
-        val folderDtos = favorites.filter { it.type == FavoriteType.FOLDER.name }
-        val fileDtos = favorites.filter { it.type == FavoriteType.FILE.name }
-
+    private suspend fun importFavorites(prepared: PreparedFavoriteImport) {
         val idMap = mutableMapOf<Long, Long>()
-        val plan = FavoriteImportPlanner().plan(folderDtos)
-        plan.nodes.forEach { node ->
+        prepared.folderPlan.nodes.forEach { node ->
             coroutineContext.ensureActive()
             val parentNewId = node.parentOldId?.let { idMap[it] }
             val newId = restoreFavorite(node.dto, FavoriteType.FOLDER, parentNewId)
             node.dto.id?.let { idMap[it] = newId }
         }
 
-        fileDtos.forEach { dto ->
+        prepared.fileDtos.forEach { dto ->
             coroutineContext.ensureActive()
             val newParentId = dto.parentId?.let { idMap[it] }
             restoreFavorite(dto, FavoriteType.FILE, newParentId)

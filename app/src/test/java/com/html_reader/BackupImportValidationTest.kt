@@ -29,6 +29,7 @@ class BackupImportValidationTest {
     private lateinit var db: AppDatabase
     private lateinit var favoritesRepo: FavoritesRepository
     private lateinit var manager: JsonBackupManager
+    private var transactionRunCount = 0
 
     @Before
     fun setUp() {
@@ -44,8 +45,10 @@ class BackupImportValidationTest {
             networkRepo = NetworkConfigRepository(db.networkConfigDao(), dispatchers, CredentialCipher()),
             titleCacheRepo = TitleCacheRepository(db.titleCacheDao(), dispatchers),
             transactionRunner = object : BackupTransactionRunner {
-                override suspend fun <T> run(block: suspend () -> T): T =
-                    db.withTransaction { block() }
+                override suspend fun <T> run(block: suspend () -> T): T {
+                    transactionRunCount++
+                    return db.withTransaction { block() }
+                }
             }
         )
     }
@@ -65,6 +68,7 @@ class BackupImportValidationTest {
         )
 
         assertTrue(manager.importAll(payload).isFailure)
+        assertEquals(0, transactionRunCount)
         assertEquals(1, favoritesRepo.getAll().size)
         assertEquals("seed", favoritesRepo.getAll().single().name)
     }

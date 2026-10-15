@@ -10,9 +10,12 @@ import core.database.dao.NetworkConfigDao
 import core.database.entity.NetworkConfigEntity
 import core.database.entity.enums.NetworkProtocol
 import core.security.CredentialCipher
+import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -138,6 +141,91 @@ class NetworkConfigMigrationTest {
         )
 
         assertEquals("", dao.getById(id)!!.password)
+    }
+
+    @Test
+    fun migration_keysetContinuesAfterDeletingRowFromPreviousPage() = runBlocking {
+        repeat(101) { index ->
+            dao.insert(entity(host = "page-$index", password = "plain-$index"))
+        }
+        val orderedIds = dao.getAfterId(afterId = 0L, limit = 101).map { it.id }
+        assertEquals(101, orderedIds.size)
+
+        repo.migrateLegacyPlaintextIfNeeded(
+            isEncrypted = { false },
+            encrypt = { stored ->
+                if (stored == "plain-0") dao.delete(orderedIds.first())
+                "ENC:$stored"
+            }
+        )
+
+        assertEquals(null, dao.getById(orderedIds.first()))
+        assertEquals("ENC:plain-100", dao.getById(orderedIds.last())!!.password)
+        assertEquals(emptyList<Long>(), dao.getAfterId(0L, 200)
+            .filter { it.password.startsWith("plain-") }
+            .map { it.id })
+    }
+
+    @Test
+    fun migration_ordersPagesByIdAndContinuesAfterPerRowException() = runBlocking {
+        val ids = (1..3).map { index ->
+            dao.insert(entity(host = "ordered-$index", password = "plain-$index"))
+        }
+        val firstPage = dao.getAfterId(0L, 2)
+        assertEquals(ids.take(2), firstPage.map { it.id })
+
+        repo.migrateLegacyPlaintextIfNeeded(
+            isEncrypted = { false },
+            encrypt = { stored ->
+                if (stored == "plain-1") throw IOException("synthetic cipher failure")
+                "ENC:$stored"
+            }
+        )
+
+        assertEquals("plain-1", dao.getById(ids[0])!!.password)
+        assertEquals("ENC:plain-2", dao.getById(ids[1])!!.password)
+        assertEquals("ENC:plain-3", dao.getById(ids[2])!!.password)
+    }
+
+    @Test
+    fun migration_propagatesCancellationInsteadOfContinuing() = runBlocking {
+        val firstId = dao.insert(entity(host = "cancel-1", password = "plain-1"))
+        val secondId = dao.insert(entity(host = "cancel-2", password = "plain-2"))
+        val cancellation = CancellationException("stop migration")
+
+        val caught = try {
+            repo.migrateLegacyPlaintextIfNeeded(
+                isEncrypted = { false },
+                encrypt = { throw cancellation }
+            )
+            null
+        } catch (error: CancellationException) {
+            error
+        }
+
+        assertTrue(caught is CancellationException)
+        assertEquals(cancellation.message, caught?.message)
+        assertEquals("plain-1", dao.getById(firstId)!!.password)
+        assertEquals("plain-2", dao.getById(secondId)!!.password)
+    }
+
+    @Test
+    fun migration_doesNotSwallowFatalErrors() = runBlocking {
+        dao.insert(entity(host = "fatal", password = "plain"))
+        val fatal = AssertionError("fatal")
+
+        val caught = try {
+            repo.migrateLegacyPlaintextIfNeeded(
+                isEncrypted = { false },
+                encrypt = { throw fatal }
+            )
+            null
+        } catch (error: AssertionError) {
+            error
+        }
+
+        assertTrue(caught is AssertionError)
+        assertEquals(fatal.message, caught?.message)
     }
 
     private fun entity(

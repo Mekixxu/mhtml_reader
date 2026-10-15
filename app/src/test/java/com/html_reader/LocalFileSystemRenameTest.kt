@@ -11,6 +11,7 @@ import core.fileops.util.NameConflictResolver
 import core.vfs.local.LocalFileSystem
 import core.vfs.model.VfsPath
 import java.io.File
+import java.nio.file.Files
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -18,6 +19,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import org.junit.Assume.assumeNoException
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -53,6 +55,38 @@ class LocalFileSystemRenameTest {
 
         assertTrue(result.isSuccess)
         assertEquals("same", source.readText())
+    }
+
+    @Test
+    fun rename_targetSymlinkToSource_isConflictAndPreservesDirectoryEntries() = runBlocking {
+        val source = File(tempFolder.root, "a.txt").apply { writeText("A") }
+        val link = File(tempFolder.root, "b.txt")
+        createSymlinkOrSkip(link, source)
+
+        val result = fileSystem.rename(VfsPath.LocalFile(source.absolutePath), "b.txt")
+
+        assertTrue(result.isFailure)
+        assertEquals(AppError.Conflict, result.exceptionOrNull())
+        assertEquals("A", source.readText())
+        assertTrue(Files.isSymbolicLink(link.toPath()))
+        assertEquals(source.toPath(), Files.readSymbolicLink(link.toPath()))
+    }
+
+    @Test
+    fun rename_danglingTargetSymlink_isConflictAndPreservesLink() = runBlocking {
+        val source = File(tempFolder.root, "a.txt").apply { writeText("A") }
+        val missingTarget = File(tempFolder.root, "missing.txt")
+        val link = File(tempFolder.root, "b.txt")
+        createSymlinkOrSkip(link, missingTarget)
+        assertFalse(link.exists())
+
+        val result = fileSystem.rename(VfsPath.LocalFile(source.absolutePath), "b.txt")
+
+        assertTrue(result.isFailure)
+        assertEquals(AppError.Conflict, result.exceptionOrNull())
+        assertEquals("A", source.readText())
+        assertTrue(Files.isSymbolicLink(link.toPath()))
+        assertEquals(missingTarget.toPath(), Files.readSymbolicLink(link.toPath()))
     }
 
     @Test
@@ -107,5 +141,13 @@ class LocalFileSystemRenameTest {
         val error = states.filterIsInstance<FileOpState.Error>().single()
         assertEquals(AppError.InvalidName, error.error)
         assertFalse(outside.exists())
+    }
+
+    private fun createSymlinkOrSkip(link: File, target: File) {
+        try {
+            Files.createSymbolicLink(link.toPath(), target.toPath())
+        } catch (unsupported: Exception) {
+            assumeNoException("Host filesystem does not support symbolic links", unsupported)
+        }
     }
 }

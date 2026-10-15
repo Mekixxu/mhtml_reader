@@ -15,6 +15,8 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
+import java.nio.file.Files
+import java.nio.file.LinkOption
 
 class LocalFileSystem(
     private val context: Context,
@@ -213,8 +215,8 @@ class LocalFileSystem(
                         val oldFile = File(from.filePath)
                         val parent = oldFile.parentFile ?: return@withContext Result.failure(AppError.NotFound)
                         val newFile = File(parent, toName)
-                        if (newFile.exists()) {
-                            return@withContext if (oldFile.canonicalFile == newFile.canonicalFile) {
+                        if (Files.exists(newFile.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+                            return@withContext if (oldFile.name == toName) {
                                 Result.success(VfsPath.LocalFile(oldFile.absolutePath))
                             } else {
                                 Result.failure(AppError.Conflict)
