@@ -99,6 +99,8 @@
     <string name="reader_pdf_next">Next</string>
     <string name="reader_pdf_page_template">Page %1$d / %2$d</string>
     <string name="reader_external_link_blocked">External links are blocked for local content</string>
+    <string name="reader_open_in_browser_action">在默认浏览器中打开</string>
+    <string name="reader_open_in_browser_failed">未找到可用的浏览器</string>
     <string name="reader_save_image_action">保存图片</string>
     <string name="reader_save_image_success">图片已保存：%1$s</string>
     <string name="reader_save_image_failed">图片保存失败</string>
