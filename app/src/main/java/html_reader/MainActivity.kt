@@ -18,7 +18,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var bottomNav: BottomNavigationView
     private val settingsPrefsName = "app_settings"
     private val themeModeKey = "theme_mode"
-    private var lastFoldersTag: String? = null
     private var lastReaderTag: String? = null
     private var isProgrammaticSelection = false
 
@@ -84,8 +83,9 @@ class MainActivity : AppCompatActivity() {
             when (item.itemId) {
                 R.id.nav_home -> showHomeRoot()
                 R.id.nav_files -> {
-                    if (lastFoldersTag == "directory_mode_folders") {
-                        showContent(FilesFragment(), "directory_mode_folders")
+                    if (getCurrentVisibleFragment() is ReaderFragment) {
+                        // 从阅读器返回：直接回到上次打开的目录页（会话路径已按会话持久化）
+                        showDirectoryMode(fromFolders = true)
                     } else {
                         showOverview(FoldersOverviewFragment(), "folders_overview")
                     }
@@ -152,9 +152,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showOverview(fragment: Fragment, tag: String) {
-        if (tag == "folders_overview") {
-            lastFoldersTag = tag
-        } else if (tag == "tabs_overview") {
+        if (tag == "tabs_overview") {
             lastReaderTag = tag
         }
         val currentTag = getCurrentVisibleFragment()?.tag
@@ -171,31 +169,26 @@ class MainActivity : AppCompatActivity() {
 
     fun showDirectoryMode(fromFolders: Boolean = false) {
         val tag = if (fromFolders) "directory_mode_folders" else "directory_mode"
-        if (tag == "directory_mode_folders") lastFoldersTag = tag
         switchFragment(tag, { FilesFragment() }, forceReplace = false)
     }
 
     fun showDirectoryModeWithPath(path: String, fromFolders: Boolean = false) {
         val tag = if (fromFolders) "directory_mode_folders" else "directory_mode"
-        if (tag == "directory_mode_folders") lastFoldersTag = tag
         switchFragment(tag, { FilesFragment.newInstanceForPath(path) }, forceReplace = true)
     }
 
     fun showDirectoryModeWithSafTree(treeUri: String, fromFolders: Boolean = false) {
         val tag = if (fromFolders) "directory_mode_folders" else "directory_mode"
-        if (tag == "directory_mode_folders") lastFoldersTag = tag
         switchFragment(tag, { FilesFragment.newInstanceForSafTree(treeUri) }, forceReplace = true)
     }
 
     fun showDirectoryModeWithNetwork(networkConfigId: Long, fromFolders: Boolean = false) {
         val tag = if (fromFolders) "directory_mode_folders" else "directory_mode"
-        if (tag == "directory_mode_folders") lastFoldersTag = tag
         switchFragment(tag, { FilesFragment.newInstance(networkConfigId) }, forceReplace = true)
     }
 
     fun showDirectoryModeWithNetworkPath(networkConfigId: Long, startPath: String, fromFolders: Boolean = false) {
         val tag = if (fromFolders) "directory_mode_folders" else "directory_mode"
-        if (tag == "directory_mode_folders") lastFoldersTag = tag
         switchFragment(tag, { FilesFragment.newInstanceForNetworkPath(networkConfigId, startPath) }, forceReplace = true)
     }
 

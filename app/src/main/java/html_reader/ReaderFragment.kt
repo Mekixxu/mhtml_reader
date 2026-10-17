@@ -1,10 +1,12 @@
 package com.html_reader
 
 import android.app.AlertDialog
+import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.MediaStore
@@ -168,7 +170,7 @@ class ReaderFragment : Fragment() {
             false
         }
         webPreview.visibility = View.GONE
-        installWebImageLongPressHandler()
+        installWebLongPressHandler()
         
         selectedTabId = savedInstanceState?.getString(STATE_SELECTED_TAB_ID)
         val initialPath = arguments?.getString(ARG_INITIAL_PATH)
@@ -807,19 +809,58 @@ class ReaderFragment : Fragment() {
         Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
     }
 
-    private fun installWebImageLongPressHandler() {
+    private fun installWebLongPressHandler() {
         webPreview.setOnLongClickListener {
-            val hitResult = webPreview.hitTestResult
-            val imageSource = when (hitResult.type) {
+            when (val hitType = webPreview.hitTestResult.type) {
                 WebView.HitTestResult.IMAGE_TYPE,
-                WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE -> hitResult.extra
-                else -> null
+                WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE -> {
+                    val imageSource = webPreview.hitTestResult.extra
+                    if (imageSource.isNullOrBlank()) {
+                        return@setOnLongClickListener false
+                    }
+                    showImageActions(imageSource)
+                    true
+                }
+                WebView.HitTestResult.SRC_ANCHOR_TYPE -> {
+                    val linkUrl = webPreview.hitTestResult.extra
+                    // 仅对绝对 http/https 链接提供外部打开；相对链接/页内锚点不处理
+                    if (linkUrl.isNullOrBlank() || !isExternalHttpLink(linkUrl)) {
+                        return@setOnLongClickListener false
+                    }
+                    showLinkActions(linkUrl)
+                    true
+                }
+                else -> {
+                    Log.d("ReaderFragment", "web_long_press_unhandled type=$hitType")
+                    false
+                }
             }
-            if (imageSource.isNullOrBlank()) {
-                return@setOnLongClickListener false
+        }
+    }
+
+    private fun isExternalHttpLink(url: String): Boolean =
+        url.startsWith("http://", ignoreCase = true) || url.startsWith("https://", ignoreCase = true)
+
+    private fun showLinkActions(linkUrl: String) {
+        AlertDialog.Builder(requireContext())
+            .setItems(arrayOf(getString(R.string.reader_open_in_browser_action))) { _, which ->
+                if (which != 0) {
+                    return@setItems
+                }
+                openInDefaultBrowser(linkUrl)
             }
-            showImageActions(imageSource)
-            true
+            .show()
+    }
+
+    private fun openInDefaultBrowser(linkUrl: String) {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(linkUrl)).apply {
+            addCategory(Intent.CATEGORY_BROWSABLE)
+        }
+        try {
+            startActivity(intent)
+        } catch (e: ActivityNotFoundException) {
+            Log.w("ReaderFragment", "open_in_browser_failed cause=${e.javaClass.simpleName} ${SafeUrlLogSummary.summarize(linkUrl)}")
+            showShort(getString(R.string.reader_open_in_browser_failed))
         }
     }
 
