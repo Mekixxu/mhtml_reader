@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import core.cache.OrphanCacheCleaner
+import kotlinx.coroutines.CancellationException
 import java.io.File
 
 class AppOrphanCacheCleanupWorker(
@@ -12,7 +13,7 @@ class AppOrphanCacheCleanupWorker(
 ) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
         val daysUnused = inputData.getInt("daysUnused", AppMaintenancePolicy.ORPHAN_DAYS_UNUSED)
-        return runCatching {
+        return try {
             val cacheRoot = AppMaintenancePolicy.cacheRoot(applicationContext)
             val registry = ReaderRuntime.tabCacheRegistry(applicationContext)
             OrphanCacheCleaner(cacheRoot, daysUnused, protection = registry).clean(registry.activeCacheKeys())
@@ -22,7 +23,9 @@ class AppOrphanCacheCleanupWorker(
                 AppMaintenancePolicy.TITLE_CACHE_MAX_DAYS * 86_400_000L
             FilesRuntime.titleCacheRepository(applicationContext).deleteOlderThan(titleCutoff)
             Result.success()
-        }.getOrElse {
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (_: Exception) {
             Result.retry()
         }
     }

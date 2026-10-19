@@ -3,6 +3,7 @@ package core.cache
 import java.io.File
 import java.util.HashMap
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 
 private const val LEASE_STATE_HELD = 0
@@ -56,7 +57,7 @@ class TabCacheRegistry(
      * 释放一个引用；仅在计数归零时删除目录（删除与计数变更同锁）。
      */
     internal suspend fun releaseRef(cacheKey: String, contentType: String) {
-        withContext(Dispatchers.IO) {
+        withContext(NonCancellable + Dispatchers.IO) {
             synchronized(lock) {
                 val current = refs[cacheKey] ?: return@synchronized
                 if (current > 1) {
@@ -99,11 +100,17 @@ class TabCacheRegistry(
         }
 
         override suspend fun release() {
-            synchronized(this) {
-                if (state != LEASE_STATE_HELD) return
-                state = LEASE_STATE_RELEASED
+            val shouldRelease = synchronized(this) {
+                if (state != LEASE_STATE_HELD) {
+                    false
+                } else {
+                    state = LEASE_STATE_RELEASED
+                    true
+                }
             }
-            this@TabCacheRegistry.releaseRef(cacheKey, contentType)
+            if (shouldRelease) {
+                this@TabCacheRegistry.releaseRef(cacheKey, contentType)
+            }
         }
     }
 }

@@ -4,6 +4,7 @@ import android.content.ContentResolver
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Log
+import core.common.EntryNameValidator
 import core.database.entity.NetworkConfigEntity
 import java.io.File
 import java.io.FileOutputStream
@@ -319,7 +320,15 @@ object FilesTransferGateway {
                     null
                 }
             }
-        val raw = fromCursor ?: uri.lastPathSegment ?: "upload_${System.currentTimeMillis()}.bin"
-        return raw.replace("/", "_").ifBlank { "upload_${System.currentTimeMillis()}.bin" }
+        val raw = fromCursor ?: uri.lastPathSegment
+        return normalizeUploadFileName(raw)
+    }
+
+    internal fun normalizeUploadFileName(raw: String?): String {
+        val fallback = "upload_${System.currentTimeMillis()}.bin"
+        val candidate = (raw ?: fallback)
+            .replace('\\', '_')
+            .replace('/', '_')
+        return candidate.takeIf(EntryNameValidator::isValid) ?: fallback
     }
 }

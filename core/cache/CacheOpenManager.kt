@@ -22,7 +22,6 @@ import java.io.Closeable
 import java.io.EOFException
 import java.io.File
 import java.io.OutputStream
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * 统一缓存打开、流式拷贝
@@ -52,7 +51,7 @@ class CacheOpenManager(
     private val leaseRegistry: CacheLeaseRegistry,
     private val activeKeysProvider: () -> Set<String> = { emptySet() }
 ) {
-    private val copyLocks = ConcurrentHashMap<String, Mutex>()
+    private val copyLocks = Array(COPY_LOCK_STRIPES) { Mutex() }
 
     suspend fun openToCache(
         src: VfsPath,
@@ -69,7 +68,7 @@ class CacheOpenManager(
             versionStamp = versionStamp
         )
         // 同一 cacheKey 串行拷贝，避免并发打开同一文件时互相写坏缓存
-        val copyLock = copyLocks.computeIfAbsent(cacheKey) { Mutex() }
+        val copyLock = copyLockFor(cacheKey)
         copyLock.lock()
         // 连续保护：拷贝开始/缓存命中即持有租约，直到移交标签或调用方显式释放
         val lease = leaseRegistry.acquire(cacheKey, contentType.name.lowercase())
@@ -234,7 +233,11 @@ class CacheOpenManager(
         EvictionResult.READY -> AppError.IoError("unexpected eviction result READY", null)
     }
 
+    private fun copyLockFor(cacheKey: String): Mutex =
+        copyLocks[(cacheKey.hashCode() and Int.MAX_VALUE) % copyLocks.size]
+
     private companion object {
         const val COPY_BUFFER_SIZE = 64 * 1024
+        const val COPY_LOCK_STRIPES = 64
     }
 }

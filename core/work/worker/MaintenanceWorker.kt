@@ -8,6 +8,7 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import core.maintenance.MaintenanceManager
 import core.settings.repo.SettingsRepository
+import kotlinx.coroutines.CancellationException
 
 /**
  * 后台维护任务Worker。通过 Hilt 注入 MaintenanceManager 与 SettingsRepository。
@@ -26,7 +27,9 @@ class MaintenanceWorker @AssistedInject constructor(
             maintenanceManager.runBackgroundMaintenance()
             // 可在此补充日志上报（仅显示class名/数据量，不显示真实路径）
             return Result.success()
-        } catch (e: Exception) {
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (_: Exception) {
             // 异常自动重试
             return Result.retry()
         }

@@ -201,7 +201,7 @@ class DefaultReaderTabManager(
         }
 
         // 2) 最后一个引用消失后才允许清理缓存文件（计数归零由 registry 判定）
-        withContext(dispatcherProvider.io) {
+        withContext(NonCancellable + dispatcherProvider.io) {
             tabCacheRegistry.onTabClosed(tabId)
         }
     }

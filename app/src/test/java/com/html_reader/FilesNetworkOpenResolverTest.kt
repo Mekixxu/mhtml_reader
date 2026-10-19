@@ -67,7 +67,7 @@ class FilesNetworkOpenResolverTest {
             protocol = NetworkProtocol.FTP,
             host = "host",
             port = 21,
-            username = "alice",
+            username = "bob",
             password = "",
             defaultPath = "/"
         )
@@ -79,6 +79,31 @@ class FilesNetworkOpenResolverTest {
         )
 
         assertEquals(7L, result.configId)
+        assertEquals("/private", result.openPath)
+        assertNull(result.issue)
+    }
+
+    @Test
+    fun matchingHostPortWithDifferentUsername_doesNotReuseConfig() {
+        val existing = NetworkConfigEntity(
+            id = 7L,
+            name = "alice-config",
+            protocol = NetworkProtocol.FTP,
+            host = "host",
+            port = 21,
+            username = "alice",
+            password = "alice-secret",
+            defaultPath = "/"
+        )
+        val result = FilesNetworkOpenResolver.resolve(
+            path = "ftp://bob:secret@host:21/private/a.mhtml",
+            sourceType = SourceType.FTP,
+            favoriteType = FavoriteType.FILE,
+            networkConfigs = listOf(existing)
+        )
+
+        assertNull(result.configId)
+        assertEquals("bob", result.adHocConfig?.username)
         assertEquals("/private", result.openPath)
         assertNull(result.issue)
     }

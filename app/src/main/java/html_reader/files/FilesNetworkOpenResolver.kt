@@ -45,8 +45,15 @@ object FilesNetworkOpenResolver {
         } else {
             normalized
         }
+        val uriUsername = uri.userInfo
+            ?.substringBefore(':')
+            ?.let { runCatching { URLDecoder.decode(it, "UTF-8") }.getOrNull() }
         val existing = networkConfigs.firstOrNull {
-            it.protocol == protocol && it.host.equals(host, ignoreCase = true) && it.port == port
+            it.protocol == protocol &&
+                it.host.equals(host, ignoreCase = true) &&
+                it.port == port &&
+                (uriUsername.isNullOrBlank() ||
+                    it.username.equals(uriUsername, ignoreCase = true))
         }
         if (existing != null) {
             return ResolvedNetworkOpen(configId = existing.id, openPath = openPath)

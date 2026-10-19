@@ -161,4 +161,18 @@ class FilesTransferGatewayTest {
         val mapped = FilesTransferGateway.mapTransferError(IOException("connect refused"))
         assertTrue(mapped is FilesTransferException.ConnectionFailed)
     }
+
+    @Test
+    fun normalizeUploadFileName_removesPathSeparators() {
+        assertEquals(".._evil.mhtml", FilesTransferGateway.normalizeUploadFileName("../evil.mhtml"))
+        assertEquals("a_b.txt", FilesTransferGateway.normalizeUploadFileName("a\\b.txt"))
+    }
+
+    @Test
+    fun normalizeUploadFileName_rejectsUnsafeName() {
+        val fallback = FilesTransferGateway.normalizeUploadFileName("..")
+
+        assertTrue(fallback.startsWith("upload_"))
+        assertTrue(fallback.endsWith(".bin"))
+    }
 }

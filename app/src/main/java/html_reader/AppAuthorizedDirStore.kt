@@ -5,6 +5,7 @@ import android.net.Uri
 import core.common.DispatcherProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -22,10 +23,24 @@ class AppAuthorizedDirStore(
     private val prefs = context.applicationContext.getSharedPreferences("app_authorized_dirs", Context.MODE_PRIVATE)
     private val state = MutableStateFlow<List<AuthorizedDir>>(emptyList())
     private val scope = CoroutineScope(SupervisorJob() + dispatcherProvider.io)
+    private val mutations = Channel<Mutation>(Channel.UNLIMITED)
 
     init {
+        // 单消费者 actor：按调用顺序串行化读改写，避免并发 launch 的乱序覆盖。
         scope.launch {
             state.value = load()
+            for (mutation in mutations) {
+                when (mutation) {
+                    is Mutation.Upsert -> {
+                        val current = if (state.value.isEmpty()) load() else state.value
+                        save(current.filterNot { it.treeUri == mutation.treeUri } + mutation.entry)
+                    }
+                    is Mutation.Remove -> {
+                        val current = if (state.value.isEmpty()) load() else state.value
+                        save(current.filterNot { it.treeUri == mutation.treeUri })
+                    }
+                }
+            }
         }
     }
 
@@ -35,19 +50,11 @@ class AppAuthorizedDirStore(
 
     fun upsert(treeUri: Uri, displayName: String) {
         val uriText = treeUri.toString()
-        scope.launch {
-            val current = if (state.value.isEmpty()) load() else state.value
-            val merged = current.filterNot { it.treeUri == uriText } + AuthorizedDir(uriText, displayName)
-            save(merged)
-        }
+        mutations.trySend(Mutation.Upsert(uriText, AuthorizedDir(uriText, displayName)))
     }
 
     fun remove(treeUri: String) {
-        scope.launch {
-            val current = if (state.value.isEmpty()) load() else state.value
-            val next = current.filterNot { it.treeUri == treeUri }
-            save(next)
-        }
+        mutations.trySend(Mutation.Remove(treeUri))
     }
 
     private fun load(): List<AuthorizedDir> {
@@ -66,5 +73,10 @@ class AppAuthorizedDirStore(
         val normalized = list.distinctBy { it.treeUri }.sortedBy { it.displayName.lowercase() }
         prefs.edit().putStringSet("entries", normalized.map { "${it.treeUri}|${it.displayName}" }.toSet()).apply()
         state.value = normalized
+    }
+
+    private sealed interface Mutation {
+        data class Upsert(val treeUri: String, val entry: AuthorizedDir) : Mutation
+        data class Remove(val treeUri: String) : Mutation
     }
 }
