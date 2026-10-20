@@ -45,23 +45,32 @@ object FilesNetworkOpenResolver {
         } else {
             normalized
         }
-        val uriUsername = uri.userInfo
-            ?.substringBefore(':')
-            ?.let { runCatching { URLDecoder.decode(it, "UTF-8") }.getOrNull() }
+        val encodedUserInfo = uri.encodedUserInfo
+        val userInfo = if (encodedUserInfo == null) {
+            null
+        } else {
+            val parsed = runCatching {
+                ParsedUserInfo(
+                    username = Uri.decode(encodedUserInfo.substringBefore(':')),
+                    password = Uri.decode(encodedUserInfo.substringAfter(':', ""))
+                )
+            }
+            if (parsed.isFailure) {
+                return ResolvedNetworkOpen(issue = NetworkOpenIssue.INVALID_PATH)
+            }
+            parsed.getOrThrow()
+        }
         val existing = networkConfigs.firstOrNull {
             it.protocol == protocol &&
                 it.host.equals(host, ignoreCase = true) &&
                 it.port == port &&
-                (uriUsername.isNullOrBlank() ||
-                    it.username.equals(uriUsername, ignoreCase = true))
+                (userInfo == null || usernamesMatch(protocol, it.username, userInfo.username))
         }
         if (existing != null) {
             return ResolvedNetworkOpen(configId = existing.id, openPath = openPath)
         }
-        val userInfo = uri.userInfo.orEmpty()
-        // 注意：无冒号时必须回退为整个 userInfo（anonymous 等无密码用户名）
-        val username = userInfo.substringBefore(':', userInfo).let { URLDecoder.decode(it, "UTF-8") }
-        val password = userInfo.substringAfter(':', "").let { URLDecoder.decode(it, "UTF-8") }
+        val username = userInfo?.username.orEmpty()
+        val password = userInfo?.password.orEmpty()
         if (username.isBlank() && password.isBlank()) {
             return ResolvedNetworkOpen(issue = NetworkOpenIssue.MISSING_CREDENTIAL)
         }
@@ -83,4 +92,18 @@ object FilesNetworkOpenResolver {
         )
         return ResolvedNetworkOpen(adHocConfig = adHoc, openPath = openPath)
     }
+
+    private fun usernamesMatch(
+        protocol: NetworkProtocol,
+        configuredUsername: String,
+        requestedUsername: String
+    ): Boolean = when (protocol) {
+        NetworkProtocol.FTP -> configuredUsername == requestedUsername
+        NetworkProtocol.SMB -> configuredUsername.equals(requestedUsername, ignoreCase = true)
+    }
+
+    private data class ParsedUserInfo(
+        val username: String,
+        val password: String
+    )
 }
